@@ -90,6 +90,19 @@ def _lookup_cache(session: Session, key: str) -> GeocodeCache | None:
 def _store_cache(
     session: Session, key: str, query: str, result: GeocodeResult | None
 ) -> GeocodeCache:
+    """Zapisuje wynik do cache'u, znosząc wyścig między procesami.
+
+    Skan co kwadrans i dobowe pełne przejście potrafią geokodować w tym samym
+    czasie. Gdy oba trafią na ten sam adres, drugi INSERT łamie unikalny klucz
+    — wtedy po prostu bierzemy to, co zapisał pierwszy, zamiast się wywracać.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    existing = session.scalar(select(GeocodeCache).where(GeocodeCache.query_hash == key))
+    if existing is not None:
+        existing.hits += 1
+        return existing
+
     entry = GeocodeCache(
         query_hash=key,
         query=query[:400],
@@ -104,6 +117,14 @@ def _store_cache(
         street=result.street if result else None,
     )
     session.add(entry)
+    try:
+        session.flush()
+    except IntegrityError:
+        session.rollback()
+        winner = session.scalar(select(GeocodeCache).where(GeocodeCache.query_hash == key))
+        if winner is not None:
+            return winner
+        raise
     return entry
 
 
@@ -204,16 +225,23 @@ async def geocode_pending(
         resolved = await asyncio.gather(*(resolve(e) for e in pending))
 
     # --- 4. zapisz do cache'u i rozdaj ofertom ------------------------ #
-    with session_scope() as session:
-        for key, cache_key, query, result in resolved:
-            entry = _store_cache(session, cache_key, query, result)
-            session.flush()
-            listing_ids = groups[key]
-            if result is not None:
-                _apply_to_many(session, listing_ids, entry)
-                stats.geocoded += len(listing_ids)
-            else:
-                stats.failed += len(listing_ids)
+    for key, cache_key, query, result in resolved:
+        listing_ids = groups[key]
+        try:
+            with session_scope() as session:
+                entry = _store_cache(session, cache_key, query, result)
+                session.flush()
+                if result is not None:
+                    _apply_to_many(session, listing_ids, entry)
+        except Exception as exc:
+            # jeden problematyczny adres nie może zatrzymać całej paczki
+            log.debug("Nie zapisano adresu %r: %s", query, exc)
+            stats.failed += len(listing_ids)
+            continue
+        if result is not None:
+            stats.geocoded += len(listing_ids)
+        else:
+            stats.failed += len(listing_ids)
 
     log.info("Geokodowanie: %s (zapytań: %s na %s ofert)", stats, len(pending), stats.checked)
     stats.queries = len(pending)

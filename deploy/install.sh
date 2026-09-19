@@ -131,6 +131,10 @@ UNIT
 cat > /etc/systemd/system/ogloszenia-scan.service <<UNIT
 [Unit]
 Description=ogloszenia — zbieranie ofert
+# Zwykły skan i dobowe pełne przejście nie mogą chodzić naraz — oba piszą
+# do tej samej bazy i do cache'u geokodowania.
+Conflicts=ogloszenia-deep.service
+After=ogloszenia-deep.service
 
 [Service]
 Type=oneshot
@@ -166,6 +170,7 @@ UNIT
 cat > /etc/systemd/system/ogloszenia-deep.service <<UNIT
 [Unit]
 Description=ogloszenia — pełne przejście wyników (dobowe)
+Conflicts=ogloszenia-scan.service
 
 [Service]
 Type=oneshot
