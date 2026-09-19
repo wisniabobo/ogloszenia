@@ -34,6 +34,35 @@ NOISE = re.compile(
     re.I,
 )
 
+#: Wiarygodny metraż dla danego typu (m²). Portal potrafi podać bzdurę —
+#: mieszkanie „127,43 m2" z tytułu trafiało do bazy jako 12 743 m², co psuło
+#: cenę za metr i statystyki całego rynku.
+AREA_LIMITS: dict[PropertyType, tuple[float, float]] = {
+    PropertyType.MIESZKANIE: (8, 1000),
+    PropertyType.POKOJ: (4, 120),
+    PropertyType.DOM: (20, 3000),
+    PropertyType.GARAZ: (5, 200),
+    PropertyType.KAMIENICA: (50, 10000),
+}
+
+#: Ogłoszenie „na sprzedaż" z ceną poniżej tej kwoty to niemal zawsze wynajem
+#: wrzucony do złej kategorii portalu (albo cena „do negocjacji" wpisana jako 1).
+MIN_SALE_PRICE = 15000
+
+#: Tytuł mówiący wprost o wynajmie bije kategorię portalu — ogłoszeniodawcy
+#: notorycznie wrzucają wynajem do działu sprzedaży.
+RENT_IN_TITLE = re.compile(
+    r"\bdo wynaj|\bna wynaj|\bwynajm|\bwynajem\b|\bdo zamieszkania od zaraz za\b", re.I
+)
+LEASE_IN_TITLE = re.compile(r"\bdzierżaw|\bwydzierżaw|\boddam w dzierżaw", re.I)
+
+
+def _plausible_area(area: float | None, property_type: PropertyType) -> bool:
+    if area is None:
+        return True
+    low, high = AREA_LIMITS.get(property_type, (0.5, 5_000_000))
+    return low <= area <= high
+
 
 @dataclass
 class NormalizedListing:
@@ -110,7 +139,8 @@ def normalize(
     year_built = _pick(raw.year_built, extract_year(description[:3000]))
 
     price = raw.price
-    price_per_m2 = round(price / area, 2) if price and area and area > 1 else None
+    if price is not None and price <= 0:
+        price = None   # „0 zł" znaczy „nie podano", a nie „za darmo"
 
     market = raw.market
     if not market:
@@ -127,7 +157,28 @@ def normalize(
 
         property_type = guess_property_type(title, description[:800])
 
+    # Metraż spoza rozsądnych granic dla danego typu odrzucamy i próbujemy
+    # odczytać go jeszcze raz z tytułu — tam człowiek pisze prawdziwą liczbę.
+    if not _plausible_area(area, property_type):
+        from_title = extract_area(title)
+        area = from_title if _plausible_area(from_title, property_type) else None
+
     transaction = raw.transaction or TransactionType.SPRZEDAZ
+    if raw.kind == OfferKind.NIERUCHOMOSC:
+        # Ogłoszeniodawcy wrzucają wynajem do działu sprzedaży — tytuł wie lepiej
+        if LEASE_IN_TITLE.search(title):
+            transaction = TransactionType.DZIERZAWA
+        elif RENT_IN_TITLE.search(title):
+            transaction = TransactionType.WYNAJEM
+        elif (
+            transaction == TransactionType.SPRZEDAZ
+            and price is not None
+            and price < MIN_SALE_PRICE
+            and property_type in (PropertyType.MIESZKANIE, PropertyType.DOM, PropertyType.POKOJ)
+        ):
+            transaction = TransactionType.WYNAJEM
+
+    price_per_m2 = round(price / area, 2) if price and area and area > 1 else None
 
     # --- telefony ---
     phones: list[PhoneNumber] = []
