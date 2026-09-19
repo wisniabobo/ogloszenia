@@ -22,7 +22,7 @@
     </div>
     <div class="field"><label>Transakcja</label>
       <select name="transaction">
-        <option value="">wszystkie</option>
+        <option value="wszystkie" {{ 'selected' if not filters.transaction }}>wszystkie</option>
         <option value="sprzedaz" {{ 'selected' if filters.transaction == 'sprzedaz' }}>sprzedaż</option>
         <option value="wynajem"  {{ 'selected' if filters.transaction == 'wynajem' }}>wynajem</option>
         <option value="dzierzawa"{{ 'selected' if filters.transaction == 'dzierzawa' }}>dzierżawa</option>

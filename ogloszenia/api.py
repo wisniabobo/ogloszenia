@@ -31,6 +31,7 @@ from .models import (
     SavedSearch,
     ScanRun,
     Source,
+    TransactionType,
     utcnow,
 )
 from .query import (
@@ -120,7 +121,9 @@ def _filters_from_query(request: Request) -> Filters:
     return Filters(
         kind=params.get("kind") or None,
         property_type=params.get("property_type") or None,
-        transaction=params.get("transaction") or None,
+        transaction=(params.get("transaction") or None)
+        if params.get("transaction") != "wszystkie"
+        else None,
         city=params.get("city") or None,
         district=params.get("district") or None,
         county=params.get("county") or None,
@@ -152,6 +155,18 @@ def _filters_from_query(request: Request) -> Filters:
         page=int(params.get("page") or 1),
         per_page=min(int(params.get("per_page") or 25), 100),
     )
+
+
+def _default_to_sale(request: Request, filters: Filters) -> None:
+    """Na widokach przeglądania domyślnie pokazujemy sprzedaż.
+
+    Wynajem i sprzedaż na jednej liście dają bezsens: sortowanie po cenie za m²
+    stawia na górze pokój za 299 zł obok mieszkań za pół miliona. Wybór jest
+    widoczny w formularzu i jednym kliknięciem zmieniany na wynajem albo na
+    wszystko — API zostaje neutralne i niczego nie narzuca.
+    """
+    if "transaction" not in request.query_params:
+        filters.transaction = TransactionType.SPRZEDAZ.value
 
 
 def listing_to_dict(listing: Listing, *, reveal_phone: bool = False) -> dict[str, Any]:
@@ -239,6 +254,7 @@ def view_dashboard(request: Request, db: DB):
 @app.get("/nieruchomosci", response_class=HTMLResponse)
 def view_listings(request: Request, db: DB):
     filters = _filters_from_query(request)
+    _default_to_sale(request, filters)
     listings, total = search_listings(db, filters)
     sources = list(db.scalars(select(Source).where(Source.enabled.is_(True)).order_by(Source.name)))
     return templates.TemplateResponse(
@@ -312,6 +328,7 @@ def view_listing(listing_id: int, request: Request, db: DB):
 @app.get("/mapa", response_class=HTMLResponse)
 def view_map(request: Request, db: DB):
     filters = _filters_from_query(request)
+    _default_to_sale(request, filters)
     sources = list(db.scalars(select(Source).where(Source.enabled.is_(True)).order_by(Source.name)))
     return templates.TemplateResponse(
         request,

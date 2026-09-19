@@ -265,10 +265,14 @@ def dashboard_stats(session) -> dict[str, Any]:
         .limit(12)
     ).all()
 
+    # Tylko SPRZEDAŻ: przy wynajmie "cena za m²" znaczy zupełnie co innego
+    # (złotych za metr miesięcznie), więc wrzucona do jednej średniej
+    # zaniżała ją kilkukrotnie.
     median_price_m2 = session.scalar(
         select(func.avg(Listing.price_per_m2)).where(
             active, original, Listing.price_per_m2.is_not(None),
             Listing.property_type == PropertyType.MIESZKANIE,
+            Listing.transaction == TransactionType.SPRZEDAZ,
         )
     )
 
