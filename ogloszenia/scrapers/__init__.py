@@ -7,10 +7,9 @@ uniwersalny `generic_html` sterowany selektorami z konfiguracji.
 
 from __future__ import annotations
 
-from .base import BaseScraper, RawListing, ScrapeContext
-
 from .adresowo import AdresowoScraper
 from .amw import AMWScraper
+from .base import BaseScraper, RawListing, ScrapeContext
 from .domiporta import DomiportaScraper
 from .ezamowienia import EZamowieniaScraper
 from .generic_html import GenericHtmlScraper

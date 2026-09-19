@@ -1,0 +1,192 @@
+"""Normalizacja surowych ofert do kształtu tabeli `listings`.
+
+Tu dzieje się cała brudna robota: uzupełnianie brakujących parametrów z opisu,
+rozpoznanie miejscowości i dzielnicy, przeliczenie ceny za m², wyrzucenie ofert
+spoza regionu oraz wyciągnięcie telefonów.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+
+from ..models import OfferKind, PropertyType, SellerType, TransactionType
+from ..scrapers.base import RawListing
+from ..utils.geo import detect_location, detect_opole_district, extract_street, resolve_place
+from ..utils.phones import PhoneNumber, extract_phones, parse_phone
+from ..utils.text import (
+    clean,
+    extract_area,
+    extract_case_number,
+    extract_floor,
+    extract_rooms,
+    extract_year,
+)
+
+MARKET_PRIMARY = re.compile(r"rynek pierwotn|pierwotny|od dewelopera|nowa inwestycja", re.I)
+MARKET_SECONDARY = re.compile(r"rynek wtórn|wtorny|używan", re.I)
+
+# Oferty, których nie chcemy w bazie (spam, usługi, „kupię")
+NOISE = re.compile(
+    r"\b(kupię|kupie|poszukuję|poszukuje|skup (mieszkań|nieruchomości)|zamienię|"
+    r"kredyt|doradztwo|remont|usługi|sprzątanie|projekt wnętrz)\b",
+    re.I,
+)
+
+
+@dataclass
+class NormalizedListing:
+    """Znormalizowana oferta + wydzielone telefony (te idą do osobnej tabeli)."""
+
+    data: dict
+    phones: list[PhoneNumber] = field(default_factory=list)
+    raw: RawListing | None = None
+
+    @property
+    def external_key(self) -> tuple[str, str]:
+        return self.data["source_key"], self.data["external_id"]
+
+
+def _pick(*values):
+    for value in values:
+        if value not in (None, "", 0):
+            return value
+    return None
+
+
+def normalize(
+    raw: RawListing,
+    *,
+    voivodeship: str = "opolskie",
+    require_region: bool = True,
+) -> NormalizedListing | None:
+    """Zwraca `NormalizedListing` albo `None`, jeśli oferta odpada."""
+    title = clean(raw.title)
+    description = clean(raw.description or "")
+    if not title or not raw.url:
+        return None
+
+    haystack = f"{title} {description} {raw.location_text or ''}"
+
+    if raw.kind == OfferKind.NIERUCHOMOSC and NOISE.search(title):
+        return None
+
+    # --- lokalizacja ---
+    place = (
+        resolve_place(raw.city)
+        or resolve_place(raw.location_text)
+        or detect_location(haystack)
+        or {}
+    )
+    city = _pick(place.get("city"), clean(raw.city))
+    commune = _pick(place.get("commune"), clean(raw.commune))
+    county = _pick(place.get("county"), clean(raw.county))
+    district = _pick(
+        clean(raw.district),
+        place.get("district"),
+        detect_opole_district(haystack) if (city or "").lower() == "opole" else None,
+    )
+    street = _pick(clean(raw.street), extract_street(title), extract_street(raw.location_text or ""),
+                   extract_street(description[:600]))
+
+    in_region = bool(place) or voivodeship.lower() in haystack.lower()
+    if require_region and not in_region:
+        return None
+
+    # --- parametry ---
+    area = _pick(raw.area, extract_area(title), extract_area(description[:1500]))
+    rooms = _pick(raw.rooms, extract_rooms(title), extract_rooms(description[:1500]))
+    floor, floors_total = raw.floor, raw.floors_total
+    if floor is None:
+        floor, detected_total = extract_floor(f"{title} {description[:1500]}")
+        floors_total = floors_total or detected_total
+    year_built = _pick(raw.year_built, extract_year(description[:3000]))
+
+    price = raw.price
+    price_per_m2 = round(price / area, 2) if price and area and area > 1 else None
+
+    market = raw.market
+    if not market:
+        if MARKET_PRIMARY.search(haystack):
+            market = "pierwotny"
+        elif MARKET_SECONDARY.search(haystack):
+            market = "wtorny"
+    elif market.upper() in {"PRIMARY", "SECONDARY"}:
+        market = "pierwotny" if market.upper() == "PRIMARY" else "wtorny"
+
+    property_type = raw.property_type
+    if property_type == PropertyType.INNE and raw.kind != OfferKind.PRZETARG:
+        from ..scrapers.generic_html import guess_property_type
+
+        property_type = guess_property_type(title, description[:800])
+
+    transaction = raw.transaction or TransactionType.SPRZEDAZ
+
+    # --- telefony ---
+    phones: list[PhoneNumber] = []
+    for value in raw.phones_raw:
+        parsed = parse_phone(value, origin="api")
+        if parsed:
+            phones.append(parsed)
+    if not phones and description:
+        phones = extract_phones(description, origin="opis")
+    if not phones and raw.kind != OfferKind.NIERUCHOMOSC:
+        phones = extract_phones(f"{title} {description}", origin="opis")
+    phones = list({p.e164: p for p in phones}.values())
+
+    # --- licytacje / przetargi ---
+    case_number = raw.case_number or (
+        extract_case_number(f"{title} {description[:3000]}")
+        if raw.kind in (OfferKind.LICYTACJA, OfferKind.PRZETARG)
+        else None
+    )
+    opening_price = raw.opening_price
+    if raw.kind == OfferKind.LICYTACJA and price is None:
+        price = opening_price or raw.estimate_value
+
+    data = {
+        "source_key": raw.source_key,
+        "external_id": str(raw.external_id),
+        "url": raw.url[:800],
+        "kind": raw.kind,
+        "transaction": transaction,
+        "property_type": property_type,
+        "title": title[:600],
+        "description": description[:20000] or None,
+        "images": [i for i in raw.images if isinstance(i, str)][:12],
+        "price": price,
+        "currency": raw.currency or "PLN",
+        "price_per_m2": price_per_m2,
+        "area": area,
+        "plot_area": raw.plot_area,
+        "rooms": rooms,
+        "floor": floor,
+        "floors_total": floors_total,
+        "year_built": year_built,
+        "building_type": clean(raw.building_type or "") or None,
+        "market": market,
+        "voivodeship": voivodeship if in_region else None,
+        "county": county,
+        "commune": commune,
+        "city": city,
+        "district": district,
+        "street": street,
+        "lat": raw.lat,
+        "lon": raw.lon,
+        "seller_type": raw.seller_type or SellerType.NIEZNANY,
+        "seller_name": clean(raw.seller_name or "")[:300] or None,
+        "contact_email": clean(raw.contact_email or "")[:200] or None,
+        "published_at": raw.published_at,
+        "source_updated_at": raw.source_updated_at,
+        "event_date": raw.event_date,
+        "deadline": raw.deadline,
+        "opening_price": opening_price,
+        "estimate_value": raw.estimate_value,
+        "deposit": raw.deposit,
+        "case_number": (case_number or "")[:120] or None,
+        "authority": clean(raw.authority or "")[:300] or None,
+        "share": clean(raw.share or "")[:32] or None,
+        "extra": raw.extra or {},
+        "raw": raw.raw if isinstance(raw.raw, dict) else {},
+    }
+    return NormalizedListing(data=data, phones=phones, raw=raw)

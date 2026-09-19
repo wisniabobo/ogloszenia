@@ -7,7 +7,6 @@ Własności Rolnej Skarbu Państwa).
 from __future__ import annotations
 
 from ..models import OfferKind, SellerType
-from .base import ScrapeContext
 from .generic_html import GenericHtmlScraper
 
 BASE = "https://www.kowr.gov.pl"
