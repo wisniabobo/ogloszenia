@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ogloszenia"
+version = "1.0.0"
+description = "Bot monitorująco-scrapujący rynek nieruchomości, licytacji i przetargów (start: woj. opolskie)"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[project.scripts]
+ogl = "ogloszenia.cli:app"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+include = ["ogloszenia*"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4"]
+ignore = ["B008", "E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

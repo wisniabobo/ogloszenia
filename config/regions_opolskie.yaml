@@ -1,0 +1,197 @@
+# Podział administracyjny województwa opolskiego (12 jednostek powiatowych).
+# Służy do normalizacji lokalizacji i filtrowania ofert spoza regionu.
+wojewodztwo: opolskie
+teryt: "16"
+stolica: Opole
+
+powiaty:
+  - nazwa: Opole
+    typ: miasto na prawach powiatu
+    teryt: "1661"
+    gminy:
+      - nazwa: Opole
+        miejscowosci: [Opole]
+
+  - nazwa: brzeski
+    teryt: "1601"
+    gminy:
+      - nazwa: Brzeg
+        miejscowosci: [Brzeg]
+      - nazwa: Grodków
+        miejscowosci: [Grodków, Gałązczyce, Jędrzejów, Kolnica, Lipowa, Starowice, Tarnów Grodkowski, Wierzbnik, Żelazna]
+      - nazwa: Lewin Brzeski
+        miejscowosci: [Lewin Brzeski, Skorogoszcz, Łosiów, Przecza, Buszyce, Chróścina, Mikolin, Oldrzyszowice]
+      - nazwa: Lubsza
+        miejscowosci: [Lubsza, Kościerzyce, Michałowice, Mąkoszyce, Dobrzyń, Śmiechowice, Szydłowice]
+      - nazwa: Olszanka
+        miejscowosci: [Olszanka, Michałów, Pogorzela, Jankowice Wielkie, Przylesie]
+      - nazwa: Skarbimierz
+        miejscowosci: [Skarbimierz, Skarbimierz-Osiedle, Pępice, Lipki, Żłobizna, Brzezina, Kruszyna]
+
+  - nazwa: głubczycki
+    teryt: "1602"
+    gminy:
+      - nazwa: Głubczyce
+        miejscowosci: [Głubczyce, Bogdanowice, Grobniki, Klisino, Lisięcice, Pietrowice, Zopowy, Zawiszyce]
+      - nazwa: Baborów
+        miejscowosci: [Baborów, Sułków, Dziećmarów, Raków, Czerwonków]
+      - nazwa: Branice
+        miejscowosci: [Branice, Boboluszki, Włodzienin, Wysoka, Lewice, Uciechowice]
+      - nazwa: Kietrz
+        miejscowosci: [Kietrz, Pilszcz, Nowa Cerekwia, Dzierżysław, Ludmierzyce]
+
+  - nazwa: kędzierzyńsko-kozielski
+    teryt: "1603"
+    gminy:
+      - nazwa: Kędzierzyn-Koźle
+        miejscowosci: [Kędzierzyn-Koźle, Kędzierzyn, Koźle, Sławięcice, Blachownia Śląska, Pogorzelec, Azoty, Cisowa, Lenartowice, Kłodnica, Miejsce Kłodnickie, Rogi]
+      - nazwa: Bierawa
+        miejscowosci: [Bierawa, Stara Kuźnia, Kotlarnia, Dziergowice, Solarnia, Lubieszów, Stare Koźle]
+      - nazwa: Cisek
+        miejscowosci: [Cisek, Landzmierz, Łany, Roszowicki Las, Steblów, Dzielnica]
+      - nazwa: Pawłowiczki
+        miejscowosci: [Pawłowiczki, Gościęcin, Maciowakrze, Ostrożnica, Naczęsławice, Trawniki]
+      - nazwa: Polska Cerekiew
+        miejscowosci: [Polska Cerekiew, Zakrzów, Grzędzin, Wronin, Ciężkowice]
+      - nazwa: Reńska Wieś
+        miejscowosci: [Reńska Wieś, Większyce, Poborszów, Długomiłowice, Komorno, Łężce, Pociękarb]
+
+  - nazwa: kluczborski
+    teryt: "1604"
+    gminy:
+      - nazwa: Kluczbork
+        miejscowosci: [Kluczbork, Ligota Dolna, Ligota Górna, Kujakowice, Bogacica, Bąków, Kuniów, Bażany, Smardy]
+      - nazwa: Byczyna
+        miejscowosci: [Byczyna, Polanowice, Kostów, Roszkowice, Biskupice, Gołkowice]
+      - nazwa: Lasowice Wielkie
+        miejscowosci: [Lasowice Wielkie, Lasowice Małe, Chudoba, Jasienie, Chocianowice, Gronowice]
+      - nazwa: Wołczyn
+        miejscowosci: [Wołczyn, Wierzbica Dolna, Komorzno, Skałągi, Gierałcice, Krzywiczyny]
+
+  - nazwa: krapkowicki
+    teryt: "1605"
+    gminy:
+      - nazwa: Krapkowice
+        miejscowosci: [Krapkowice, Otmęt, Żywocice, Rogów Opolski, Dąbrówka Górna, Kórnica, Steblów, Gwoździce]
+      - nazwa: Gogolin
+        miejscowosci: [Gogolin, Chorula, Kamień Śląski, Malnia, Górażdże, Obrowiec, Odrowąż]
+      - nazwa: Strzeleczki
+        miejscowosci: [Strzeleczki, Racławiczki, Dobra, Komorniki, Zielina, Kujawy]
+      - nazwa: Walce
+        miejscowosci: [Walce, Brożec, Grocholub, Stradunia, Zabierzów]
+      - nazwa: Zdzieszowice
+        miejscowosci: [Zdzieszowice, Żyrowa, Januszkowice, Rozwadza, Krępna, Jasiona]
+
+  - nazwa: namysłowski
+    teryt: "1606"
+    gminy:
+      - nazwa: Namysłów
+        miejscowosci: [Namysłów, Smarchowice, Kowalowice, Ligota Książęca, Jastrzębie, Bukowa Śląska, Głuszyna]
+      - nazwa: Domaszowice
+        miejscowosci: [Domaszowice, Strzelce, Włochy, Wielołęka, Gręboszów]
+      - nazwa: Pokój
+        miejscowosci: [Pokój, Domaradz, Zieleniec, Ładza, Krogulna, Lubnów]
+      - nazwa: Świerczów
+        miejscowosci: [Świerczów, Miejsce, Dąbrowa, Bąkowice, Miodary]
+      - nazwa: Wilków
+        miejscowosci: [Wilków, Bukowie, Idzikowice, Pągów, Krzyków]
+
+  - nazwa: nyski
+    teryt: "1607"
+    gminy:
+      - nazwa: Nysa
+        miejscowosci: [Nysa, Radzikowice, Goświnowice, Niwnica, Biała Nyska, Konradowa, Wierzbięcice, Siestrzechowice, Złotogłowice, Hajduki Nyskie]
+      - nazwa: Głuchołazy
+        miejscowosci: [Głuchołazy, Bodzanów, Jarnołtówek, Podlesie, Nowy Świętów, Gierałcice, Charbielin, Konradów]
+      - nazwa: Kamiennik
+        miejscowosci: [Kamiennik, Karłowice Wielkie, Lipniki, Chociebórz, Szklary]
+      - nazwa: Korfantów
+        miejscowosci: [Korfantów, Ścinawa Mała, Włodary, Przechód, Rzymkowice, Wielkie Łąki]
+      - nazwa: Łambinowice
+        miejscowosci: [Łambinowice, Bielice, Jasienica Dolna, Malerzowice Wielkie, Szadurczyce]
+      - nazwa: Otmuchów
+        miejscowosci: [Otmuchów, Kałków, Wójcice, Nadziejów, Sarnowice, Jarnołtów, Maciejowice]
+      - nazwa: Paczków
+        miejscowosci: [Paczków, Kamienica, Ścibórz, Trzeboszowice, Unikowice, Gościce]
+      - nazwa: Pakosławice
+        miejscowosci: [Pakosławice, Reńska Wieś, Frączków, Nowaki, Biechów]
+      - nazwa: Skoroszyce
+        miejscowosci: [Skoroszyce, Sidzina, Chróścina, Giełczyce, Makowice, Mroczkowa]
+
+  - nazwa: oleski
+    teryt: "1608"
+    gminy:
+      - nazwa: Olesno
+        miejscowosci: [Olesno, Wojciechów, Sowczyce, Borki Wielkie, Świercze, Wachów, Łomnica, Stare Olesno]
+      - nazwa: Dobrodzień
+        miejscowosci: [Dobrodzień, Pludry, Szemrowice, Rzędowice, Bzinica Stara, Gosławice]
+      - nazwa: Gorzów Śląski
+        miejscowosci: [Gorzów Śląski, Uszyce, Kozłowice, Jastrzygowice, Zdziechowice]
+      - nazwa: Praszka
+        miejscowosci: [Praszka, Kowale, Strojec, Gana, Rosochy, Przedmość]
+      - nazwa: Radłów
+        miejscowosci: [Radłów, Sternalice, Wichrów, Biskupice, Kolonia Biskupska]
+      - nazwa: Rudniki
+        miejscowosci: [Rudniki, Żytniów, Jaworzno, Cieciułów, Dalachów, Mirowszczyzna]
+      - nazwa: Zębowice
+        miejscowosci: [Zębowice, Radawie, Kadłub Wolny, Osiecko, Knieja]
+
+  - nazwa: opolski
+    teryt: "1609"
+    gminy:
+      - nazwa: Chrząstowice
+        miejscowosci: [Chrząstowice, Dębska Kuźnia, Suchy Bór, Daniec, Dębie, Falmirowice]
+      - nazwa: Dąbrowa
+        miejscowosci: [Dąbrowa, Karczów, Chróścina, Niewodniki, Sławice, Żelazna, Ciepielowice, Narok]
+      - nazwa: Dobrzeń Wielki
+        miejscowosci: [Dobrzeń Wielki, Dobrzeń Mały, Chróścice, Kup, Borki]
+      - nazwa: Komprachcice
+        miejscowosci: [Komprachcice, Ochodze, Polska Nowa Wieś, Chmielowice, Domecko, Osiny, Wawelno]
+      - nazwa: Łubniany
+        miejscowosci: [Łubniany, Jełowa, Brynica, Biadacz, Kępa, Luboszyce, Masów]
+      - nazwa: Murów
+        miejscowosci: [Murów, Zagwiździe, Stare Budkowice, Nowe Budkowice, Radomierowice, Grabczok]
+      - nazwa: Niemodlin
+        miejscowosci: [Niemodlin, Graczyce, Gracze, Rogi, Szydłowiec Śląski, Sady, Tłustoręby, Magnuszowice]
+      - nazwa: Ozimek
+        miejscowosci: [Ozimek, Antoniów, Schodnia, Krasiejów, Dylaki, Grodziec, Pustków, Szczedrzyk, Chobie]
+      - nazwa: Popielów
+        miejscowosci: [Popielów, Karłowice, Stare Siołkowice, Nowe Siołkowice, Stobrawa, Kaniów, Lubienia]
+      - nazwa: Prószków
+        miejscowosci: [Prószków, Zimnice Wielkie, Zimnice Małe, Boguszyce, Górki, Ligota Prószkowska, Złotniki, Winów, Chrzowice]
+      - nazwa: Tarnów Opolski
+        miejscowosci: [Tarnów Opolski, Kosorowice, Nakło, Przywory, Raszowa, Walidrogi, Miedziana]
+      - nazwa: Tułowice
+        miejscowosci: [Tułowice, Skarbiszowice, Szydłów, Ligota Tułowicka, Goszczowice]
+      - nazwa: Turawa
+        miejscowosci: [Turawa, Kotórz Wielki, Kotórz Mały, Zawada, Osowiec, Ligota Turawska, Kadłub Turawski, Węgry, Bierdzany]
+
+  - nazwa: prudnicki
+    teryt: "1610"
+    gminy:
+      - nazwa: Prudnik
+        miejscowosci: [Prudnik, Łąka Prudnicka, Moszczanka, Niemysłowice, Szybowice, Rudziczka, Mieszkowice, Dębowiec]
+      - nazwa: Biała
+        miejscowosci: [Biała, Pogórze, Chrzelice, Solec, Łącznik, Olbrachcice, Gostomia]
+      - nazwa: Głogówek
+        miejscowosci: [Głogówek, Racławice Śląskie, Mochów, Twardawa, Kazimierz, Wierzch, Zawada]
+      - nazwa: Lubrza
+        miejscowosci: [Lubrza, Dytmarów, Trzebina, Prężynka, Skrzypiec, Nowy Browiniec]
+
+  - nazwa: strzelecki
+    teryt: "1611"
+    gminy:
+      - nazwa: Strzelce Opolskie
+        miejscowosci: [Strzelce Opolskie, Szczepanek, Rozmierka, Sucha, Kadłub, Błotnica Strzelecka, Dziewkowice, Kalinowice, Szymiszów, Warmątowice]
+      - nazwa: Izbicko
+        miejscowosci: [Izbicko, Otmice, Krośnica, Suchodaniec, Borycz, Poznowice]
+      - nazwa: Jemielnica
+        miejscowosci: [Jemielnica, Barut, Centawa, Gąsiorowice, Piotrówka, Łaziska]
+      - nazwa: Kolonowskie
+        miejscowosci: [Kolonowskie, Fosowskie, Staniszcze Wielkie, Staniszcze Małe, Spórok]
+      - nazwa: Leśnica
+        miejscowosci: [Leśnica, Zalesie Śląskie, Raszowa, Wysoka, Góra Świętej Anny, Lichynia, Kadłubiec]
+      - nazwa: Ujazd
+        miejscowosci: [Ujazd, Sieroniowice, Olszowa, Zimna Wódka, Jaryszów, Nogowczyce, Stary Ujazd]
+      - nazwa: Zawadzkie
+        miejscowosci: [Zawadzkie, Żędowice, Kielcza]
