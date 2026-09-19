@@ -25,7 +25,7 @@
   <div class="muted" style="margin-bottom:12px">
     {% if listing.street %}ul. {{ listing.street }}, {% endif %}
     {% if listing.district %}{{ listing.district }}, {% endif %}
-    {{ listing.city }}{% if listing.county %}, pow. {{ listing.county }}{% endif %}
+    {{ listing.city }}{% if listing.county and listing.county != listing.city %}, pow. {{ listing.county }}{% endif %}
     · <a href="{{ listing.url }}" target="_blank" rel="noopener noreferrer">otwórz w źródle ↗</a>
   </div>
 

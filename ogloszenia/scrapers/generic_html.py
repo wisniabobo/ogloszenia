@@ -34,7 +34,8 @@ from ..utils.text import (
 from .base import BaseScraper, RawListing, ScrapeContext
 
 PROPERTY_HINTS: list[tuple[re.Pattern[str], PropertyType]] = [
-    (re.compile(r"\bmieszkan|\blokal mieszkaln|\bapartament", re.I), PropertyType.MIESZKANIE),
+    (re.compile(r"\bmieszkan|\bmieszkaln|\bapartament|\bkawalerk|\bstudio\b", re.I),
+     PropertyType.MIESZKANIE),
     (re.compile(r"\bdom\b|\bdomu\b|\bbliźniak|\bszeregow", re.I), PropertyType.DOM),
     (re.compile(r"\bdziałk|\bgrunt|\bteren inwestycyjn", re.I), PropertyType.DZIALKA),
     (re.compile(r"\bgaraż|\bmiejsce postojow", re.I), PropertyType.GARAZ),
@@ -43,7 +44,7 @@ PROPERTY_HINTS: list[tuple[re.Pattern[str], PropertyType]] = [
     (re.compile(r"\bkamienic", re.I), PropertyType.KAMIENICA),
     (re.compile(r"\bgospodarstw|\brolne\b|\bsiedlisk", re.I), PropertyType.GOSPODARSTWO),
     (re.compile(r"\blokal użytkow|\bhandlow|\busługow", re.I), PropertyType.LOKAL),
-    (re.compile(r"\bpokój\b|\bpokoju do wynaj", re.I), PropertyType.POKOJ),
+    (re.compile(r"\bpokój do wynaj|\bpokoju do wynaj|\bstancj", re.I), PropertyType.POKOJ),
 ]
 
 TRANSACTION_HINTS: list[tuple[re.Pattern[str], TransactionType]] = [

@@ -1,13 +1,21 @@
-"""Licytacje komornicze.
+"""Licytacje komornicze — serwis Krajowej Rady Komorniczej.
 
-Dwa źródła:
-  * `licytacje.komornik.pl` — obwieszczenia o licytacjach prowadzone przez
-    Krajową Radę Komorniczą (licytacje „tradycyjne”, w sądzie),
-  * `elicytacje.komornik.pl` — elektroniczne licytacje ruchomości i nieruchomości.
+Portal został przebudowany: dawny `/Notice/Search` przekierowuje dziś na
+wyszukiwarkę pod adresem::
 
-Oba mają publiczne wyszukiwarki z filtrem po województwie. Parsujemy tabelę
-wyników, a szczegóły (suma oszacowania, cena wywoławcza, rękojmia, sygnatura,
-kancelaria) dociągamy z karty obwieszczenia.
+    https://licytacje.komornik.pl/wyszukiwarka-licytacji?mainCategory=REAL_ESTATE&province=opolskie&offset=0
+
+Strona wyników jest renderowana po stronie serwera (Nuxt SSR), więc karty da się
+czytać bez przeglądarki. Karta zawiera komplet tego, co potrzebne: kategorię,
+tryb (stacjonarna / elektroniczna), datę publikacji, adres z kodem pocztowym,
+termin licytacji, cenę wywołania i sumę oszacowania.
+
+Karta szczegółów dociągana jest natomiast po stronie klienta — sygnatura akt,
+kancelaria i rękojmia nie występują w HTML-u i bez silnika JS ich nie ma.
+Dlatego bierzemy je z treści karty, jeśli tam są, i nie udajemy, że mamy więcej.
+
+e-Licytacje (dawny elicytacje.komornik.pl) zostały włączone do tego samego
+serwisu — rozpoznajemy je po tagu „elektroniczna" na karcie.
 """
 
 from __future__ import annotations
@@ -16,203 +24,216 @@ import re
 from collections.abc import AsyncIterator
 from urllib.parse import urljoin
 
-from ..models import OfferKind, SellerType, TransactionType
-from ..utils.text import clean, extract_area, extract_case_number, parse_datetime, parse_number, sha1
+from selectolax.parser import Node
+
+from ..models import OfferKind, PropertyType, SellerType, TransactionType
+from ..utils.text import clean, extract_area, extract_case_number, parse_datetime, parse_number
 from .base import BaseScraper, RawListing, ScrapeContext
 from .generic_html import guess_property_type
 
-KRK_BASE = "https://licytacje.komornik.pl"
-ELIC_BASE = "https://elicytacje.komornik.pl"
+BASE = "https://licytacje.komornik.pl"
+SEARCH = BASE + "/wyszukiwarka-licytacji"
 
-# Etykiety spotykane na kartach obwieszczeń
-LABELS = {
-    "suma oszacowania": "estimate_value",
-    "cena wywoławcza": "opening_price",
-    "cena wywolawcza": "opening_price",
-    "kwota oszacowania": "estimate_value",
-    "rękojmia": "deposit",
-    "rekojmia": "deposit",
-    "wadium": "deposit",
-    "sygnatura": "case_number",
-    "sygn. akt": "case_number",
-    "data licytacji": "event_date",
-    "termin licytacji": "event_date",
-    "udział": "share",
+#: ile kart zwraca jedna strona wyników
+PAGE_SIZE = 20
+
+#: kategorie serwisu -> nasze typy nieruchomości
+CATEGORY_MAP = {
+    "mieszkania": PropertyType.MIESZKANIE,
+    "domy": PropertyType.DOM,
+    "grunty": PropertyType.DZIALKA,
+    "działki": PropertyType.DZIALKA,
+    "lokale użytkowe": PropertyType.LOKAL,
+    "lokale uzytkowe": PropertyType.LOKAL,
+    "garaże": PropertyType.GARAZ,
+    "hale": PropertyType.HALA,
+    "obiekty przemysłowe": PropertyType.HALA,
+    "gospodarstwa rolne": PropertyType.GOSPODARSTWO,
+    "spółdzielcze": PropertyType.MIESZKANIE,
 }
 
+#: ligatury ikon Material Symbols sklejone z tekstem ("map_markerul. Parkowa")
+ICON_PREFIX = re.compile(r"^[a-z]+_[a-z_]*")
+POSTAL = re.compile(r"\b(\d{2}-\d{3})\s+(.+)$")
 
-def _apply_labels(item: RawListing, text: str) -> None:
-    """Wyciąga z tekstu karty pary 'etykieta: wartość'."""
-    for raw_line in re.split(r"[\n\r]+|(?<=\.)\s{2,}", text):
-        line = clean(raw_line)
-        if not line or ":" not in line:
-            continue
-        label, _, value = line.partition(":")
-        field = LABELS.get(clean(label).lower())
-        if not field or not clean(value):
-            continue
-        if field in {"estimate_value", "opening_price", "deposit"}:
-            setattr(item, field, parse_number(value))
-        elif field == "event_date":
-            item.event_date = parse_datetime(value)
-        else:
-            setattr(item, field, clean(value)[:120])
+
+def _strip_icon(text: str) -> str:
+    return clean(ICON_PREFIX.sub("", clean(text)))
+
+
+def _label_value(text: str, label: str) -> str:
+    """'Termin licytacji:21.09.2026 11:00' -> '21.09.2026 11:00'."""
+    cleaned = _strip_icon(text)
+    if label.lower() in cleaned.lower():
+        return clean(cleaned.split(":", 1)[-1]) if ":" in cleaned else clean(
+            cleaned[len(label):]
+        )
+    return cleaned
 
 
 class LicytacjeKomornikScraper(BaseScraper):
     key = "licytacje_komornik"
     name = "Licytacje komornicze (KRK)"
-    base_url = KRK_BASE
+    base_url = BASE
     kind = OfferKind.LICYTACJA
     coverage = "krajowy"
 
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
-        # Wyszukiwarka KRK przyjmuje województwo jako parametr GET.
-        voivodeship_id = self.config.get("voivodeship_id", 16)  # 16 = opolskie (TERYT)
+        province = self.config.get("province", ctx.voivodeship or "opolskie")
+        categories = self.config.get("main_categories", ["REAL_ESTATE"])
         produced = 0
-        for page in range(1, ctx.max_pages + 1):
-            url = self.config.get(
-                "search_url",
-                f"{KRK_BASE}/Notice/Search?VoivodeshipId={voivodeship_id}&Page={page}",
-            ).format(page=page, voivodeship_id=voivodeship_id)
-            try:
-                tree = await self.html(url)
-            except Exception:
-                break
-            rows = tree.css("table tr") or tree.css("div.notice, li.notice")
-            found = 0
-            for row in rows:
-                link = row.css_first("a[href*='/Notice/Details'], a[href*='/Notice/']")
-                if not link:
-                    continue
-                href = link.attributes.get("href")
-                if not href:
-                    continue
-                detail_url = urljoin(KRK_BASE, href)
-                body = clean(row.text())
-                title = clean(link.text()) or body[:160]
-                item = RawListing(
-                    external_id=self._id_from_url(detail_url),
-                    url=detail_url,
-                    source_key=self.key,
-                    kind=OfferKind.LICYTACJA,
-                    transaction=TransactionType.SPRZEDAZ,
-                    title=title[:400],
-                    seller_type=SellerType.KOMORNIK,
-                    authority=None,
-                    case_number=extract_case_number(body),
-                    event_date=parse_datetime(body),
-                    property_type=guess_property_type(title, body),
-                    location_text=body,
-                    area=extract_area(body),
-                    raw={"row": body},
-                )
-                if ctx.fetch_details:
-                    try:
-                        await self._detail(item)
-                    except Exception:
-                        pass
-                item.price = item.opening_price or item.estimate_value
-                yield item
-                produced += 1
-                found += 1
+        seen: set[str] = set()
+
+        for category in categories:
+            for page in range(ctx.max_pages):
                 if produced >= ctx.max_items:
                     return
-            if not found:
-                break
+                params = {
+                    "mainCategory": category,
+                    "province": province,
+                    "offset": page * PAGE_SIZE,
+                }
+                try:
+                    tree = await self.html(SEARCH, params=params)
+                except Exception:
+                    break
 
-    async def _detail(self, item: RawListing) -> None:
-        tree = await self.html(item.url)
-        main = tree.css_first("main") or tree.css_first("#content") or tree.css_first("body")
-        text = clean(main.text()) if main else ""
-        item.description = text[:20000] or None
-        _apply_labels(item, (main.html or "") if main else "")
-        _apply_labels(item, text.replace(". ", ".\n"))
-        if not item.case_number:
-            item.case_number = extract_case_number(text)
-        if not item.event_date:
-            item.event_date = parse_datetime(text)
-        for heading in tree.css("h1, h2"):
-            head = clean(heading.text())
-            if head and len(head) > 10:
-                item.title = head[:400]
-                break
-        office = re.search(r"(Komornik\s+S[ąa]dowy[^.\n]{0,160})", text)
-        if office:
-            item.authority = clean(office.group(1))[:300]
+                cards = tree.css("a.auction")
+                if not cards:
+                    break
+                fresh = 0
+                for card in cards:
+                    item = self._parse_card(card)
+                    if item is None or item.external_id in seen:
+                        continue
+                    seen.add(item.external_id)
+                    fresh += 1
+                    yield item
+                    produced += 1
+                    if produced >= ctx.max_items:
+                        return
+                if fresh == 0:
+                    break  # serwis oddał tę samą stronę — koniec wyników
 
-    @staticmethod
-    def _id_from_url(url: str) -> str:
-        m = re.search(r"(?:id=|/)(\d{4,})", url, re.I)
-        return m.group(1) if m else sha1(url)[:20]
-
-
-class ELicytacjeScraper(BaseScraper):
-    """e-Licytacje — aplikacja z API JSON; przy zmianie API schodzimy na HTML."""
-
-    key = "elicytacje"
-    name = "e-Licytacje komornicze"
-    base_url = ELIC_BASE
-    kind = OfferKind.LICYTACJA
-
-    async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
-        endpoint = self.config.get("api_url", f"{ELIC_BASE}/api/auctions")
-        produced = 0
-        for page in range(1, ctx.max_pages + 1):
-            params = {
-                "page": page,
-                "perPage": 50,
-                "voivodeship": self.config.get("voivodeship", "opolskie"),
-                "sort": "-publishedAt",
-            } | dict(self.config.get("params", {}))
-            try:
-                payload = await self.client.get_json(endpoint, params=params)
-            except Exception:
-                break
-            rows = payload if isinstance(payload, list) else (
-                self.dig(payload, "data", default=[]) or self.dig(payload, "items", default=[]) or []
-            )
-            if not rows:
-                break
-            for row in rows:
-                item = self._parse(row)
-                if not item:
-                    continue
-                yield item
-                produced += 1
-                if produced >= ctx.max_items:
-                    return
-
-    def _parse(self, row: dict) -> RawListing | None:
-        if not isinstance(row, dict):
+    # ------------------------------------------------------------------ #
+    def _parse_card(self, card: Node) -> RawListing | None:
+        href = card.attributes.get("href") or ""
+        match = re.search(r"/licytacje/(\d+)", href)
+        if not match:
             return None
-        auction_id = row.get("id") or row.get("auctionId") or row.get("number")
-        title = clean(row.get("title") or row.get("name") or row.get("subject") or "")
-        if not auction_id or not title:
+        auction_id = match.group(1)
+
+        title_node = card.css_first("[class*='auction__title'], .cds-text--normal-h3")
+        title = clean(title_node.text()) if title_node else ""
+        if not title:
+            title = clean(href.rsplit("/", 1)[-1].replace("-", " "))
+        if not title:
             return None
-        url = row.get("url") or f"{ELIC_BASE}/items/{auction_id}"
-        description = clean(row.get("description") or "")
+
+        chips = [clean(c.text()) for c in card.css(".auction__tags .v-chip__content")]
+        chips = [c for c in chips if c]
+        category = chips[0].lower() if chips else ""
+        mode = next((c for c in chips if "elektron" in c.lower() or "stacjon" in c.lower()), "")
+
+        published = None
+        node = card.css_first(".auction__publication-date")
+        if node:
+            published = parse_datetime(_label_value(node.text(), "Opublikowano"))
+
+        province, address = "", ""
+        attrs = card.css(".auction__row--location .auction__attribute")
+        if attrs:
+            province = _strip_icon(attrs[0].text())
+            if len(attrs) > 1:
+                address = _strip_icon(attrs[1].text())
+
+        event_date = None
+        node = card.css_first(".auction__row--dates")
+        if node:
+            event_date = parse_datetime(_label_value(node.text(), "Termin licytacji"))
+
+        opening = estimate = None
+        for price_node in card.css(".auction__price"):
+            text = clean(price_node.text())
+            value = parse_number(re.sub(r"^[^\d]*", "", text))
+            if "oszacowan" in text.lower():
+                estimate = value
+            elif "wywoła" in text.lower() or "wywola" in text.lower():
+                opening = value
+        if opening is None and estimate is None:
+            prices = [parse_number(re.sub(r"^[^\d]*", "", clean(p.text())))
+                      for p in card.css(".auction__price")]
+            prices = [p for p in prices if p]
+            opening = prices[0] if prices else None
+            estimate = prices[1] if len(prices) > 1 else None
+
+        city, street = self._split_address(address)
+        property_type = CATEGORY_MAP.get(category) or guess_property_type(title, category)
+
         return RawListing(
-            external_id=str(auction_id),
-            url=url,
+            external_id=auction_id,
+            url=urljoin(BASE, href),
             source_key=self.key,
             kind=OfferKind.LICYTACJA,
+            transaction=TransactionType.SPRZEDAZ,
+            property_type=property_type,
             title=title[:400],
-            description=description or None,
-            price=parse_number(row.get("startPrice") or row.get("openingPrice")),
-            opening_price=parse_number(row.get("startPrice") or row.get("openingPrice")),
-            estimate_value=parse_number(row.get("estimateValue") or row.get("valuation")),
-            deposit=parse_number(row.get("deposit") or row.get("bailment")),
-            event_date=parse_datetime(row.get("startAt") or row.get("auctionStart")),
-            deadline=parse_datetime(row.get("endAt") or row.get("auctionEnd")),
-            case_number=clean(row.get("caseNumber") or row.get("signature") or "") or
-            extract_case_number(description),
-            authority=clean(self.dig(row, "bailiff", "name", default="") or row.get("office") or "") or None,
+            description=None,
+            price=opening or estimate,
+            opening_price=opening,
+            estimate_value=estimate,
+            # rękojmia to ustawowo 1/10 sumy oszacowania — liczymy, zamiast zgadywać
+            deposit=round(estimate / 10, 2) if estimate else None,
+            event_date=event_date,
+            published_at=published,
+            case_number=extract_case_number(title),
+            authority=None,
             seller_type=SellerType.KOMORNIK,
-            location_text=clean(row.get("location") or self.dig(row, "address", "city", default="") or "")
-            or None,
-            city=clean(self.dig(row, "address", "city", default="") or "") or None,
-            area=extract_area(f"{title} {description}"),
-            property_type=guess_property_type(title, description),
-            raw=row,
+            location_text=address or province or None,
+            city=city,
+            street=street,
+            area=extract_area(title),
+            extra={
+                "tryb": mode or None,
+                "kategoria_portalu": category or None,
+                "rekojmia_wyliczona": bool(estimate),
+                "province": province or None,
+            },
+            raw={"href": href, "chips": chips, "address": address},
         )
+
+    @staticmethod
+    def _split_address(address: str) -> tuple[str | None, str | None]:
+        """'ul. Parkowa 15, 47-225 Kędzierzyn-Koźle' -> ('Kędzierzyn-Koźle', 'Parkowa')."""
+        if not address:
+            return None, None
+        city = None
+        postal = POSTAL.search(address)
+        if postal:
+            city = clean(postal.group(2)) or None
+        else:
+            parts = [clean(p) for p in address.split(",") if clean(p)]
+            city = parts[-1] if parts else None
+
+        street = None
+        street_match = re.search(r"\b(?:ul\.?|al\.?|os\.?|pl\.?)\s*([^,0-9]+)", address)
+        if street_match:
+            street = clean(street_match.group(1)) or None
+        return city, street
+
+
+class ELicytacjeScraper(LicytacjeKomornikScraper):
+    """e-Licytacje — ten sam serwis, wyniki ograniczone do trybu elektronicznego.
+
+    Osobny serwis `elicytacje.komornik.pl` został wygaszony i przekierowuje na
+    `licytacje.komornik.pl`; zostawiamy klasę, żeby konfiguracje i zapisane
+    poszukiwania sprzed zmiany nadal działały.
+    """
+
+    key = "elicytacje"
+    name = "e-Licytacje komornicze (tryb elektroniczny)"
+
+    async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
+        async for item in super().run(ctx):
+            if "elektron" in (item.extra.get("tryb") or "").lower():
+                yield item

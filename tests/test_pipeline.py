@@ -93,7 +93,7 @@ class TestDeduplikacja:
         from ogloszenia.models import Listing
 
         raw = make_raw(**kw)
-        result = normalize(raw)
+        result = normalize(raw, require_region=False)
         compute_fingerprints(result.data, result.phones)
         listing = Listing(**result.data)
         session.add(listing)
@@ -127,6 +127,49 @@ class TestDeduplikacja:
         link_duplicates(session, other)
         session.flush()
         assert other.is_original is True
+
+    def test_rozne_licytacje_o_tym_samym_tytule(self, session):
+        """Obwieszczenia bywają zatytułowane identycznie — to nie czyni ich kopiami."""
+        from ogloszenia.models import OfferKind
+
+        common = {
+            "kind": OfferKind.LICYTACJA,
+            "title": "Nieruchomość gruntowa zabudowana",
+            "description": None,
+            "price": None,
+        }
+        first = self._add(session, external_id="L1", source_key="licytacje_komornik",
+                          url="https://k.pl/1", opening_price=69750.0, **common)
+        second = self._add(session, external_id="L2", source_key="licytacje_komornik",
+                           url="https://k.pl/2", opening_price=334000.0, **common)
+        link_duplicates(session, second)
+        session.flush()
+        assert second.is_original is True
+        assert first.copies_count == 0
+
+    def test_ta_sama_licytacja_po_sygnaturze(self, session):
+        from ogloszenia.models import OfferKind
+
+        common = {
+            "kind": OfferKind.LICYTACJA,
+            "title": "Licytacja lokalu, sygn. akt Km 999/25",
+            "description": None,
+            "price": None,
+            "opening_price": 150000.0,
+        }
+        first = self._add(session, external_id="S1", source_key="licytacje_komornik",
+                          url="https://k.pl/s1", **common)
+        second = self._add(session, external_id="S2", source_key="elicytacje",
+                           url="https://k.pl/s2", **common)
+        link_duplicates(session, second)
+        session.flush()
+        assert second.duplicate_of_id == first.id
+
+    def test_krotki_tytul_nie_daje_odcisku_tekstowego(self):
+        from ogloszenia.utils.text import shingle_hash
+
+        assert shingle_hash("lokal mieszkalny") is None
+        assert shingle_hash(" ".join(f"slowo{i}" for i in range(20))) is not None
 
     def test_odcisk_wymaga_kilku_cech(self):
         data = {"city": None, "street": None, "area": None, "rooms": None,

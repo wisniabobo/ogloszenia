@@ -35,20 +35,35 @@ TEXT_THRESHOLD = 88
 WINDOW_DAYS = 400
 
 
+#: ile cech naprawdę identyfikujących musi być znanych, żeby liczyć odcisk
+MIN_IDENTIFYING_PARTS = 3
+
+
 def compute_fingerprints(data: dict, phones: list[PhoneNumber]) -> dict:
-    """Uzupełnia `fingerprint`, `phone_fingerprint` i `text_shingle`."""
+    """Uzupełnia `fingerprint`, `phone_fingerprint` i `text_shingle`.
+
+    Do progu liczą się tylko cechy, które faktycznie wyróżniają nieruchomość
+    (miejscowość, ulica, metraż, pokoje, piętro). Typ i rodzaj transakcji
+    wchodzą do odcisku, ale się nie liczą — są znane praktycznie zawsze,
+    więc dopuszczenie ich do progu sklejało przypadkowe oferty z tego samego
+    miasta.
+    """
     area = data.get("area")
-    parts = [
+    identifying = [
         norm_key(data.get("city")),
         norm_key(data.get("street") or data.get("district") or ""),
         f"{round(float(area), 1)}" if area else "",
         str(data.get("rooms") or ""),
         str(data.get("floor") if data.get("floor") is not None else ""),
+    ]
+    context = [
         str(data.get("property_type").value if data.get("property_type") else ""),
         str(data.get("transaction").value if data.get("transaction") else ""),
     ]
-    strong = [p for p in parts if p]
-    data["fingerprint"] = sha1(*parts) if len(strong) >= 3 else None
+    known = [p for p in identifying if p]
+    data["fingerprint"] = (
+        sha1(*identifying, *context) if len(known) >= MIN_IDENTIFYING_PARTS else None
+    )
     data["phone_fingerprint"] = phones_fingerprint(phones)
     text = f"{data.get('title', '')} {(data.get('description') or '')[:2500]}"
     data["text_shingle"] = shingle_hash(text)
@@ -71,6 +86,10 @@ def _candidates(session: Session, listing: Listing) -> list[Listing]:
         filters.append(Listing.fingerprint == listing.fingerprint)
     if listing.text_shingle:
         filters.append(Listing.text_shingle == listing.text_shingle)
+    if listing.case_number:
+        # obwieszczenia o tej samej sygnaturze bywają publikowane kilka razy
+        # (I i II termin, wersja stacjonarna i elektroniczna)
+        filters.append(Listing.case_number == listing.case_number)
     if not filters:
         return []
 
@@ -87,10 +106,30 @@ def _candidates(session: Session, listing: Listing) -> list[Listing]:
     return list(session.scalars(stmt))
 
 
+def _auctions_match(a: Listing, b: Listing) -> bool:
+    """Dwa obwieszczenia to ta sama licytacja tylko przy twardej przesłance.
+
+    Tytuły obwieszczeń bywają identyczne i zupełnie nieopisowe, więc jedyne
+    wiarygodne sygnały to ta sama sygnatura akt albo ta sama cena wywołania
+    i ten sam termin.
+    """
+    if a.case_number and b.case_number:
+        return a.case_number == b.case_number
+    same_price = (
+        a.opening_price is not None
+        and b.opening_price is not None
+        and abs(a.opening_price - b.opening_price) < 1.0
+    )
+    same_date = a.event_date is not None and a.event_date == b.event_date
+    return same_price and same_date
+
+
 def _match(a: Listing, b: Listing) -> tuple[str, float] | None:
     """Zwraca (metoda, pewność) albo None."""
     if a.transaction != b.transaction or a.property_type != b.property_type:
         return None
+    if a.kind == OfferKind.LICYTACJA:
+        return ("licytacja", 0.95) if _auctions_match(a, b) else None
 
     if a.phone_fingerprint and a.phone_fingerprint == b.phone_fingerprint:
         if _similar_area(a.area, b.area):
@@ -102,7 +141,9 @@ def _match(a: Listing, b: Listing) -> tuple[str, float] | None:
     if a.text_shingle and a.text_shingle == b.text_shingle:
         return "text", 0.9
 
-    if _similar_area(a.area, b.area) and a.city and a.city == b.city:
+    # dopasowanie po tekście wymaga znanego metrażu po obu stronach —
+    # bez niego "lokal mieszkalny, Opole" pasowałby do każdego innego
+    if a.area and b.area and _similar_area(a.area, b.area) and a.city and a.city == b.city:
         title_score = fuzz.token_set_ratio(norm_key(a.title), norm_key(b.title))
         if title_score >= TEXT_THRESHOLD:
             desc_score = 100.0

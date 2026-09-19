@@ -40,9 +40,11 @@ class MorizonScraper(GenericHtmlScraper):
                          kind=self.kind, name=self.name)
 
     def build_urls(self, ctx: ScrapeContext) -> list[str]:
+        # robots.txt Morizona zabrania parametrów `ps[...]`, `sort=` i `limit=`,
+        # więc paginujemy wyłącznie przez `page=` i bierzemy domyślne sortowanie
         sections = self.config.get("sections") or SECTIONS
         return [
-            f"{BASE}/{section}/?ps%5Bsorting%5D=newest&page={page}"
+            f"{BASE}/{section}/?page={page}" if page > 1 else f"{BASE}/{section}/"
             for section in sections
             for page in range(1, ctx.max_pages + 1)
         ]

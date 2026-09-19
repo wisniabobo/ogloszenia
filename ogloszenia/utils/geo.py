@@ -192,12 +192,28 @@ STREET_RE = re.compile(
 )
 
 
+#: słowa, po których nazwa ulicy na pewno się skończyła
+_STREET_STOP = re.compile(
+    r"\s+(?:w|we|k/|koło|obok|tel|telefon|kontakt|cena|pow|powierzchnia|nr|oferta)\b",
+    re.I,
+)
+
+
 def extract_street(text: str | None) -> str | None:
+    """Wyciąga nazwę ulicy z tekstu typu „ul. Leona Powolnego. Kontakt 500…".
+
+    Nazwa kończy się na kropce zdania, przecinku, myślniku albo słowie, które
+    otwiera kolejną informację — bez tego do nazwy wchodziło pół opisu.
+    """
     if not text:
         return None
     m = STREET_RE.search(text)
     if not m:
         return None
     street = clean(m.group(1))
-    street = re.split(r"\s+(?:w|we|k/|koło|obok)\s+", street)[0]
-    return street[:120] or None
+    street = re.split(r"\.\s+|\s+[–—]\s+|\s+-\s+|[,;)]", street)[0]
+    street = _STREET_STOP.split(street)[0]
+    street = street.strip(" .,-–—")
+    if len(street) < 3 or street.isdigit():
+        return None
+    return street[:120]

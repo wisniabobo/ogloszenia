@@ -28,9 +28,13 @@ MONTHS_PL = {
 }
 
 
-def clean(text: str | None) -> str:
-    if not text:
+def clean(text: object | None) -> str:
+    """Normalizuje białe znaki. Przyjmuje cokolwiek — API portali potrafią
+    wstawić w pole tekstowe liczbę albo `true`."""
+    if text is None or text is False or text == "":
         return ""
+    if not isinstance(text, str):
+        text = str(text)
     text = text.replace(" ", " ").replace("​", "")
     return _WS.sub(" ", text).strip()
 
@@ -129,7 +133,13 @@ def parse_datetime(value: str | datetime | None) -> datetime | None:
 # --------------------------------------------------------------------------- #
 # Wyciąganie parametrów z tekstu
 # --------------------------------------------------------------------------- #
-AREA_RE = re.compile(r"(\d+[.,]?\d*)\s*(?:m2|m²|mkw|m\.kw|metrów|metry)", re.I)
+# Powierzchnia: dopuszczamy spację jako separator tysięcy, ale tylko w pełnych
+# trójkach cyfr — inaczej "3 pokoje, 49 m2" dałoby 349 m².
+AREA_RE = re.compile(
+    r"(\d{1,3}(?:[ \u00a0]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)\s*"
+    r"(?:m2|m²|mkw|m\.kw|metrów kwadratowych|metrów|metry)",
+    re.I,
+)
 ROOMS_RE = re.compile(r"(\d+)[\s-]*(?:pokoj|pokoi|pok\.|pokoje|pokój|pokojow)", re.I)
 FLOOR_RE = re.compile(r"(?:piętro|pietro)[:\s]*(\d+|parter\w*)", re.I)
 FLOOR_OF_RE = re.compile(r"(\d+|parter\w*)\s*piętro\s*z\s*(\d+)", re.I)
@@ -176,13 +186,22 @@ def extract_case_number(text: str) -> str | None:
     return None
 
 
-def shingle_hash(text: str, k: int = 5) -> str:
-    """Skrót odporny na drobne przeróbki opisu (do wykrywania kopii)."""
+#: poniżej tylu słów tekst nie identyfikuje oferty ("lokal mieszkalny")
+MIN_SHINGLE_WORDS = 12
+
+
+def shingle_hash(text: str, k: int = 5) -> str | None:
+    """Skrót odporny na drobne przeróbki opisu (do wykrywania kopii).
+
+    Zwraca None dla krótkich, ogólnych tekstów — obwieszczenia komornicze
+    potrafią mieć tytuł „nieruchomość gruntowa zabudowana" i bez tego progu
+    dwie różne działki z dwóch powiatów wyglądałyby na tę samą ofertę.
+    """
     words = norm_key(text).split()
-    if len(words) < k:
-        return sha1(" ".join(words))
+    if len(words) < MIN_SHINGLE_WORDS:
+        return None
     grams = {" ".join(words[i : i + k]) for i in range(len(words) - k + 1)}
-    top = sorted(grams)[: 64]
+    top = sorted(grams)[:64]
     return sha1("|".join(top))
 
 

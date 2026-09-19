@@ -138,8 +138,8 @@ def cmd_scan(
     console.print("[bold]Skanowanie…[/]")
     result = asyncio.run(
         run_scan(
-            only=list(source) or None,
-            categories=list(category) or None,
+            only=list(source or []) or None,
+            categories=list(category or []) or None,
             max_pages=pages,
             max_items=limit,
             voivodeship=region,

@@ -53,6 +53,13 @@ class TestParametry:
     def test_parter(self):
         assert extract_floor("lokal na parterze")[0] == 0
 
+    def test_powierzchnia_z_separatorem_tysiecy(self):
+        assert extract_area("budynek biurowy o powierzchni 1 240 m2") == 1240.0
+
+    def test_separator_nie_zlepia_sasiednich_liczb(self):
+        """„3 pokoje, 49 m2" to 49 m², a nie 349 m²."""
+        assert extract_area("Mieszkanie 3 pokoje, 49 m2") == 49.0
+
     def test_sygnatura_komornicza(self):
         assert extract_case_number("sygn. akt Km 1234/23") == "Km 1234/23"
 
@@ -112,6 +119,18 @@ class TestGeo:
 
     def test_ulica(self):
         assert extract_street("ul. Leona Powolnego, Opole") == "Leona Powolnego"
+
+    def test_ulica_konczy_sie_na_zdaniu(self):
+        assert extract_street("ul. Leona Powolnego. Kontakt 537 214 908.") == "Leona Powolnego"
+
+    def test_ulica_konczy_sie_na_przecinku(self):
+        assert extract_street("ul. Wrocławska, Półwieś, Opole") == "Wrocławska"
+
+    def test_ulica_wieloczlonowa(self):
+        assert extract_street("al. Wincentego Witosa 12, Opole") == "Wincentego Witosa"
+
+    def test_brak_ulicy(self):
+        assert extract_street("Mieszkanie w centrum Opola") is None
 
     def test_dzielnica(self):
         assert detect_opole_district("Sprzedam na Zaodrzu") == "Zaodrze"

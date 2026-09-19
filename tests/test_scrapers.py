@@ -38,6 +38,8 @@ OLX_OFFER = {
         {"key": "builttype", "value": {"key": "blok"}},
     ],
     "photos": [{"link": "https://img.olx.pl/{width}x{height}/a.jpg"}],
+    "contact": {"phone": True},   # OLX wystawia tu flagę, nie numer
+    "status": "active",
 }
 
 OTODOM_NEXT = {
@@ -131,16 +133,17 @@ async def collect(scraper, ctx):
 @pytest.mark.asyncio
 @respx.mock
 async def test_olx_parsuje_oferte_z_api():
-    respx.get(url__startswith="https://www.olx.pl/api/v1/friendly-links/").mock(
-        return_value=httpx.Response(200, json={"data": {"params": {"category_id": "15", "region_id": "8"}}})
-    )
-    respx.get(url__startswith="https://www.olx.pl/api/v1/offers/").mock(
+    route = respx.get(url__startswith="https://www.olx.pl/api/v1/offers/").mock(
         return_value=httpx.Response(200, json={"data": [OLX_OFFER]})
     )
 
     async with HttpClient() as client:
-        scraper = OLXScraper(client, {"paths": ["nieruchomosci/mieszkania/sprzedaz/opolskie/"]})
+        # jedna kategoria, żeby test nie zależał od pełnej mapy kategorii OLX
+        scraper = OLXScraper(client, {"categories": {"14": ["mieszkanie", "sprzedaz"]}})
         items = await collect(scraper, ScrapeContext(max_pages=1, max_items=10))
+
+    # bot sięga wyłącznie po ścieżkę, którą OLX dopuszcza w robots.txt
+    assert all("/api/v1/offers/" in str(call.request.url) for call in route.calls)
 
     assert len(items) == 1
     offer = items[0]
@@ -152,7 +155,8 @@ async def test_olx_parsuje_oferte_z_api():
     assert offer.city == "Opole"
     assert offer.district == "Śródmieście"
     assert offer.seller_type == SellerType.POSREDNIK
-    assert offer.images == ["https://img.olx.pl/800x600/a.jpg"]
+    assert offer.phones_raw == []   # flaga bool nie może trafić do numerów
+    assert offer.images == ["https://img.olx.pl/1000x750/a.jpg"]
 
 
 @pytest.mark.asyncio

@@ -16,11 +16,11 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from urllib.parse import urljoin, urlparse
-from urllib.robotparser import RobotFileParser
 
 import httpx
 
 from ..settings import get_settings
+from .robots import RobotsTxt
 
 DESKTOP_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -42,7 +42,7 @@ class FetchError(Exception):
 class HostState:
     lock: asyncio.Semaphore
     last_request: float = 0.0
-    robots: RobotFileParser | None = None
+    robots: RobotsTxt | None = None
     robots_loaded: bool = False
     penalty_until: float = 0.0
     delay: float = 0.0
@@ -106,9 +106,8 @@ class HttpClient:
         try:
             assert self._client is not None
             resp = await self._client.get(robots_url, timeout=8.0)
-            if resp.status_code == 200:
-                parser = RobotFileParser()
-                parser.parse(resp.text.splitlines())
+            if resp.status_code == 200 and "<html" not in resp.text[:200].lower():
+                parser = RobotsTxt.parse(resp.text)
                 state.robots = parser
                 crawl_delay = parser.crawl_delay(get_settings().user_agent)
                 if crawl_delay:

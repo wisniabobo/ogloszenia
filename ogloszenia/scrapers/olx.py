@@ -1,56 +1,67 @@
-"""OLX.pl — publiczne API v1 używane przez stronę.
+"""OLX.pl — publiczne API v1, z którego korzysta sama strona.
 
-Zamiast zgadywać identyfikatory kategorii i regionów (potrafią się zmieniać),
-najpierw pytamy OLX o tłumaczenie „przyjaznego” adresu na parametry zapytania:
+Endpoint, z którego korzystamy:
 
-    GET /api/v1/friendly-links/query-params/nieruchomosci/mieszkania/sprzedaz/opolskie/
+    GET /api/v1/offers/?region_id=&category_id=&offset=&limit=&sort_by=
 
-a dopiero potem odpytujemy listę ofert:
+To jedyna ścieżka API, którą OLX **sam dopuszcza** w robots.txt::
 
-    GET /api/v1/offers/?offset=0&limit=50&category_id=...&region_id=...&sort_by=created_at:desc
+    Disallow: /api/
+    Allow: /api/v1/offers/
 
-Gdy API zwróci błąd, schodzimy na parsowanie HTML (`__NEXT_DATA__` listingu).
+Dlatego nie sięgamy po `/api/v1/geo-encoder/regions/` ani po dawny
+`/api/v1/friendly-links/...` (ten zresztą zwraca już 404) — są objęte zakazem.
+Identyfikatory województw i kategorii mamy więc w tablicach poniżej; zostały
+ustalone empirycznie i można je nadpisać w `config/sources.yaml`, gdyby OLX je
+przenumerował.
 
-Telefony: endpoint `/api/v1/offers/{id}/limited-phones/` wymaga tokenu konta OLX.
-Bot go nie obchodzi — jeśli token jest skonfigurowany (`config.auth_token`),
-korzysta z niego; w przeciwnym razie numery wyciągane są z treści ogłoszenia.
+Telefony: `/api/v1/offers/{id}/limited-phones/` wymaga tokenu konta OLX.
+Bot nie obchodzi tego zabezpieczenia — jeśli token jest w konfiguracji
+(`config.auth_token`), używa go; w przeciwnym razie numery bierzemy z treści
+ogłoszenia, o ile wystawiający je tam podał.
 """
 
 from __future__ import annotations
 
+import functools
 from collections.abc import AsyncIterator
 from typing import Any
 
-from ..models import OfferKind, SellerType
-from ..utils.text import clean, parse_datetime, parse_number
+from ..models import OfferKind, PropertyType, SellerType, TransactionType
+from ..utils.text import clean, deaccent, parse_datetime, parse_number
 from .base import BaseScraper, RawListing, ScrapeContext
-from .generic_html import guess_property_type, guess_transaction
+from .generic_html import guess_property_type
 
 API = "https://www.olx.pl/api/v1"
 
-DEFAULT_PATHS = [
-    "nieruchomosci/mieszkania/sprzedaz/opolskie/",
-    "nieruchomosci/mieszkania/wynajem/opolskie/",
-    "nieruchomosci/domy/sprzedaz/opolskie/",
-    "nieruchomosci/domy/wynajem/opolskie/",
-    "nieruchomosci/dzialki/sprzedaz/opolskie/",
-    "nieruchomosci/lokale/sprzedaz/opolskie/",
-    "nieruchomosci/garaze-parkingi/opolskie/",
-    "nieruchomosci/pokoje/opolskie/",
-]
+#: kategoria -> (typ nieruchomości, rodzaj transakcji)
+CATEGORIES: dict[int, tuple[PropertyType, TransactionType]] = {
+    14: (PropertyType.MIESZKANIE, TransactionType.SPRZEDAZ),
+    15: (PropertyType.MIESZKANIE, TransactionType.WYNAJEM),
+    16: (PropertyType.MIESZKANIE, TransactionType.ZAMIANA),
+    18: (PropertyType.DOM, TransactionType.SPRZEDAZ),
+    20: (PropertyType.DOM, TransactionType.WYNAJEM),
+    22: (PropertyType.DOM, TransactionType.ZAMIANA),
+    24: (PropertyType.DZIALKA, TransactionType.SPRZEDAZ),
+    25: (PropertyType.DZIALKA, TransactionType.DZIERZAWA),
+    32: (PropertyType.LOKAL, TransactionType.NIEZNANY),
+    11: (PropertyType.POKOJ, TransactionType.WYNAJEM),
+}
 
-# Mapowanie parametrów OLX -> pola RawListing
-PARAM_MAP = {
-    "m": "area",           # powierzchnia
-    "price": "price",
-    "rooms": "rooms",
-    "floor_select": "floor",
-    "builttype": "building_type",
-    "market": "market",
-    "furniture": None,
+#: kategoria nadrzędna „Nieruchomości" — awaryjne źródło, gdy id-ki się zmienią
+PARENT_CATEGORY = 3
+
+#: identyfikatory województw w OLX (ustalone na żywym serwisie)
+REGIONS = {
+    "dolnoslaskie": 3, "kujawsko-pomorskie": 15, "lubelskie": 8, "lubuskie": 10,
+    "lodzkie": 6, "malopolskie": 13, "mazowieckie": 7, "opolskie": 12,
+    "podkarpackie": 9, "podlaskie": 14, "pomorskie": 2, "slaskie": 4,
+    "swietokrzyskie": 16, "warminsko-mazurskie": 5, "wielkopolskie": 1,
+    "zachodniopomorskie": 11,
 }
 
 ROOMS_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "kawalerka": 1}
+FLOOR_WORDS = {"floor_cellar": -1, "floor_ground": 0, "parter": 0, "floor_garret": 99}
 
 
 class OLXScraper(BaseScraper):
@@ -59,58 +70,71 @@ class OLXScraper(BaseScraper):
     base_url = "https://www.olx.pl"
     kind = OfferKind.NIERUCHOMOSC
 
-    async def _resolve_params(self, path: str) -> dict[str, Any]:
-        """Zamienia ścieżkę kategorii na parametry API (category_id, region_id, ...)."""
-        try:
-            data = await self.client.get_json(f"{API}/friendly-links/query-params/{path.strip('/')}/")
-        except Exception:
-            return {}
-        params = self.dig(data, "data", "params", default=None)
-        if isinstance(params, dict):
-            return {k: v for k, v in params.items() if v not in (None, "")}
-        return {k: v for k, v in (self.dig(data, "data", default={}) or {}).items()
-                if isinstance(v, (str, int))}
+    @functools.cached_property
+    def categories(self) -> dict[int, tuple[PropertyType, TransactionType]]:
+        configured = self.config.get("categories")
+        if not configured:
+            return CATEGORIES
+        return {
+            int(cid): (PropertyType(v[0]), TransactionType(v[1])) for cid, v in configured.items()
+        }
+
+    def _region_id(self, voivodeship: str) -> int | None:
+        if self.config.get("region_id"):
+            return int(self.config["region_id"])
+        return (self.config.get("regions") or REGIONS).get(
+            deaccent(voivodeship or "").strip().lower()
+        )
 
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
-        paths = self.config.get("paths") or DEFAULT_PATHS
-        limit = min(50, ctx.max_items)
+        region_id = self._region_id(ctx.voivodeship or "opolskie")
+        if region_id is None:
+            return
+
+        limit = min(50, max(ctx.max_items, 10))
         produced = 0
+        seen: set[str] = set()
 
-        for path in paths:
-            params = await self._resolve_params(path)
-            if not params:
-                params = dict(self.config.get("fallback_params", {}))
-            if not params:
-                continue
-            params.setdefault("sort_by", "created_at:desc")
-
+        for category_id, (ptype, ttype) in self.categories.items():
             for page in range(ctx.max_pages):
                 if produced >= ctx.max_items:
                     return
-                query = params | {"offset": page * limit, "limit": limit}
+                params = {
+                    "offset": page * limit,
+                    "limit": limit,
+                    "region_id": region_id,
+                    "category_id": category_id,
+                    "sort_by": "created_at:desc",
+                }
                 try:
-                    payload = await self.client.get_json(f"{API}/offers/", params=query)
+                    payload = await self.client.get_json(f"{API}/offers/", params=params)
                 except Exception:
                     break
                 rows = self.dig(payload, "data", default=[]) or []
                 if not rows:
                     break
                 for row in rows:
-                    item = self._parse_offer(row)
-                    if item:
-                        yield item
-                        produced += 1
-                        if produced >= ctx.max_items:
-                            return
+                    item = self._parse_offer(row, ptype, ttype)
+                    if item is None or item.external_id in seen:
+                        continue
+                    seen.add(item.external_id)
+                    yield item
+                    produced += 1
+                    if produced >= ctx.max_items:
+                        return
                 if len(rows) < limit:
                     break
 
     # ------------------------------------------------------------------ #
-    def _parse_offer(self, row: dict) -> RawListing | None:
+    def _parse_offer(
+        self, row: dict, ptype: PropertyType, ttype: TransactionType
+    ) -> RawListing | None:
         offer_id = row.get("id")
         url = row.get("url")
         title = clean(row.get("title") or "")
         if not offer_id or not url or not title:
+            return None
+        if str(row.get("status", "active")) not in ("active", "", "new"):
             return None
 
         description = clean(row.get("description") or "")
@@ -121,74 +145,91 @@ class OLXScraper(BaseScraper):
 
         params = {p.get("key"): p for p in row.get("params", []) if isinstance(p, dict)}
 
-        def param_value(key: str) -> Any:
-            entry = params.get(key) or {}
-            value = entry.get("value")
-            if isinstance(value, dict):
-                return value.get("key") or value.get("label") or value.get("value")
-            return value
+        def value_of(key: str) -> Any:
+            entry = (params.get(key) or {}).get("value")
+            if isinstance(entry, dict):
+                return entry.get("key") or entry.get("label") or entry.get("value")
+            return entry
 
-        price = None
-        price_entry = (params.get("price") or {}).get("value") or {}
+        price = currency = None
+        price_entry = (params.get("price") or {}).get("value")
         if isinstance(price_entry, dict):
             price = parse_number(price_entry.get("value"))
-            currency = price_entry.get("currency") or "PLN"
-        else:
-            currency = "PLN"
+            currency = price_entry.get("currency")
 
-        area = parse_number(param_value("m"))
-        rooms_raw = param_value("rooms")
+        rent = None
+        rent_entry = (params.get("rent") or {}).get("value")
+        if isinstance(rent_entry, dict):
+            rent = parse_number(rent_entry.get("value"))
+
+        area = parse_number(value_of("m"))
+        rooms_raw = value_of("rooms")
         rooms = ROOMS_WORDS.get(str(rooms_raw).lower()) if rooms_raw else None
-        if rooms is None:
-            rooms = int(parse_number(rooms_raw)) if parse_number(rooms_raw) else None
+        if rooms is None and rooms_raw is not None:
+            parsed = parse_number(str(rooms_raw))
+            rooms = int(parsed) if parsed is not None else None
 
-        floor_raw = param_value("floor_select")
         floor = None
+        floor_raw = value_of("floor_select")
         if floor_raw is not None:
-            text = str(floor_raw).lower()
-            floor = 0 if "parter" in text or text in {"floor_0", "0"} else None
+            key = str(floor_raw).lower()
+            floor = FLOOR_WORDS.get(key)
             if floor is None:
-                num = parse_number(text.replace("floor_", ""))
-                floor = int(num) if num is not None else None
+                parsed = parse_number(key.replace("floor_", ""))
+                floor = int(parsed) if parsed is not None else None
 
-        business = bool(row.get("business")) or self.dig(row, "user", "is_business", default=False)
-        seller_type = SellerType.POSREDNIK if business else SellerType.PRYWATNA
+        business = bool(row.get("business")) or bool(self.dig(row, "user", "is_business", default=False))
         seller_name = clean(self.dig(row, "user", "name", default="") or "") or None
+        shop_name = clean(self.dig(row, "shop", "name", default="") or "") or None
 
         photos = [
-            (p.get("link") or "").replace("{width}", "800").replace("{height}", "600")
+            (p.get("link") or "").replace("{width}", "1000").replace("{height}", "750")
             for p in row.get("photos", [])
             if isinstance(p, dict) and p.get("link")
         ]
-        contact_phone = clean(self.dig(row, "contact", "phone", default="") or "")
+        # OLX wystawia w `contact.phone` flagę bool ("czy jest numer"), a nie numer
+        raw_phone = self.dig(row, "contact", "phone", default=None)
+        contact_phone = clean(raw_phone) if isinstance(raw_phone, str) else ""
+
+        transaction = ttype
+        if transaction == TransactionType.NIEZNANY:
+            transaction = (
+                TransactionType.WYNAJEM
+                if rent is not None or "wynaj" in f"{title} {description[:200]}".lower()
+                else TransactionType.SPRZEDAZ
+            )
 
         return RawListing(
             external_id=str(offer_id),
             url=url,
             source_key=self.key,
             kind=OfferKind.NIERUCHOMOSC,
+            property_type=ptype if ptype != PropertyType.INNE else guess_property_type(title, description),
+            transaction=transaction,
             title=title,
             description=description or None,
             price=price,
-            currency=currency,
+            currency=currency or "PLN",
             area=area,
             rooms=rooms,
             floor=floor,
-            building_type=clean(str(param_value("builttype") or "")) or None,
-            market=clean(str(param_value("market") or "")) or None,
+            building_type=clean(str(value_of("builttype") or "")) or None,
+            market=clean(str(value_of("market") or "")) or None,
             city=city or None,
             district=district,
             location_text=", ".join(x for x in (city, district, region) if x) or None,
             lat=self.dig(location, "lat"),
             lon=self.dig(location, "lon"),
-            seller_type=seller_type,
-            seller_name=seller_name,
+            seller_type=SellerType.POSREDNIK if business else SellerType.PRYWATNA,
+            seller_name=shop_name or seller_name,
             phones_raw=[contact_phone] if contact_phone else [],
             images=photos[:12],
             published_at=parse_datetime(row.get("created_time")),
-            source_updated_at=parse_datetime(row.get("last_refresh_time") or row.get("valid_to_time")),
-            property_type=guess_property_type(title, description, url),
-            transaction=guess_transaction(title, url),
-            extra={"promoted": bool(row.get("promotion", {}).get("highlighted"))},
+            source_updated_at=parse_datetime(row.get("last_refresh_time")),
+            extra={
+                "czynsz": rent,
+                "promowana": bool(self.dig(row, "promotion", "highlighted", default=False)),
+                "kategoria_olx": self.dig(row, "category", "id"),
+            },
             raw=row,
         )

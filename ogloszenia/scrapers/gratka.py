@@ -40,12 +40,17 @@ class GratkaScraper(GenericHtmlScraper):
         super().__init__(client, DEFAULT_SELECTORS | (config or {}), source_key=self.key,
                          kind=self.kind, name=self.name)
 
+    #: robots.txt Gratki dopuszcza wyłącznie `page=2` … `page=10`
+    MAX_ALLOWED_PAGE = 10
+
     def build_urls(self, ctx: ScrapeContext) -> list[str]:
+        # `sort=` jest w robots.txt zabronione, więc korzystamy z domyślnej kolejności
         sections = self.config.get("sections") or SECTIONS
+        last_page = min(ctx.max_pages, self.MAX_ALLOWED_PAGE)
         return [
-            f"{BASE}/{section}?page={page}&sort=newest"
+            f"{BASE}/{section}?page={page}" if page > 1 else f"{BASE}/{section}"
             for section in sections
-            for page in range(1, ctx.max_pages + 1)
+            for page in range(1, last_page + 1)
         ]
 
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:

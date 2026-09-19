@@ -145,17 +145,17 @@ def match_agency(
     if website and not agency.website:
         agency.website = website
     if phones:
+        # Rejestr biur pokazuje numery w tej samej postaci, co lista ofert:
+        # zamaskowanej, dopóki operator świadomie nie wyłączy maskowania.
+        from ..settings import get_settings
+
+        settings = get_settings()
+        hide = settings.mask_phones or settings.store_phone_hash_only
         stored = set(agency.phones or [])
         for phone in phones:
-            stored.add(phone.masked if not _store_full_numbers() else phone.e164)
+            stored.add(phone.masked if hide else phone.e164)
         agency.phones = sorted(stored)[:10]
     return agency
-
-
-def _store_full_numbers() -> bool:
-    from ..settings import get_settings
-
-    return not get_settings().store_phone_hash_only
 
 
 def enrich_listing(session: Session, data: dict, phones: list[PhoneNumber]) -> dict:
