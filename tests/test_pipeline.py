@@ -384,3 +384,50 @@ class TestGeokodowanieDzielnic:
 
         # Opole - Wrocław to ok. 80 km w linii prostej
         assert 75 < _distance_km(50.6751, 17.9213, 51.1079, 17.0385) < 90
+
+
+class TestWygaszanieOfert:
+    """Oferty wolno wygaszać tylko po pełnym przejściu wyników.
+
+    Zwykły skan bierze najnowsze strony i z definicji nie widzi starszych
+    ofert. Uznawanie ich wtedy za zdjęte wykasowało z widoku 4785 z 6198
+    ofert w kilkanaście minut od ich zebrania.
+    """
+
+    def test_zwykly_skan_nie_wygasza(self, session):
+        from datetime import timedelta
+
+        from ogloszenia.models import ListingStatus, Source, utcnow
+        from ogloszenia.pipeline.runner import _mark_missing
+
+        source = Source(key="wygasz-test", name="test", interval_minutes=15)
+        session.add(source)
+        listing = TestDeduplikacja()._add(
+            session, external_id="W1", source_key="wygasz-test", url="https://w/1",
+            title="Mieszkanie testowe", description=None, price=300000.0, area=50.0,
+        )
+        listing.last_seen_at = utcnow() - timedelta(hours=2)
+        session.flush()
+
+        # dwie godziny bez kontaktu to dla zwykłego skanu norma
+        assert _mark_missing(session, source) == 0
+        assert listing.status == ListingStatus.AKTYWNA
+
+    def test_wygasza_dopiero_po_kilku_dniach(self, session):
+        from datetime import timedelta
+
+        from ogloszenia.models import ListingStatus, Source, utcnow
+        from ogloszenia.pipeline.runner import DAYS_MISSING_BEFORE_REMOVAL, _mark_missing
+
+        source = Source(key="wygasz-test2", name="test", interval_minutes=15)
+        session.add(source)
+        listing = TestDeduplikacja()._add(
+            session, external_id="W2", source_key="wygasz-test2", url="https://w/2",
+            title="Mieszkanie testowe", description=None, price=300000.0, area=51.0,
+        )
+        listing.last_seen_at = utcnow() - timedelta(days=DAYS_MISSING_BEFORE_REMOVAL + 1)
+        session.flush()
+
+        assert _mark_missing(session, source) == 1
+        assert listing.status == ListingStatus.NIEAKTYWNA
+        assert listing.removed_at is not None

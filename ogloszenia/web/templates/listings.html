@@ -115,18 +115,22 @@
 
   <div class="filters__actions">
     <label class="toggle {{ 'is-on' if filters.only_original }}">
+      <input type="hidden" name="only_original" value="0">
       <input type="checkbox" name="only_original" value="1" {{ 'checked' if filters.only_original }} hidden>
       bez powtórek z innych portali
     </label>
     <label class="toggle {{ 'is-on' if filters.only_active }}">
+      <input type="hidden" name="only_active" value="0">
       <input type="checkbox" name="only_active" value="1" {{ 'checked' if filters.only_active }} hidden>
       tylko aktualne
     </label>
     <label class="toggle {{ 'is-on' if filters.with_phone }}">
+      <input type="hidden" name="with_phone" value="0">
       <input type="checkbox" name="with_phone" value="1" {{ 'checked' if filters.with_phone }} hidden>
       da się zadzwonić
     </label>
     <label class="toggle {{ 'is-on' if filters.price_dropped }}">
+      <input type="hidden" name="price_dropped" value="0">
       <input type="checkbox" name="price_dropped" value="1" {{ 'checked' if filters.price_dropped }} hidden>
       po obniżce
     </label>

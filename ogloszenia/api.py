@@ -135,6 +135,20 @@ def _startup() -> None:
 # --------------------------------------------------------------------------- #
 def _filters_from_query(request: Request) -> Filters:
     params = request.query_params
+
+    def flag(name: str, default: bool) -> bool:
+        """Odczyt przełącznika z formularza.
+
+        Niezaznaczony checkbox nie wysyła niczego, więc każdy przełącznik ma
+        w formularzu ukryte pole o tej samej nazwie i wartości „0", postawione
+        przed nim. Gdy przełącznik jest włączony, przeglądarka wysyła obie
+        wartości — liczy się ostatnia. Bez tego filtrów nie dało się wyłączyć:
+        wracały do stanu domyślnego przy każdym wyszukiwaniu.
+        """
+        values = params.getlist(name)
+        if not values:
+            return default
+        return values[-1] not in ("0", "false", "")
     def num(name: str, cast=float):
         raw = params.get(name)
         if raw in (None, ""):
@@ -169,10 +183,10 @@ def _filters_from_query(request: Request) -> Filters:
         floor_max=num("floor_max", int),
         year_min=num("year_min", int),
         market=params.get("market") or None,
-        only_original=params.get("only_original", "1") not in ("0", "false", ""),
-        only_active=params.get("only_active", "1") not in ("0", "false", ""),
-        with_phone=params.get("with_phone") in ("1", "true", "on"),
-        price_dropped=params.get("price_dropped") in ("1", "true", "on"),
+        only_original=flag("only_original", True),
+        only_active=flag("only_active", True),
+        with_phone=flag("with_phone", False),
+        price_dropped=flag("price_dropped", False),
         period=params.get("period") or None,
         days_on_market_min=num("days_on_market_min", int),
         days_on_market_max=num("days_on_market_max", int),

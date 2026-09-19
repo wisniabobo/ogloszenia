@@ -33,8 +33,10 @@ from .normalize import normalize
 
 log = logging.getLogger("ogloszenia.runner")
 
-#: po ilu przebiegach bez zobaczenia oferty uznajemy ją za zdjętą
-MISSING_RUNS_BEFORE_REMOVAL = 2
+#: Po ilu dniach bez zobaczenia oferty uznajemy ją za zdjętą.
+#: Liczymy w dobach, bo tylko pełne przejście wyników widzi CAŁY zasób —
+#: a ono chodzi raz na dobę.
+DAYS_MISSING_BEFORE_REMOVAL = 3
 
 #: Co tyle ofert zamykamy transakcję. Przy pełnym przejściu jedno źródło
 #: potrafi dać kilka tysięcy pozycji — jedna transakcja na całość blokowałaby
@@ -233,7 +235,8 @@ async def _collect(source: Source, client: HttpClient, ctx: ScrapeContext) -> tu
 
 
 def _persist(source_key: str, items: list[RawListing], error: str,
-             voivodeship: str, require_region: bool) -> tuple[SourceResult, list[int]]:
+             voivodeship: str, require_region: bool,
+             complete_pass: bool = False) -> tuple[SourceResult, list[int]]:
     result = SourceResult(source_key=source_key, fetched=len(items), ok=not error, message=error)
     new_ids: list[int] = []
 
@@ -304,7 +307,11 @@ def _persist(source_key: str, items: list[RawListing], error: str,
                 session.commit()
 
         # oznaczanie ofert zdjętych ze źródła
-        if not error and items:
+        # Oferty wygaszamy WYŁĄCZNIE po pełnym przejściu wyników. Zwykły skan
+        # bierze tylko najnowsze strony, więc z definicji nie widzi starszych
+        # ofert — uznawanie ich wtedy za zdjęte kasowało z widoku prawie całą
+        # bazę w kilkanaście minut od jej zebrania.
+        if not error and items and complete_pass:
             result.removed = _mark_missing(session, source)
 
         source.last_run_at = utcnow()
@@ -330,15 +337,13 @@ def _persist(source_key: str, items: list[RawListing], error: str,
 
 
 def _mark_missing(session: Session, source: Source) -> int:
-    """Wygasza oferty, których nie widzieliśmy w kilku kolejnych przebiegach.
+    """Wygasza oferty, których od kilku dni nie ma już w źródle.
 
-    Dzięki temu licznik „ile oferta stoi" zatrzymuje się w momencie zdjęcia
-    ogłoszenia, zamiast rosnąć w nieskończoność. Wygaszamy dopiero po
-    MISSING_RUNS_BEFORE_REMOVAL przebiegach, żeby chwilowy błąd portalu nie
-    skasował połowy bazy.
+    Wywoływane tylko po PEŁNYM przejściu wyników — tylko ono widzi cały zasób
+    źródła. Dodatkowo dajemy kilka dni zapasu, żeby jeden nieudany przebieg
+    albo chwilowa awaria portalu nie wygasiły ofert, które istnieją.
     """
-    window = max(source.interval_minutes, 5) * MISSING_RUNS_BEFORE_REMOVAL
-    stale_before = utcnow() - timedelta(minutes=window)
+    stale_before = utcnow() - timedelta(days=DAYS_MISSING_BEFORE_REMOVAL)
     stale = session.scalars(
         select(Listing)
         .where(
@@ -413,7 +418,9 @@ async def run_scan(
         )
 
     for source, (items, error) in zip(sources, collected, strict=True):
-        source_result, new_ids = _persist(source.key, items, error, voivodeship, require_region)
+        source_result, new_ids = _persist(
+            source.key, items, error, voivodeship, require_region, complete_pass=deep
+        )
         result.sources.append(source_result)
         result.new_listing_ids.extend(new_ids)
 
