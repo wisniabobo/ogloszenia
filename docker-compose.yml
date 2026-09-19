@@ -1,10 +1,15 @@
-# Produkcyjny układ: aplikacja + osobny proces monitorujący + Caddy z HTTPS.
+# Aplikacja słucha WYŁĄCZNIE na 127.0.0.1:8000 i nie dotyka portów 80/443 —
+# na serwerze zwykle stoi już jakiś serwer WWW (u nas nginx obsługujący inne
+# domeny) i przejęcie tych portów zdmuchnęłoby działające strony.
+#
+# HTTPS i kierowanie ruchu robi nginx z hosta: deploy/nginx-vhost.conf
 #
 #   docker compose up -d
 #
-# Caddy sam wystawia i odnawia certyfikat Let's Encrypt dla domeny z pliku
-# .env (DOMAIN). Baza leży w wolumenie `ogl-data`, więc przeżywa przebudowę
-# obrazu.
+# Kto zaczyna na czystym serwerze i nie ma własnego nginxa, może zamiast tego
+# włączyć wbudowane Caddy (samo wystawia certyfikat):
+#
+#   docker compose --profile caddy up -d
 
 services:
   web:
@@ -17,7 +22,9 @@ services:
       OGL_WEB_HOST: 0.0.0.0
     volumes:
       - ogl-data:/data
-    expose: ["8000"]
+    ports:
+      # tylko pętla zwrotna — z internetu nie da się tu wejść bezpośrednio
+      - "127.0.0.1:8000:8000"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
       interval: 30s
@@ -41,8 +48,10 @@ services:
       web:
         condition: service_healthy
 
+  # Uruchamiane tylko przez `--profile caddy`, gdy na serwerze nie ma nginxa.
   caddy:
     image: caddy:2-alpine
+    profiles: ["caddy"]
     restart: unless-stopped
     ports: ["80:80", "443:443", "443:443/udp"]
     env_file: [.env]

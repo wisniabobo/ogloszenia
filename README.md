@@ -296,14 +296,24 @@ ogl stats · ogl export plik.csv · ogl prune · ogl searches
 
 ## Wdrożenie
 
+Jedna komenda, uruchamiana **na serwerze**:
+
 ```bash
-ssh-copy-id user@TWOJ_SERWER      # najpierw klucz, hasła nie używamy
-./deploy/deploy.sh user@TWOJ_SERWER
+curl -fsSL https://raw.githubusercontent.com/wisniabobo/ogloszenia/main/deploy/bootstrap.sh \
+  | sudo bash -s -- twoja.domena.pl twoj@email.pl
 ```
 
-Trzy kontenery: **web** (uvicorn, 2 procesy), **worker** (zbieranie ofert osobno,
-żeby wolny portal nigdy nie spowolnił strony) i **caddy** (HTTPS sam się robi
-i sam odnawia). Szczegóły, kopie zapasowe i wariant bez Dockera:
+Skrypt instaluje Dockera, klonuje repozytorium, losuje sól do haszowania
+numerów, uruchamia aplikację **na 127.0.0.1:8000** i — jeśli na serwerze jest
+nginx — dokłada vhosta tylko dla podanej domeny oraz wystawia certyfikat.
+Porty 80 i 443 zostają nietknięte, więc inne strony na tym samym serwerze
+działają dalej. Tą samą komendą się aktualizuje.
+
+Dwa kontenery: **web** (uvicorn, 2 procesy) i **worker** (zbieranie ofert osobno,
+żeby wolny portal nigdy nie spowolnił strony). Na czystym serwerze bez nginxa
+jest jeszcze profil `caddy`, który sam robi HTTPS.
+
+Szczegóły, kopie zapasowe, wariant systemd i skalowanie:
 [`deploy/README.md`](deploy/README.md).
 
 ---
