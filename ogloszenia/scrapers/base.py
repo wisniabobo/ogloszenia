@@ -86,6 +86,10 @@ class RawListing:
     share: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
+    #: Źródło było już odpytane z filtrem regionu (np. adres kategorii zawiera
+    #: województwo). Wtedy brak rozpoznanego miasta nie jest powodem do
+    #: odrzucenia oferty — portal sam zagwarantował, że jest z tego regionu.
+    region_assured: bool = False
 
 
 class BaseScraper:

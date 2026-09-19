@@ -124,8 +124,18 @@ def normalize(
     )
     street = _pick(clean(raw.street), extract_street(title), extract_street(raw.location_text or ""),
                    extract_street(description[:600]))
+    # Przedrostek „ul." przechowywany w bazie psuł geokodowanie (GUGiK zwraca
+    # wtedy zero wyników), a w interfejsie i tak dokłada go szablon. Inne typy
+    # — aleja, osiedle, plac — zostawiamy, bo zmieniają znaczenie adresu.
+    if street:
+        street = re.sub(r"^\s*(?:ul\.?|ulica)\s+", "", street, flags=re.I).strip(" .,") or None
 
     in_region = bool(place) or voivodeship.lower() in haystack.lower()
+    if raw.region_assured:
+        # Źródło zostało odpytane pod adresem zawężonym do województwa —
+        # portal sam zagwarantował region, nawet jeśli w treści nie ma nazwy
+        # miejscowości, której znamy. Odrzucanie takich ofert gubiło dane.
+        in_region = True
     if require_region and not in_region:
         return None
 

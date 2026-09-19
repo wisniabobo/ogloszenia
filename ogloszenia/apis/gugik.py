@@ -25,6 +25,24 @@ from ..utils.http import HttpClient
 UUG = "https://services.gugik.gov.pl/uug/"
 ULDK = "https://uldk.gugik.gov.pl/"
 
+#: Przedrostek typu ulicy trzeba odciąć przed zapytaniem. Sprawdzone na żywym
+#: API: „Opole, ul. Telesfora" zwraca ZERO wyników, a „Opole, Telesfora"
+#: trafia bezbłędnie. To była przyczyna tego, że większość ofert lądowała
+#: na środku miejscowości zamiast przy swojej ulicy.
+STREET_PREFIX = re.compile(
+    r"^\s*(?:ul\.?|ulica|al\.?|aleja|aleje|alei|os\.?|osiedle|pl\.?|plac|"
+    r"rondo|skwer|bulwar|park)\s+",
+    re.I,
+)
+
+
+def strip_street_prefix(street: str | None) -> str | None:
+    """„ul. Leona Powolnego" -> „Leona Powolnego"."""
+    if not street:
+        return None
+    cleaned = STREET_PREFIX.sub("", street).strip(" .,")
+    return cleaned or None
+
 
 @dataclass(slots=True)
 class GeocodeResult:
@@ -89,6 +107,8 @@ class GugikClient:
         # zwraca ZERO wyników. Dopisek powodował, że pierwsza próba zawsze
         # przepadała i każdy adres kosztował dwa zapytania zamiast jednego.
         # Region pilnuje `teryt_prefix`, sprawdzany na wszystkich trafieniach.
+        street = strip_street_prefix(street)
+
         attempts: list[tuple[str, str]] = []
         if street and number:
             attempts.append((f"{city}, {street} {number}", "address"))

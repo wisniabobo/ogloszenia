@@ -217,6 +217,7 @@ class GenericHtmlScraper(BaseScraper):
             property_type=guess_property_type(title, description),
             transaction=guess_transaction(title, description, page_url),
             raw={"jsonld": element},
+            region_assured=bool(self.config.get("region_assured")),
         )
 
     def _from_selectors(self, tree: HTMLParser, page_url: str) -> list[RawListing]:
@@ -265,6 +266,7 @@ class GenericHtmlScraper(BaseScraper):
                     case_number=extract_case_number(body) if self._kind == OfferKind.LICYTACJA else None,
                     seller_type=SellerType(cfg["seller_type"]) if cfg.get("seller_type") else SellerType.NIEZNANY,
                     authority=cfg.get("authority"),
+                    region_assured=bool(cfg.get("region_assured")),
                 )
             )
         return out

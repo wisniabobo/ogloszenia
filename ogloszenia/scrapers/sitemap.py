@@ -104,11 +104,23 @@ CHROME_SELECTORS = (
     "[class*=podobne]", "[class*=related]", "[class*=polecane]",
 )
 
+#: Elementy, w których strony trzymają właściwy opis oferty. Bez tego opisem
+#: stawał się blok parametrów („Powierzchnia 220 m² Cena za metr 1 341 zł…"),
+#: czyli tabelka, a nie opis.
+DESCRIPTION_SELECTORS = (
+    "[class*=description]", "[id*=description]", "[class*=opis]", "[id*=opis]",
+    "[class*=tresc]", "[itemprop=description]", ".offer-description", ".property-description",
+)
+
+#: rozszerzenia plików graficznych w linkach galerii
+IMAGE_LINK = re.compile(r"\.(?:jpe?g|png|webp)(?:\?|$)", re.I)
+
 #: obrazki, które nie są zdjęciem nieruchomości
 NON_PHOTO = re.compile(
     r"logo|baner|banner|nagrod|award|laureat|konkurs|ikon|icon|sprite|avatar|"
     r"placeholder|pixel|tracking|facebook|instagram|youtube|certyfikat|plebiscyt|"
-    r"aside|social|\.svg\b|/tr\?|badge|emblem|stopka|naglowek|header|footer",
+    r"aside|social|\.svg\b|/tr\?|badge|emblem|stopka|naglowek|header|footer|"
+    r"/agenci/|agent_|pracownik|zespol|team|avatar",
     re.I,
 )
 
@@ -172,7 +184,28 @@ class SitemapScraper(BaseScraper):
 
     # ------------------------------------------------------------------ #
     async def discover_offers(self, base: str, ctx: ScrapeContext) -> list[SitemapEntry]:
-        """Znajduje adresy ofert — najpierw z mapy strony, w ostateczności z menu."""
+        """Znajduje adresy ofert: z podanych stron wyników albo z mapy strony.
+
+        Duże portale generują nazwy klas CSS przy każdym wdrożeniu, więc
+        selektory pękają co tydzień. Adresy ofert są za to stabilne — dlatego
+        przechodzimy strony wyników wyłącznie po to, by zebrać odnośniki,
+        a dane czytamy już ze stron pojedynczych ofert, gdzie prawie zawsze
+        są znaczniki schema.org albo OpenGraph.
+        """
+        listing_urls = self.config.get("listing_urls")
+        if listing_urls:
+            found: dict[str, SitemapEntry] = {}
+            for template in listing_urls:
+                pages = ctx.max_pages if "{page}" in template else 1
+                for page in range(1, pages + 1):
+                    url = template.format(page=page) if "{page}" in template else template
+                    for entry in await self._crawl_links(url):
+                        found.setdefault(entry.url, entry)
+                    if len(found) >= int(self.config.get("max_offers", 400)):
+                        break
+            if found:
+                return list(found.values())
+
         sitemaps = await self._find_sitemaps(base)
         entries: dict[str, SitemapEntry] = {}
 
@@ -244,6 +277,7 @@ class SitemapScraper(BaseScraper):
         return entries
 
     async def _crawl_links(self, base: str) -> list[SitemapEntry]:
+        """Zbiera ze strony wyników odnośniki wyglądające na pojedyncze oferty."""
         try:
             tree = await self.html(base)
         except Exception:
@@ -285,6 +319,7 @@ class SitemapScraper(BaseScraper):
         data = self._from_structured(tree) or {}
         price_from_page = self._price_from_page(tree, "")
         photos = self._photos(tree, entry.url)
+        real_description = self._description_from_page(tree)
         text = self._content_text(HTMLParser(html))
 
         title = data.get("title") or self.text(tree, "h1") or self.text(tree, "title")
@@ -308,7 +343,7 @@ class SitemapScraper(BaseScraper):
             if len(distinct_prices) > MAX_DISTINCT_PRICES:
                 return None
 
-        description = data.get("description") or text
+        description = data.get("description") or real_description or text
         price = data.get("price") or price_from_page or self._price_from_text(text)
 
         # Parametry czytamy z TYTUŁU i początku opisu, nie z całej strony.
@@ -369,8 +404,22 @@ class SitemapScraper(BaseScraper):
 
     @staticmethod
     def _photos(tree: HTMLParser, page_url: str) -> list[str]:
-        """Zdjęcia nieruchomości — bez logotypów, banerów i plakietek."""
-        out: list[str] = []
+        """Zdjęcia nieruchomości — z galerii, znaczników img i teł CSS.
+
+        Same `<img>` nie wystarczają: galerie często wstawiają miniatury jako
+        tło CSS, a pełne zdjęcia trzymają w odnośnikach `<a href="…jpg">`.
+        Stąd trzy źródła naraz, z odsiewem logotypów, plakietek i portretów
+        agentów — te ostatnie potrafią być jedynymi zdjęciami na stronie.
+        """
+        candidates: list[str] = []
+
+        # 1. odnośniki galerii — zwykle pełna rozdzielczość
+        for anchor in tree.css("a"):
+            href = anchor.attributes.get("href") or ""
+            if href and IMAGE_LINK.search(href):
+                candidates.append(href)
+
+        # 2. znaczniki obrazków
         for img in tree.css("img"):
             src = (
                 img.attributes.get("src")
@@ -379,10 +428,21 @@ class SitemapScraper(BaseScraper):
                 or img.attributes.get("data-original")
                 or ""
             )
-            if not src or src.startswith("data:"):
+            if src and not src.startswith("data:"):
+                alt = img.attributes.get("alt", "")
+                css = img.attributes.get("class", "")
+                candidates.append(f"{src}\x00{alt} {css}")
+
+        # 3. tła CSS
+        html = tree.html or ""
+        candidates += re.findall(r"background-image\s*:\s*url\([\"']?([^\"')]+)", html, re.I)
+
+        out: list[str] = []
+        for candidate in candidates:
+            src, _, meta = candidate.partition("\x00")
+            if NON_PHOTO.search(f"{src} {meta}"):
                 continue
-            haystack = f"{src} {img.attributes.get('alt', '')} {img.attributes.get('class', '')}"
-            if NON_PHOTO.search(haystack):
+            if not IMAGE_LINK.search(src):
                 continue
             full = urljoin(page_url, src)
             if full not in out:
@@ -390,6 +450,25 @@ class SitemapScraper(BaseScraper):
             if len(out) >= 12:
                 break
         return out
+
+    def _description_from_page(self, tree: HTMLParser) -> str:
+        """Właściwy opis oferty, a nie tabelka parametrów."""
+        for selector in DESCRIPTION_SELECTORS:
+            try:
+                node = tree.css_first(selector)
+            except Exception:
+                continue
+            if node is None:
+                continue
+            text = clean(node.text())
+            if len(text) >= 120:
+                return text[:20000]
+        meta = tree.css_first('meta[name="description"]')
+        if meta:
+            text = clean(meta.attributes.get("content") or "")
+            if len(text) >= 60:
+                return text
+        return ""
 
     def _from_structured(self, tree: HTMLParser) -> dict:
         """Wyciąga, co się da, z JSON-LD; potem z OpenGraph."""
