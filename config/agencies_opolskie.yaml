@@ -1,0 +1,103 @@
+# =============================================================================
+# REJESTR BIUR NIERUCHOMOŚCI — WOJ. OPOLSKIE
+# =============================================================================
+# WAŻNE: ten plik jest ZIARNEM, nie kompletną listą.
+#
+# Pełna, aktualna lista biur powstaje AUTOMATYCZNIE z zebranych ofert: pipeline
+# bierze nazwę oferenta i numer telefonu z każdej oferty oznaczonej jako
+# pośrednik, scala warianty zapisu nazwy (rapidfuzz) i dopisuje biuro do tabeli
+# `agencies` z licznikiem ofert. Po pierwszym pełnym skanie:
+#
+#     ogl agencies --min-offers 1          # wszystkie wykryte biura
+#     ogl agencies --export config/agencies_opolskie.yaml   # zapis z powrotem
+#
+# Taka lista jest prawdziwa (wynika z danych), a nie przepisana z pamięci —
+# biura powstają i znikają, zmieniają nazwy i telefony.
+#
+# Pola: slug, name, city, website, phones, license_no, verified, notes
+#   verified: true  -> dane potwierdzone ręcznie, nie nadpisuj automatem
+#   verified: false -> wpis do sprawdzenia
+# =============================================================================
+
+meta:
+  wojewodztwo: opolskie
+  aktualizacja: auto
+  zrodlo_prawdy: tabela `agencies` w bazie (uzupełniana przy każdym skanie)
+
+# Sieci franczyzowe działające w całym kraju — jeśli mają oddział w regionie,
+# ich oferty wpadną z portali i zostaną tu automatycznie potwierdzone.
+# Wpisy służą do rozpoznawania marki w nazwie oferenta ("Freedom Opole",
+# "RE/MAX Partner"), nie są deklaracją, że oddział istnieje.
+sieci_ogolnopolskie:
+  - slug: freedom-nieruchomosci
+    name: Freedom Nieruchomości
+    aliases: [Freedom, Freedom Nieruchomosci]
+    verified: false
+  - slug: metrohouse
+    name: Metrohouse
+    aliases: [Metro House]
+    verified: false
+  - slug: remax
+    name: RE/MAX
+    aliases: [REMAX, RE MAX]
+    verified: false
+  - slug: northwood
+    name: Northwood
+    aliases: []
+    verified: false
+  - slug: emmerson
+    name: Emmerson
+    aliases: []
+    verified: false
+  - slug: partners-international
+    name: Partners International
+    aliases: [Partners]
+    verified: false
+  - slug: wgn
+    name: WGN Nieruchomości
+    aliases: [WGN]
+    verified: false
+  - slug: ober-haus
+    name: Ober-Haus
+    aliases: [Ober Haus]
+    verified: false
+  - slug: home-broker
+    name: Home Broker
+    aliases: []
+    verified: false
+
+# Biura lokalne — wypełniane automatycznie przez `ogl agencies --export`.
+# Format przykładowy (zostaw pusty przy pierwszym uruchomieniu):
+#
+# lokalne:
+#   - slug: przyklad-nieruchomosci-opole
+#     name: Przykład Nieruchomości
+#     city: Opole
+#     website: https://example.pl
+#     phones: ["+48771234567"]
+#     verified: true
+lokalne: []
+
+# Wzorce nazw, po których rozpoznajemy, że oferent jest biurem, nawet gdy
+# portal nie oznaczył go jako pośrednika.
+wzorce_posrednika:
+  - "nieruchomo"          # Nieruchomości, Nieruchomosci
+  - "biuro nieruchomo"
+  - "real estate"
+  - "estate"
+  - "kancelaria nieruchomo"
+  - "agencja nieruchomo"
+  - "\\bsp\\. z o\\.o\\."
+  - "\\bs\\.c\\.\\b"
+  - "\\bp\\.h\\.u\\."
+  - "deweloper"
+  - "invest"
+  - "development"
+  - "grupa "
+  - "dom &"
+  - "home\\b"
+  - "house\\b"
+  - "property"
+  - "posrednictwo|pośrednictwo"
+  - "licencja nr"
+  - "\\bpfrn\\b|\\bwspon\\b"     # organizacje branżowe w stopce ogłoszenia
