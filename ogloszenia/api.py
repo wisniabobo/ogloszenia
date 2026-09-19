@@ -544,6 +544,42 @@ async def api_surroundings(listing_id: int, db: DB, radius: int = 1000) -> dict:
     return {"listing_id": listing_id, "radius_m": radius, "poi": summary}
 
 
+@app.get("/api/listings/{listing_id}/dzialka")
+async def api_parcel(listing_id: int, db: DB) -> dict:
+    """Działka ewidencyjna pod ofertą — z rejestru GUGiK.
+
+    Przydatne zwłaszcza przy gruntach i licytacjach: dostajemy identyfikator
+    działki, po którym da się sprawdzić księgę wieczystą, oraz jej rzeczywisty
+    kształt. Tego nie podaje żaden portal ogłoszeniowy.
+    """
+    from .apis.gugik import GugikClient
+    from .utils.http import HttpClient
+
+    listing = db.get(Listing, listing_id)
+    if not listing:
+        raise HTTPException(404, "Nie ma takiej oferty")
+    if listing.lat is None or listing.lon is None:
+        return {"listing_id": listing_id, "dzialka": None,
+                "info": "oferta nie ma współrzędnych"}
+    if listing.geo_precision not in ("address", "street"):
+        return {"listing_id": listing_id, "dzialka": None,
+                "info": "położenie jest zbyt przybliżone, żeby wskazać działkę"}
+
+    async with HttpClient(concurrency=2) as http:
+        parcel = await GugikClient(http).parcel_by_point(listing.lat, listing.lon)
+    if parcel is None:
+        return {"listing_id": listing_id, "dzialka": None, "info": "nie znaleziono działki"}
+    return {
+        "listing_id": listing_id,
+        "dzialka": {
+            "identyfikator": parcel.identifier,
+            "teryt": parcel.teryt,
+            "obreb": parcel.region,
+            "geometria_wkt": parcel.geometry_wkt,
+        },
+    }
+
+
 @app.get("/api/stats")
 def api_stats(db: DB) -> dict:
     return dashboard_stats(db)

@@ -60,6 +60,31 @@ async function saveSearch() {
     : "Nie udało się zapisać poszukiwania.");
 }
 
+/* Działka ewidencyjna z rejestru GUGiK — na żądanie, bo to zapytanie do
+   cudzego serwera i nie ma powodu robić go przy każdym otwarciu strony. */
+async function loadParcel(button, listingId) {
+  const box = document.getElementById("parcel-result");
+  button.disabled = true;
+  button.textContent = "sprawdzam…";
+  try {
+    const resp = await fetch(`/api/listings/${listingId}/dzialka`);
+    const data = await resp.json();
+    if (!data.dzialka) {
+      box.innerHTML = `<p class="muted">${data.info || "Nie udało się ustalić działki."}</p>`;
+    } else {
+      const p = data.dzialka;
+      box.innerHTML = `<table class="table"><tbody>
+        <tr><th>Identyfikator działki</th><td><code>${p.identyfikator}</code></td></tr>
+        ${p.obreb ? `<tr><th>Obręb</th><td>${p.obreb}</td></tr>` : ""}
+      </tbody></table>`;
+    }
+  } catch {
+    box.innerHTML = `<p class="muted">Rejestr nie odpowiedział. Spróbuj ponownie później.</p>`;
+  }
+  button.disabled = false;
+  button.textContent = "Sprawdź działkę pod tym adresem";
+}
+
 /* Przełączniki filtrów wysyłają formularz od razu — bez szukania przycisku. */
 document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".toggle input[type=checkbox]").forEach((box) => {

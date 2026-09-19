@@ -156,6 +156,17 @@
   </p>
   {% endif %}
 
+  {% if listing.lat and listing.geo_precision in ('address', 'street') %}
+  <div class="section-title">Działka ewidencyjna</div>
+  <p class="muted" style="font-size:14px;margin:0 0 8px">
+    Identyfikator działki pozwala sprawdzić księgę wieczystą i rzeczywisty kształt
+    gruntu. Dane pochodzą z rejestru GUGiK — żaden portal ogłoszeniowy ich nie podaje.
+  </p>
+  <button class="btn btn--quiet btn--sm" type="button"
+          onclick="loadParcel(this, {{ listing.id }})">Sprawdź działkę pod tym adresem</button>
+  <div id="parcel-result" style="margin-top:9px"></div>
+  {% endif %}
+
   <div class="section-title">Skąd to wiemy</div>
   <table class="table">
     <tbody>

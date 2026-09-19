@@ -136,7 +136,6 @@ class Agency(Base):
     website: Mapped[str | None] = mapped_column(String(400))
     email: Mapped[str | None] = mapped_column(String(200))
     phones: Mapped[list] = mapped_column(JSON, default=list)
-    license_no: Mapped[str | None] = mapped_column(String(64))
     source_hint: Mapped[str | None] = mapped_column(String(200))
     address: Mapped[str | None] = mapped_column(String(300))
     postal_code: Mapped[str | None] = mapped_column(String(8))
@@ -223,7 +222,6 @@ class Listing(Base):
     teryt: Mapped[str | None] = mapped_column(String(16), index=True)
     simc: Mapped[str | None] = mapped_column(String(16))
     postal_code: Mapped[str | None] = mapped_column(String(8))
-    parcel_id: Mapped[str | None] = mapped_column(String(64))       # działka ewidencyjna
     poi: Mapped[dict] = mapped_column(JSON, default=dict)           # odległości do udogodnień
 
     # --- oferent ---
@@ -237,7 +235,6 @@ class Listing(Base):
     # --- deduplikacja ---
     fingerprint: Mapped[str | None] = mapped_column(String(64))
     phone_fingerprint: Mapped[str | None] = mapped_column(String(64), index=True)
-    image_fingerprint: Mapped[str | None] = mapped_column(String(64))
     text_shingle: Mapped[str | None] = mapped_column(String(64))
     is_original: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     duplicate_of_id: Mapped[int | None] = mapped_column(
