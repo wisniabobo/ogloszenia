@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.cors import CORSMiddleware
 
 from . import __version__
+from .contacts import contacts_for
 from .db import get_session_factory, init_db
 from .models import (
     Agency,
@@ -48,6 +49,31 @@ from .utils.geo import all_cities, counties
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "web" / "templates"))
+
+
+def _asset_version(name: str) -> str:
+    """Znacznik zmiany pliku statycznego, doklejany do adresu.
+
+    Statyki serwujemy z długim cache, żeby strona wstawała natychmiast. Bez
+    takiego znacznika każda poprawka stylu byłaby niewidoczna dla wracających
+    użytkowników przez dobę — a przy pracy nad wyglądem to oznacza wrażenie,
+    że "nic się nie zmieniło".
+    """
+    path = BASE_DIR / "web" / "static" / name
+    try:
+        return str(int(path.stat().st_mtime))
+    except OSError:
+        return __version__
+
+
+def asset(name: str) -> str:
+    return f"/static/{name}?v={_asset_version(name)}"
+
+
+templates.env.globals["asset"] = asset
+# Szablon karty oferty sam pyta o numery kontaktowe — inaczej każdy widok
+# musiałby je przekazywać osobno i łatwo byłoby o tym zapomnieć.
+templates.env.globals["contacts_for"] = contacts_for
 
 app = FastAPI(
     title="ogloszenia — otwarty monitor rynku nieruchomości",
@@ -207,6 +233,7 @@ def listing_to_dict(listing: Listing, *, reveal_phone: bool = False) -> dict[str
             "agency_id": listing.agency_id,
         },
         "phones": [p.masked if not reveal_phone else (p.national or p.masked) for p in listing.phones],
+        "kontakty": [c.as_dict() for c in contacts_for(listing)],
         "images": listing.images or [],
         "is_original": listing.is_original,
         "copies_count": listing.copies_count,
@@ -436,6 +463,18 @@ def api_listing(listing_id: int, db: DB) -> dict:
         )
     ]
     return data
+
+
+@app.get("/api/listings/{listing_id}/kontakt")
+def api_listing_contacts(listing_id: int, db: DB) -> dict:
+    """Numery kontaktowe oferty wraz z pochodzeniem (ogłoszenie / centrala biura)."""
+    listing = db.get(Listing, listing_id)
+    if not listing:
+        raise HTTPException(404, "Nie ma takiej oferty")
+    return {
+        "listing_id": listing.id,
+        "kontakty": [c.as_dict() for c in contacts_for(listing)],
+    }
 
 
 @app.get("/api/listings/{listing_id}/phone")

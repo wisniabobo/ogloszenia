@@ -1,10 +1,13 @@
 {% extends "base.html" %}
-{% from "_macros.html" import listing_card %}
+{% from "_macros.html" import offer_card %}
+{% block title %}Schowek{% endblock %}
 {% block heading %}Schowek{% endblock %}
+{% block subhead %}<span class="page__count">{{ rows|length }} zapisanych</span>{% endblock %}
 {% block content %}
-{% for favorite, listing in rows %}
-  {{ listing_card(listing) }}
-{% else %}
-  <div class="empty">Schowek jest pusty. Dodawaj oferty przyciskiem „Do schowka".</div>
+{% for favorite, listing in rows %}{{ offer_card(listing) }}{% else %}
+  <div class="empty">
+    <strong>Schowek jest pusty.</strong>
+    Przy każdej ofercie jest przycisk „Zapisz" — wrócisz do niej tutaj.
+  </div>
 {% endfor %}
 {% endblock %}

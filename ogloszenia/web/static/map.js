@@ -46,8 +46,8 @@ function popupHtml(p) {
   ].filter(Boolean).join(' · ');
   return `<h4>${fmt(p.p)} zł</h4>
     <div><b>${p.t}</b></div>
-    <div class="popup-params">${where || ''}${params ? '<br>' + params : ''}</div>
-    <div class="popup-params" style="font-size:12px">${p.src} · stoi ${p.d} dni${badges ? ' · ' + badges : ''}</div>
+    <div class="pop-meta">${where || ''}${params ? '<br>' + params : ''}</div>
+    <div class="pop-meta" style="font-size:12px">${p.src} · stoi ${p.d} dni${badges ? ' · ' + badges : ''}</div>
     <a href="/oferta/${p.id}">Szczegóły</a> ·
     <a href="${p.u}" target="_blank" rel="noopener noreferrer">Źródło ↗</a>`;
 }
@@ -59,7 +59,7 @@ async function initMap(query) {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
   }).addTo(map);
 
-  const legend = document.getElementById('legend-scale');
+  const legend = document.getElementById('legend');
   legend.innerHTML = SCALE.map(s => `<span style="background:${s.color}">${s.label}</span>`).join('');
 
   const cluster = L.markerClusterGroup({
@@ -88,7 +88,7 @@ async function initMap(query) {
     const marker = L.marker([lat, lon], {
       icon: L.divIcon({
         className: '',
-        html: `<div class="price-pin" style="background:${color}">${pinLabel(p)}</div>`,
+        html: `<div class="pin" style="background:${color}">${pinLabel(p)}</div>`,
         iconSize: null,
       }),
     });
@@ -107,8 +107,8 @@ async function initMap(query) {
   let radiusMode = false, circle = null;
   document.getElementById('btn-radius').addEventListener('click', (e) => {
     radiusMode = !radiusMode;
-    e.target.classList.toggle('ghost', radiusMode);
-    e.target.textContent = radiusMode ? '📍 Kliknij środek…' : '📍 Szukaj w promieniu';
+    e.target.classList.toggle('btn--ghost', radiusMode);
+    e.target.textContent = radiusMode ? 'Kliknij środek na mapie…' : 'Szukaj w promieniu';
     if (!radiusMode && circle) { map.removeLayer(circle); circle = null; applyRadius(null); }
   });
 
@@ -122,7 +122,7 @@ async function initMap(query) {
       const p = f.properties;
       const m = L.marker([lat, lon], {
         icon: L.divIcon({ className: '',
-          html: `<div class="price-pin" style="background:${colorFor(p)}">${pinLabel(p)}</div>`,
+          html: `<div class="pin" style="background:${colorFor(p)}">${pinLabel(p)}</div>`,
           iconSize: null }),
       });
       m.bindPopup(() => popupHtml(p), { maxWidth: 300 });
@@ -143,7 +143,7 @@ async function initMap(query) {
   });
 
   // --- podgląd rozkładu cen za m² w widocznym obszarze
-  document.getElementById('btn-heat').addEventListener('click', () => {
+  document.getElementById('btn-stats').addEventListener('click', () => {
     const visible = features.filter(f => {
       const [lon, lat] = f.geometry.coordinates;
       return map.getBounds().contains([lat, lon]) && f.properties.m2;

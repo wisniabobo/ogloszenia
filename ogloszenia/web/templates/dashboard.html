@@ -1,74 +1,103 @@
 {% extends "base.html" %}
-{% from "_macros.html" import listing_card, money %}
-{% block heading %}Pulpit{% endblock %}
+{% from "_macros.html" import offer_card, money %}
+{% block title %}Rynek nieruchomości w woj. opolskim — podsumowanie{% endblock %}
+{% block heading %}Rynek w liczbach{% endblock %}
+{% block actions %}<a class="btn btn--sm" href="/nieruchomosci">Przeglądaj oferty</a>{% endblock %}
 {% block content %}
 
-<div class="stat-grid">
-  <div class="stat"><div class="label">Oferty aktywne</div><div class="value">{{ stats.total }}</div>
-    <div class="sub">{{ stats.original }} oryginalnych · {{ stats.copies }} kopii</div></div>
-  <div class="stat"><div class="label">Nowe dziś</div><div class="value">{{ stats.today }}</div>
-    <div class="sub">{{ stats.week }} w ciągu 7 dni</div></div>
-  <div class="stat"><div class="label">Obniżki ceny</div><div class="value">{{ stats.price_drops }}</div>
-    <div class="sub">oferty tańsze niż na starcie</div></div>
-  <div class="stat"><div class="label">Licytacje</div><div class="value">{{ stats.auctions }}</div>
-    <div class="sub">komornicze i syndyczne</div></div>
-  <div class="stat"><div class="label">Przetargi</div><div class="value">{{ stats.tenders }}</div>
-    <div class="sub">instytucje i gminy</div></div>
-  <div class="stat"><div class="label">Z numerem telefonu</div><div class="value">{{ stats.with_phone }}</div>
-    <div class="sub">{{ stats.agencies }} biur w rejestrze</div></div>
-  <div class="stat"><div class="label">Średnia cena m² (mieszkania)</div>
-    <div class="value">{{ money(stats.avg_price_m2, 'zł') }}</div>
-    <div class="sub">oferty oryginalne, aktywne</div></div>
+<div class="stats">
+  <div class="stat"><div class="stat__label">Ofert w bazie</div>
+    <div class="stat__value num">{{ '{:,}'.format(stats.original).replace(',', ' ') }}</div>
+    <div class="stat__hint">+ {{ stats.copies }} powtórzeń z innych portali</div></div>
+  <div class="stat"><div class="stat__label">Średnia cena m²</div>
+    <div class="stat__value num">{{ money(stats.avg_price_m2, 'zł') }}</div>
+    <div class="stat__hint">mieszkania na sprzedaż</div></div>
+  <div class="stat"><div class="stat__label">Nowe dzisiaj</div>
+    <div class="stat__value num">{{ stats.today }}</div>
+    <div class="stat__hint">{{ stats.week }} w ciągu tygodnia</div></div>
+  <div class="stat"><div class="stat__label">Po obniżce</div>
+    <div class="stat__value num">{{ stats.price_drops }}</div>
+    <div class="stat__hint">tańsze niż na starcie</div></div>
+  <div class="stat"><div class="stat__label">Licytacje</div>
+    <div class="stat__value num">{{ stats.auctions }}</div>
+    <div class="stat__hint">komornicze, skarbowe, syndyczne</div></div>
+  <div class="stat"><div class="stat__label">Przetargi</div>
+    <div class="stat__value num">{{ stats.tenders }}</div>
+    <div class="stat__hint">instytucje i gminy</div></div>
+  <div class="stat"><div class="stat__label">Biura nieruchomości</div>
+    <div class="stat__value num">{{ stats.agencies }}</div>
+    <div class="stat__hint">{{ stats.with_phone }} ofert z kontaktem</div></div>
 </div>
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px" class="two-col">
-  <div class="card card-pad">
-    <div class="section-title" style="margin-top:0">Oferty według źródła</div>
-    <table class="grid">
-      <tr><th>Źródło</th><th class="right">Oferty</th></tr>
-      {% for row in stats.by_source[:12] %}
-        <tr><td>{{ row.source }}</td><td class="right">{{ row.count }}</td></tr>
-      {% else %}
-        <tr><td colspan="2" class="muted">Brak danych — uruchom <code>ogl scan</code></td></tr>
-      {% endfor %}
-    </table>
-  </div>
-  <div class="card card-pad">
-    <div class="section-title" style="margin-top:0">Najwięcej ofert w miejscowościach</div>
-    <table class="grid">
-      <tr><th>Miejscowość</th><th class="right">Oferty</th></tr>
+<div class="cols-2" style="margin-top:20px">
+  <div class="card card--pad">
+    <div class="section-title" style="margin-top:0">Gdzie jest najwięcej ofert</div>
+    <table class="table">
+      <thead><tr><th>Miejscowość</th><th class="num">Ofert</th></tr></thead>
+      <tbody>
       {% for row in stats.by_city %}
-        <tr><td>{{ row.city }}</td><td class="right">{{ row.count }}</td></tr>
+        <tr><td><a href="/nieruchomosci?city={{ row.city }}">{{ row.city }}</a></td>
+            <td class="num">{{ row.count }}</td></tr>
       {% else %}
-        <tr><td colspan="2" class="muted">Brak danych</td></tr>
+        <tr><td colspan="2" class="muted">Brak danych — zbieranie dopiero rusza.</td></tr>
       {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card card--pad">
+    <div class="section-title" style="margin-top:0">Skąd pochodzą oferty</div>
+    <table class="table">
+      <thead><tr><th>Serwis</th><th class="num">Ofert</th></tr></thead>
+      <tbody>
+      {% for row in stats.by_source[:12] %}
+        <tr><td><a href="/nieruchomosci?source={{ row.source }}">{{ row.source }}</a></td>
+            <td class="num">{{ row.count }}</td></tr>
+      {% else %}
+        <tr><td colspan="2" class="muted">Brak danych.</td></tr>
+      {% endfor %}
+      </tbody>
     </table>
   </div>
 </div>
 
-<div class="section-title">Ostatnie przebiegi</div>
-<table class="grid">
-  <tr><th>Źródło</th><th>Start</th><th class="right">Pobrane</th><th class="right">Nowe</th>
-      <th class="right">Zmienione</th><th class="right">Kopie</th><th>Status</th></tr>
+<div class="section-title">Kto wystawia oferty</div>
+<div class="stats">
+  {% for label, key in [('Biura nieruchomości','posrednik'), ('Osoby prywatne','prywatna'),
+                        ('Deweloperzy','deweloper'), ('Komornicy','komornik')] %}
+    {% if stats.by_seller.get(key) %}
+    <div class="stat">
+      <div class="stat__label">{{ label }}</div>
+      <div class="stat__value num">{{ stats.by_seller[key] }}</div>
+      <div class="stat__hint">{{ (100 * stats.by_seller[key] / stats.original) | round(0) | int }}% rynku</div>
+    </div>
+    {% endif %}
+  {% endfor %}
+</div>
+
+<div class="section-title">Ostatnio dodane</div>
+{% for listing in newest %}{{ offer_card(listing) }}{% else %}
+  <div class="empty"><strong>Baza jest jeszcze pusta.</strong> Zbieranie ofert rusza automatycznie co kwadrans.</div>
+{% endfor %}
+
+<div class="section-title">Czy zbieranie działa</div>
+<table class="table">
+  <thead><tr><th>Serwis</th><th>Kiedy</th><th class="num">Pobrane</th><th class="num">Nowe</th>
+             <th class="num">Powtórzenia</th><th>Wynik</th></tr></thead>
+  <tbody>
   {% for run in runs %}
   <tr>
     <td>{{ run.source_key }}</td>
-    <td class="nowrap">{{ run.started_at.strftime('%d.%m %H:%M') }}</td>
-    <td class="right">{{ run.fetched }}</td>
-    <td class="right">{{ run.new }}</td>
-    <td class="right">{{ run.updated }}</td>
-    <td class="right">{{ run.duplicates }}</td>
-    <td>{% if run.ok %}<span class="dot-ok"></span>ok{% else %}<span class="dot-err"></span>{{ (run.message or 'błąd')[:70] }}{% endif %}</td>
+    <td class="nowrap muted">{{ run.started_at.strftime('%d.%m, %H:%M') }}</td>
+    <td class="num">{{ run.fetched }}</td>
+    <td class="num">{{ run.new }}</td>
+    <td class="num">{{ run.duplicates }}</td>
+    <td>{% if run.ok %}<span class="dot dot--ok"></span>w porządku
+        {% else %}<span class="dot dot--err"></span>{{ (run.message or 'błąd')[:60] }}{% endif %}</td>
   </tr>
   {% else %}
-  <tr><td colspan="7" class="muted">Jeszcze nie było skanu.</td></tr>
+  <tr><td colspan="6" class="muted">Jeszcze nie było przebiegu.</td></tr>
   {% endfor %}
+  </tbody>
 </table>
-
-<div class="section-title">Najnowsze oferty</div>
-{% for listing in newest %}{{ listing_card(listing) }}{% else %}
-<div class="empty">Brak ofert w bazie. Uruchom pierwszy skan: <code>ogl scan</code></div>
-{% endfor %}
-
-<style>@media (max-width: 900px) { .two-col { grid-template-columns: 1fr !important; } }</style>
 {% endblock %}

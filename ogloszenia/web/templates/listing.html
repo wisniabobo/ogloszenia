@@ -1,129 +1,174 @@
 {% extends "base.html" %}
-{% from "_macros.html" import money, seller_badge, age_label, street_label %}
+{% from "_macros.html" import money, area, age, seller_tag, address %}
+{% block title %}{{ listing.title[:70] }}{% endblock %}
 {% block heading %}Szczegóły oferty{% endblock %}
+{% block actions %}
+  <a class="btn btn--quiet btn--sm" href="javascript:history.back()">← Wróć do listy</a>
+  <a class="btn btn--sm" href="{{ listing.url }}" target="_blank" rel="noopener noreferrer">Otwórz w serwisie ↗</a>
+{% endblock %}
 {% block content %}
 
 {% if original %}
-<div class="notice">
-  To jest <strong>kopia</strong>. Oferta oryginalna:
-  <a href="/oferta/{{ original.id }}">{{ original.title }}</a> ({{ original.source_key }},
-  dodana {{ original.first_seen_at.strftime('%d.%m.%Y') }}).
+<div class="note">
+  To jest <strong>powtórzenie</strong> oferty, która wcześniej pojawiła się gdzie indziej.
+  Pierwotne ogłoszenie: <a href="/oferta/{{ original.id }}">{{ original.title[:70] }}</a>
+  ({{ original.source_key }}, {{ original.first_seen_at.strftime('%d.%m.%Y') }}).
 </div>
 {% endif %}
 
-<div class="card card-pad">
-  <div class="badges">
-    {% if listing.is_original %}<span class="badge original">Oryginalna</span>{% else %}<span class="badge copy">Kopia</span>{% endif %}
-    {{ seller_badge(listing) }}
-    <span class="badge source">{{ listing.source_key }}</span>
-    <span class="badge age">stoi {{ age_label(listing.days_on_market) }}</span>
-    {% if listing.copies_count %}<span class="badge copy">{{ listing.copies_count }} kopii</span>{% endif %}
-    {% if listing.status.value != 'aktywna' %}<span class="badge inactive">nieaktywna</span>{% endif %}
+<div class="card card--pad">
+  <div class="tags">
+    {% if listing.is_original %}<span class="tag tag--original">oferta pierwotna</span>
+    {% else %}<span class="tag tag--copy">powtórzenie</span>{% endif %}
+    {{ seller_tag(listing) }}
+    <span class="tag tag--source">{{ listing.source_key }}</span>
+    <span class="tag tag--age">na rynku {{ age(listing.days_on_market) }}</span>
+    {% if listing.copies_count %}<span class="tag tag--copy">także na {{ listing.copies_count }} innych portalach</span>{% endif %}
+    {% if listing.status.value != 'aktywna' %}<span class="tag tag--gone">już nieaktualna</span>{% endif %}
   </div>
 
-  <h2 style="margin:6px 0 4px">{{ listing.title }}</h2>
-  <div class="muted" style="margin-bottom:12px">
-    {% if listing.street %}{{ street_label(listing.street) }}, {% endif %}
-    {% if listing.district %}{{ listing.district }}, {% endif %}
-    {{ listing.city }}{% if listing.county and listing.county != listing.city %}, pow. {{ listing.county }}{% endif %}
-    · <a href="{{ listing.url }}" target="_blank" rel="noopener noreferrer">otwórz w źródle ↗</a>
-  </div>
+  <h2 style="font-size:22px;margin:8px 0 6px">{{ listing.title }}</h2>
+  <p class="muted" style="margin:0 0 16px">
+    {% if listing.street %}{{ address(listing.street) }}, {% endif %}
+    {% if listing.district %}{{ listing.district }}, {% endif %}{{ listing.city }}
+    {%- if listing.county and listing.county != listing.city %} · pow. {{ listing.county }}{% endif %}
+  </p>
 
-  <div class="stat-grid" style="margin-bottom:16px">
-    <div class="stat"><div class="label">Cena</div><div class="value">{{ money(listing.price) }}</div>
+  <div class="stats">
+    <div class="stat"><div class="stat__label">Cena</div>
+      <div class="stat__value num">{{ money(listing.price) }}</div>
       {% if listing.initial_price and listing.initial_price != listing.price %}
-      <div class="sub">start: {{ money(listing.initial_price) }}</div>{% endif %}</div>
-    {% if listing.price_per_m2 %}<div class="stat"><div class="label">Cena za m²</div>
-      <div class="value">{{ money(listing.price_per_m2, 'zł') }}</div></div>{% endif %}
-    {% if listing.area %}<div class="stat"><div class="label">Powierzchnia</div>
-      <div class="value">{{ listing.area }} m²</div>
-      {% if listing.plot_area %}<div class="sub">działka {{ listing.plot_area }} m²</div>{% endif %}</div>{% endif %}
-    {% if listing.rooms %}<div class="stat"><div class="label">Pokoje</div><div class="value">{{ listing.rooms }}</div></div>{% endif %}
-    {% if listing.floor is not none %}<div class="stat"><div class="label">Piętro</div>
-      <div class="value">{{ 'parter' if listing.floor == 0 else listing.floor }}</div>
-      {% if listing.floors_total %}<div class="sub">z {{ listing.floors_total }}</div>{% endif %}</div>{% endif %}
-    {% if listing.year_built %}<div class="stat"><div class="label">Rok budowy</div><div class="value">{{ listing.year_built }}</div></div>{% endif %}
+        <div class="stat__hint">na starcie {{ money(listing.initial_price) }}</div>{% endif %}</div>
+    {% if listing.price_per_m2 %}<div class="stat"><div class="stat__label">Za metr</div>
+      <div class="stat__value num">{{ money(listing.price_per_m2, 'zł') }}</div></div>{% endif %}
+    {% if listing.area %}<div class="stat"><div class="stat__label">Powierzchnia</div>
+      <div class="stat__value num">{{ area(listing.area) }}</div>
+      {% if listing.plot_area %}<div class="stat__hint">działka {{ area(listing.plot_area) }}</div>{% endif %}</div>{% endif %}
+    {% if listing.rooms %}<div class="stat"><div class="stat__label">Pokoje</div>
+      <div class="stat__value num">{{ listing.rooms }}</div></div>{% endif %}
+    {% if listing.floor is not none %}<div class="stat"><div class="stat__label">Piętro</div>
+      <div class="stat__value">{{ 'parter' if listing.floor == 0 else listing.floor }}</div>
+      {% if listing.floors_total %}<div class="stat__hint">budynek ma {{ listing.floors_total }}</div>{% endif %}</div>{% endif %}
+    {% if listing.year_built %}<div class="stat"><div class="stat__label">Rok budowy</div>
+      <div class="stat__value num">{{ listing.year_built }}</div></div>{% endif %}
   </div>
 
   {% if listing.kind.value in ('licytacja', 'przetarg', 'wykaz') %}
-  <div class="section-title">Dane postępowania</div>
-  <table class="grid">
+  <div class="section-title">Warunki postępowania</div>
+  <table class="table">
+    <tbody>
     {% if listing.opening_price %}<tr><th>Cena wywoławcza</th><td>{{ money(listing.opening_price) }}</td></tr>{% endif %}
     {% if listing.estimate_value %}<tr><th>Suma oszacowania</th><td>{{ money(listing.estimate_value) }}</td></tr>{% endif %}
     {% if listing.deposit %}<tr><th>Rękojmia / wadium</th><td>{{ money(listing.deposit) }}</td></tr>{% endif %}
-    {% if listing.event_date %}<tr><th>Termin</th><td>{{ listing.event_date.strftime('%d.%m.%Y %H:%M') }}</td></tr>{% endif %}
-    {% if listing.deadline %}<tr><th>Składanie ofert do</th><td>{{ listing.deadline.strftime('%d.%m.%Y %H:%M') }}</td></tr>{% endif %}
-    {% if listing.case_number %}<tr><th>Sygnatura</th><td>{{ listing.case_number }}</td></tr>{% endif %}
-    {% if listing.authority %}<tr><th>Organ / prowadzący</th><td>{{ listing.authority }}</td></tr>{% endif %}
+    {% if listing.event_date %}<tr><th>Termin licytacji</th><td><strong>{{ listing.event_date.strftime('%d.%m.%Y, godz. %H:%M') }}</strong></td></tr>{% endif %}
+    {% if listing.deadline %}<tr><th>Oferty do</th><td>{{ listing.deadline.strftime('%d.%m.%Y') }}</td></tr>{% endif %}
+    {% if listing.case_number %}<tr><th>Sygnatura akt</th><td>{{ listing.case_number }}</td></tr>{% endif %}
+    {% if listing.authority %}<tr><th>Prowadzący</th><td>{{ listing.authority }}</td></tr>{% endif %}
     {% if listing.share %}<tr><th>Udział</th><td>{{ listing.share }}</td></tr>{% endif %}
+    </tbody>
   </table>
   {% endif %}
 
   <div class="section-title">Kontakt</div>
-  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-    {% for phone in listing.phones %}
-      <div class="phone" style="min-width:160px" onclick="revealPhone(this, {{ listing.id }})">{{ phone.masked }}</div>
-    {% else %}
-      <span class="muted">Brak numeru w ogłoszeniu.</span>
-    {% endfor %}
-    {% if listing.contact_email %}<span class="muted">{{ listing.contact_email }}</span>{% endif %}
-    {% if agency %}<a class="btn ghost small" href="/biura?q={{ agency.name }}">🏢 {{ agency.name }}</a>{% endif %}
-    {% if listing.seller_name and not agency %}<span class="muted">{{ listing.seller_name }}</span>{% endif %}
-  </div>
+  {% set numbers = contacts_for(listing) %}
+  {% if numbers %}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start">
+      {% for contact in numbers %}
+        <div class="contact" style="min-width:190px">
+          <button class="contact__number" type="button" onclick="revealContact(this, {{ listing.id }})">{{ contact.masked }}</button>
+          <span class="contact__origin">{{ contact.label }}</span>
+        </div>
+      {% endfor %}
+    </div>
+    <p class="muted" style="font-size:13px;margin-top:8px">
+      Numer pokazujemy po kliknięciu — dzięki temu samo otwarcie listy nie pobiera cudzych numerów.
+      {% if numbers | rejectattr('from_listing') | list %}
+        Numer opisany jako „centrala" pochodzi z rejestru biura, nie z treści ogłoszenia.
+      {% endif %}
+    </p>
+  {% else %}
+    <p class="muted">W ogłoszeniu nie ma numeru, a wystawiającego nie znamy z rejestru biur.
+      Kontakt znajdziesz <a href="{{ listing.url }}" target="_blank" rel="noopener noreferrer">w serwisie źródłowym</a>.</p>
+  {% endif %}
+  {% if agency %}
+    <p style="margin-top:6px"><a href="/nieruchomosci?agency_id={{ agency.id }}&only_original=0&transaction=wszystkie">
+      Zobacz wszystkie oferty: {{ agency.name }}</a></p>
+  {% endif %}
 
   {% if listing.description %}
   <div class="section-title">Opis</div>
-  <div style="white-space:pre-wrap;font-size:14.5px">{{ listing.description[:6000] }}</div>
+  <div style="white-space:pre-wrap;font-size:15px;color:var(--ink-soft)">{{ listing.description[:6000] }}</div>
   {% endif %}
 
   {% if listing.images %}
   <div class="section-title">Zdjęcia</div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px">
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(172px,1fr));gap:9px">
     {% for image in listing.images[:12] %}
-      <img src="{{ image }}" alt="" loading="lazy" style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:7px">
+      <img src="{{ image }}" alt="" loading="lazy"
+           style="width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-sm)">
     {% endfor %}
   </div>
   {% endif %}
 
   {% if listing.price_history|length > 1 %}
-  <div class="section-title">Historia ceny</div>
-  <table class="grid">
-    <tr><th>Data</th><th>Cena</th><th>Zmiana</th></tr>
+  <div class="section-title">Jak zmieniała się cena</div>
+  <table class="table">
+    <thead><tr><th>Data</th><th class="num">Cena</th><th>Zmiana</th></tr></thead>
+    <tbody>
     {% for entry in listing.price_history %}
     <tr>
-      <td>{{ entry.changed_at.strftime('%d.%m.%Y %H:%M') }}</td>
-      <td>{{ money(entry.price) }}</td>
-      <td>{% if entry.delta_pct %}<span style="color:{{ 'var(--red)' if entry.delta_pct < 0 else 'var(--green)' }}">
-        {{ '%+.1f'|format(entry.delta_pct) }}%</span>{% else %}—{% endif %}</td>
+      <td class="nowrap">{{ entry.changed_at.strftime('%d.%m.%Y') }}</td>
+      <td class="num">{{ money(entry.price) }}</td>
+      <td>{% if entry.delta_pct %}
+        <span style="color:{{ 'var(--ok)' if entry.delta_pct < 0 else 'var(--alert)' }};font-weight:600">
+          {{ '%+.1f'|format(entry.delta_pct) }}%</span>
+      {% else %}<span class="muted">pierwsza cena</span>{% endif %}</td>
     </tr>
     {% endfor %}
+    </tbody>
   </table>
   {% endif %}
 
   {% if copies %}
-  <div class="section-title">Ta sama nieruchomość na innych portalach ({{ copies|length }})</div>
-  <table class="grid">
-    <tr><th>Źródło</th><th>Tytuł</th><th class="right">Cena</th><th>Oferent</th><th>Dodana</th></tr>
+  <div class="section-title">Ta sama nieruchomość w innych serwisach ({{ copies|length }})</div>
+  <table class="table">
+    <thead><tr><th>Serwis</th><th>Ogłoszenie</th><th class="num">Cena</th><th>Wystawia</th><th>Od kiedy</th></tr></thead>
+    <tbody>
     {% for copy in copies %}
     <tr>
       <td>{{ copy.source_key }}</td>
-      <td><a href="/oferta/{{ copy.id }}">{{ copy.title[:70] }}</a></td>
-      <td class="right {% if listing.price and copy.price and copy.price != listing.price %}
-          {{ 'nowrap' }}{% endif %}">{{ money(copy.price) }}</td>
-      <td>{{ copy.seller_name or copy.seller_type.value }}</td>
-      <td class="nowrap">{{ copy.first_seen_at.strftime('%d.%m.%Y') }}</td>
+      <td><a href="/oferta/{{ copy.id }}">{{ copy.title[:64] }}</a></td>
+      <td class="num {{ 'nowrap' }}">{{ money(copy.price) }}
+        {% if listing.price and copy.price and copy.price != listing.price %}
+          <div class="muted" style="font-size:12px">
+            {{ 'drożej' if copy.price > listing.price else 'taniej' }} o
+            {{ money((copy.price - listing.price) | abs) }}</div>
+        {% endif %}</td>
+      <td class="muted">{{ copy.seller_name or copy.seller_type.value }}</td>
+      <td class="nowrap muted">{{ copy.first_seen_at.strftime('%d.%m.%Y') }}</td>
     </tr>
     {% endfor %}
+    </tbody>
   </table>
+  <p class="muted" style="font-size:13px;margin-top:8px">
+    Różnice w cenie między serwisami zwykle biorą się z prowizji albo z tego,
+    że któryś z nich nie odświeżył ogłoszenia po obniżce.
+  </p>
   {% endif %}
 
-  <div class="section-title">Metadane</div>
-  <table class="grid">
-    <tr><th>Pierwszy raz widziana</th><td>{{ listing.first_seen_at.strftime('%d.%m.%Y %H:%M') }}</td></tr>
-    <tr><th>Ostatnio widziana</th><td>{{ listing.last_seen_at.strftime('%d.%m.%Y %H:%M') }}</td></tr>
-    {% if listing.published_at %}<tr><th>Data publikacji</th><td>{{ listing.published_at.strftime('%d.%m.%Y %H:%M') }}</td></tr>{% endif %}
-    {% if listing.removed_at %}<tr><th>Zdjęta</th><td>{{ listing.removed_at.strftime('%d.%m.%Y %H:%M') }}</td></tr>{% endif %}
-    <tr><th>ID w źródle</th><td>{{ listing.source_key }}:{{ listing.external_id }}</td></tr>
+  <div class="section-title">Skąd to wiemy</div>
+  <table class="table">
+    <tbody>
+    <tr><th>Pierwszy raz zauważona</th><td>{{ listing.first_seen_at.strftime('%d.%m.%Y, %H:%M') }}</td></tr>
+    <tr><th>Ostatnio sprawdzona</th><td>{{ listing.last_seen_at.strftime('%d.%m.%Y, %H:%M') }}</td></tr>
+    {% if listing.published_at %}<tr><th>Opublikowana w serwisie</th><td>{{ listing.published_at.strftime('%d.%m.%Y') }}</td></tr>{% endif %}
+    {% if listing.removed_at %}<tr><th>Zniknęła z serwisu</th><td>{{ listing.removed_at.strftime('%d.%m.%Y') }}</td></tr>{% endif %}
+    {% if listing.lat %}<tr><th>Położenie na mapie</th>
+      <td>{{ '%.5f'|format(listing.lat) }}, {{ '%.5f'|format(listing.lon) }}
+        <span class="muted">({{ 'dokładny adres' if listing.geo_precision == 'address' else ('ulica' if listing.geo_precision == 'street' else 'przybliżone — środek miejscowości') }})</span>
+      </td></tr>{% endif %}
+    <tr><th>Identyfikator</th><td class="muted">{{ listing.source_key }}:{{ listing.external_id }}</td></tr>
+    </tbody>
   </table>
 </div>
 {% endblock %}

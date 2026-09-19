@@ -1,42 +1,53 @@
-// Odkrywanie numeru telefonu — świadoma akcja, jedno kliknięcie = jeden numer.
-async function revealPhone(el, listingId) {
-  if (el.dataset.revealed === "1") return;
-  el.textContent = "…";
+/* Monitor rynku — warstwa interakcji.
+   Celowo bez frameworka: strona ma się otwierać natychmiast, także na słabym
+   łączu, a tyle kodu spokojnie wystarcza. */
+
+function toggleNav() {
+  document.getElementById("mainnav")?.classList.toggle("is-open");
+}
+
+/* Numer telefonu odsłaniamy na kliknięcie, nie hurtem przy ładowaniu listy.
+   Dzięki temu jedno wejście na stronę nie pobiera setek cudzych numerów. */
+async function revealContact(button, listingId) {
+  if (button.dataset.open === "1") return;
+  const before = button.textContent;
+  button.textContent = "…";
   try {
     const resp = await fetch(`/api/listings/${listingId}/phone`);
     if (!resp.ok) throw new Error(await resp.text());
     const data = await resp.json();
-    const numbers = (data.phones || []).map(p => p.national || p.e164).filter(Boolean);
-    el.textContent = numbers.length ? numbers.join(" · ") : "brak numeru";
-    el.classList.add("revealed");
-    el.dataset.revealed = "1";
-  } catch (err) {
-    el.textContent = "niedostępny";
-    el.title = String(err);
+    const numbers = (data.phones || []).map((p) => p.national || p.e164).filter(Boolean);
+    if (numbers.length) {
+      button.textContent = numbers.join(" · ");
+    } else {
+      // Numeru nie ma w ogłoszeniu — pokazujemy centralę biura, jeśli ją znamy.
+      const alt = await fetch(`/api/listings/${listingId}/kontakt`);
+      const info = alt.ok ? await alt.json() : { kontakty: [] };
+      const office = (info.kontakty || []).find((k) => !k.z_ogloszenia);
+      button.textContent = office ? office.numer : before;
+    }
+    button.classList.add("is-open");
+    button.dataset.open = "1";
+  } catch {
+    button.textContent = "niedostępny";
   }
 }
 
-async function toggleFavorite(btn, listingId) {
-  const on = btn.dataset.on === "1";
-  const method = on ? "DELETE" : "POST";
-  const resp = await fetch(`/api/favorites/${listingId}`, { method });
-  if (resp.ok) {
-    btn.dataset.on = on ? "0" : "1";
-    btn.textContent = on ? "☆ Do schowka" : "★ W schowku";
-  }
+async function toggleFavorite(button, listingId) {
+  const on = button.dataset.on === "1";
+  const resp = await fetch(`/api/favorites/${listingId}`, { method: on ? "DELETE" : "POST" });
+  if (!resp.ok) return;
+  button.dataset.on = on ? "0" : "1";
+  button.textContent = on ? "☆ Zapisz" : "★ Zapisane";
+  button.classList.toggle("btn--ghost", !on);
 }
 
-function toggleSidebar() {
-  document.querySelector(".sidebar").classList.toggle("open");
-}
-
-// Zapis bieżących filtrów jako poszukiwanie z alertem
+/* Bieżące filtry zapisujemy jako alert — dokładnie to, co widać na ekranie. */
 async function saveSearch() {
-  const name = prompt("Nazwa poszukiwania:");
+  const name = prompt("Jak nazwać to poszukiwanie?");
   if (!name) return;
-  const params = new URLSearchParams(window.location.search);
   const query = {};
-  for (const [k, v] of params.entries()) {
+  for (const [k, v] of new URLSearchParams(window.location.search)) {
     if (v !== "" && k !== "page") query[k] = v;
   }
   const resp = await fetch("/api/searches", {
@@ -44,13 +55,22 @@ async function saveSearch() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, query, channels: ["telegram"], only_original: true }),
   });
-  alert(resp.ok ? "Zapisano. Nowe trafienia przyjdą powiadomieniem." : "Nie udało się zapisać.");
+  alert(resp.ok
+    ? "Zapisane. Nowe pasujące oferty przyjdą powiadomieniem."
+    : "Nie udało się zapisać poszukiwania.");
 }
 
-document.addEventListener("click", (e) => {
-  const sidebar = document.querySelector(".sidebar");
-  if (window.innerWidth <= 860 && sidebar?.classList.contains("open")
-      && !sidebar.contains(e.target) && !e.target.closest(".burger")) {
-    sidebar.classList.remove("open");
+/* Przełączniki filtrów wysyłają formularz od razu — bez szukania przycisku. */
+document.addEventListener("DOMContentLoaded", () => {
+  document.querySelectorAll(".toggle input[type=checkbox]").forEach((box) => {
+    box.addEventListener("change", () => box.form?.submit());
+  });
+});
+
+document.addEventListener("click", (event) => {
+  const nav = document.getElementById("mainnav");
+  if (window.innerWidth <= 720 && nav?.classList.contains("is-open")
+      && !nav.contains(event.target) && !event.target.closest(".burger")) {
+    nav.classList.remove("is-open");
   }
 });

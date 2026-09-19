@@ -1,142 +1,168 @@
-{# ---------------------------------------------------------------- formaty #}
-{% macro money(value, currency='zł') %}
-  {%- if value -%}{{ '{:,.0f}'.format(value).replace(',', ' ') }} {{ currency }}{%- else -%}—{%- endif -%}
+{# ------------------------------------------------------------- formaty #}
+{% macro money(value, unit='zł') %}
+  {%- if value -%}{{ '{:,.0f}'.format(value).replace(',', ' ') }} {{ unit }}{%- else -%}—{%- endif -%}
 {% endmacro %}
 
-{% macro age_label(days) %}
-  {%- if days == 0 -%}dziś
-  {%- elif days == 1 -%}1 dzień
-  {%- elif days < 5 -%}{{ days }} dni
-  {%- elif days < 31 -%}{{ days }} dni
-  {%- elif days < 365 -%}{{ (days / 30.4) | round(0, 'floor') | int }} mies.
-  {%- else -%}{{ (days / 365) | round(1) }} roku{%- endif -%}
+{% macro area(value) %}
+  {%- if value -%}{{ ('%g' % value) }} m²{%- endif -%}
 {% endmacro %}
 
-{% macro seller_badge(listing) %}
-  {%- set t = listing.seller_type.value -%}
-  {%- if t == 'posrednik' -%}<span class="badge agent">Pośrednik</span>
-  {%- elif t == 'prywatna' -%}<span class="badge private">Prywatna</span>
-  {%- elif t == 'deweloper' -%}<span class="badge developer">Deweloper</span>
-  {%- elif t == 'komornik' -%}<span class="badge auction">Komornik</span>
-  {%- elif t == 'syndyk' -%}<span class="badge auction">Syndyk</span>
-  {%- elif t == 'urzad' -%}<span class="badge tender">Urząd</span>
-  {%- elif t == 'instytucja' -%}<span class="badge tender">Instytucja</span>
+{# Polska odmiana przez przypadki: "2 dni", ale "5 dni"; "2 lata", ale "5 lat".
+   Bez tego wychodziło "na rynku 6.1 roku". #}
+{% macro plural(n, one, few, many) %}
+  {%- set n = n | int -%}
+  {%- if n == 1 -%}{{ one }}
+  {%- elif n % 10 >= 2 and n % 10 <= 4 and (n % 100 < 12 or n % 100 > 14) -%}{{ few }}
+  {%- else -%}{{ many }}{%- endif -%}
+{% endmacro %}
+
+{% macro age(days) %}
+  {%- if days <= 0 -%}dziś
+  {%- elif days == 1 -%}wczoraj
+  {%- elif days < 31 -%}{{ days }} {{ plural(days, 'dzień', 'dni', 'dni') }}
+  {%- elif days < 365 -%}
+    {%- set m = (days / 30.4) | round(0, 'floor') | int -%}
+    {{ m }} {{ plural(m, 'miesiąc', 'miesiące', 'miesięcy') }}
+  {%- else -%}
+    {%- set y = (days / 365) | round(0, 'floor') | int -%}
+    {{ y }} {{ plural(y, 'rok', 'lata', 'lat') }}
   {%- endif -%}
 {% endmacro %}
 
-{# Nazwa ulicy bywa podana razem z typem ("Aleja Przyjaźni", "Osiedle AK").
-   W takim razie nie doklejamy przed nią jeszcze "ul.". #}
 {% set STREET_TYPES = ['ul', 'ulica', 'al', 'aleja', 'alei', 'aleje', 'os', 'osiedle', 'pl', 'plac', 'rynek'] %}
-{% macro street_label(street) %}
+{% macro address(street) %}
   {%- if street -%}
     {%- set head = street.split(' ')[0] | lower | replace('.', '') -%}
     {%- if head in STREET_TYPES -%}{{ street }}{%- else -%}ul. {{ street }}{%- endif -%}
   {%- endif -%}
 {% endmacro %}
 
-{# ---------------------------------------------------------------- karta oferty #}
-{% macro listing_card(listing) %}
-<article class="listing {% if listing.is_fresh %}fresh{% endif %}
-                       {% if not listing.is_original %}copy{% endif %}
-                       {% if listing.kind.value in ('licytacja', 'przetarg') %}auction{% endif %}">
-  <div>
+{% macro seller_tag(listing) %}
+  {%- set t = listing.seller_type.value -%}
+  {%- if t == 'posrednik' -%}<span class="tag tag--agent">Biuro</span>
+  {%- elif t == 'prywatna' -%}<span class="tag tag--private">Prywatna</span>
+  {%- elif t == 'deweloper' -%}<span class="tag tag--dev">Deweloper</span>
+  {%- elif t == 'komornik' -%}<span class="tag tag--auction">Komornik</span>
+  {%- elif t == 'syndyk' -%}<span class="tag tag--auction">Syndyk</span>
+  {%- elif t in ('urzad', 'instytucja') -%}<span class="tag tag--tender">Instytucja</span>
+  {%- endif -%}
+{% endmacro %}
+
+{# --------------------------------------------------------- karta oferty #}
+{% macro offer_card(listing, contacts=None) %}
+{% set kind = listing.kind.value %}
+<article class="offer
+  {%- if listing.is_fresh %} offer--fresh{% endif %}
+  {%- if not listing.is_original %} offer--copy{% endif %}
+  {%- if kind == 'licytacja' %} offer--auction{% endif %}
+  {%- if kind in ('przetarg', 'wykaz') %} offer--tender{% endif %}">
+
+  <div class="offer__media">
     {% if listing.images %}
-      <img class="thumb" src="{{ listing.images[0] }}" alt="" loading="lazy"
-           onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'thumb',textContent:'bez zdjęcia'}))">
+      <img class="offer__photo" src="{{ listing.images[0] }}" alt="" loading="lazy"
+           onerror="this.outerHTML='<div class=&quot;offer__photo offer__photo--empty&quot;>bez zdjęcia</div>'">
     {% else %}
-      <div class="thumb">bez zdjęcia</div>
+      <div class="offer__photo offer__photo--empty">bez zdjęcia</div>
     {% endif %}
-    <div class="muted" style="font-size:12px;margin-top:6px;text-align:center">
-      stoi {{ age_label(listing.days_on_market) }}
-    </div>
+    <div class="offer__age">na rynku {{ age(listing.days_on_market) }}</div>
   </div>
 
-  <div>
-    <div class="badges">
-      {% if listing.is_original %}<span class="badge original">Oryginalna</span>
-      {% else %}<span class="badge copy">Kopia</span>{% endif %}
-      {{ seller_badge(listing) }}
-      <span class="badge source">{{ listing.source_key }}</span>
-      {% if listing.is_fresh %}<span class="badge new">NOWA</span>{% endif %}
-      {% if listing.copies_count %}<span class="badge copy">{{ listing.copies_count }} kopii</span>{% endif %}
+  <div class="offer__body">
+    <div class="tags">
+      {% if listing.is_fresh %}<span class="tag tag--new">NOWA</span>{% endif %}
+      {% if not listing.is_original %}<span class="tag tag--copy">kopia oferty</span>
+      {% elif listing.copies_count %}<span class="tag tag--copy">także na {{ listing.copies_count }} innych portalach</span>{% endif %}
+      {{ seller_tag(listing) }}
+      {% if kind == 'licytacja' %}<span class="tag tag--auction">Licytacja</span>{% endif %}
+      {% if kind in ('przetarg', 'wykaz') %}<span class="tag tag--tender">{{ kind|capitalize }}</span>{% endif %}
       {% if listing.initial_price and listing.price and listing.price < listing.initial_price %}
-        <span class="badge drop">▼ {{ (100 * (listing.initial_price - listing.price) / listing.initial_price) | round(1) }}%</span>
+        <span class="tag tag--drop">taniej o {{ (100 * (listing.initial_price - listing.price) / listing.initial_price) | round(0) | int }}%</span>
       {% endif %}
-      {% if listing.status.value != 'aktywna' %}<span class="badge inactive">nieaktywna</span>{% endif %}
-      {% if listing.kind.value == 'licytacja' %}<span class="badge auction">Licytacja</span>{% endif %}
-      {% if listing.kind.value in ('przetarg', 'wykaz') %}<span class="badge tender">{{ listing.kind.value|capitalize }}</span>{% endif %}
+      {% if listing.status.value != 'aktywna' %}<span class="tag tag--gone">już nieaktualna</span>{% endif %}
+      <span class="tag tag--source">{{ listing.source_key }}</span>
     </div>
 
-    <h3><a href="/oferta/{{ listing.id }}">{{ listing.title }}</a>
-      <a href="{{ listing.url }}" target="_blank" rel="noopener noreferrer" title="Otwórz w źródle">↗</a>
+    <h3 class="offer__title">
+      <a href="/oferta/{{ listing.id }}">{{ listing.title }}</a>
+      <a class="offer__out" href="{{ listing.url }}" target="_blank" rel="noopener noreferrer"
+         title="Otwórz w serwisie źródłowym">↗</a>
     </h3>
 
-    <div class="addr">
-      {% if listing.street %}<strong>{{ street_label(listing.street) }}</strong>, {% endif %}
-      {% if listing.district %}{{ listing.district }}, {% endif %}
-      {{ listing.city or '—' }}{% if listing.county and listing.county != listing.city %}, pow. {{ listing.county }}{% endif %}
-      <span class="muted">({{ listing.property_type.value }} {{ listing.transaction.value }})</span>
+    <div class="offer__where">
+      {% if listing.street %}<strong>{{ address(listing.street) }}</strong>{% if listing.district or listing.city %}, {% endif %}{% endif %}
+      {% if listing.district %}{{ listing.district }}, {% endif %}{{ listing.city or '—' }}
+      {%- if listing.county and listing.county != listing.city %} <span class="muted">· pow. {{ listing.county }}</span>{% endif %}
     </div>
 
-    <div class="params">
-      <span class="price">{{ money(listing.price) }}</span>
-      {% if listing.price_per_m2 %}<span class="ppm">({{ money(listing.price_per_m2, 'zł/m²') }})</span>{% endif %}
-      {% if listing.area %}<span class="param">{{ listing.area | round(2) | float | int if listing.area == listing.area | round(0) else listing.area }} m²</span>{% endif %}
-      {% if listing.rooms %}<span class="param">{{ listing.rooms }} {{ 'pokój' if listing.rooms == 1 else 'pokoje' }}</span>{% endif %}
-      {% if listing.floor is not none %}<span class="param">{{ 'parter' if listing.floor == 0 else listing.floor ~ ' piętro' }}{% if listing.floors_total %} z {{ listing.floors_total }}{% endif %}</span>{% endif %}
-      {% if listing.building_type %}<span class="param">{{ listing.building_type }}</span>{% endif %}
-      {% if listing.market %}<span class="param muted">rynek {{ listing.market }}</span>{% endif %}
+    <div class="offer__price">
+      <span class="offer__amount">{{ money(listing.price) }}</span>
+      {% if listing.price_per_m2 %}<span class="offer__perm2">{{ money(listing.price_per_m2, 'zł/m²') }}</span>{% endif %}
+      {% if listing.initial_price and listing.price and listing.price < listing.initial_price %}
+        <span class="offer__was">{{ money(listing.initial_price) }}</span>
+      {% endif %}
     </div>
 
-    {% if listing.kind.value in ('licytacja', 'przetarg', 'wykaz') %}
-      <div class="params">
-        {% if listing.opening_price %}<span class="param">wywoławcza: <strong>{{ money(listing.opening_price) }}</strong></span>{% endif %}
-        {% if listing.estimate_value %}<span class="param muted">oszacowanie: {{ money(listing.estimate_value) }}</span>{% endif %}
-        {% if listing.deposit %}<span class="param muted">wadium: {{ money(listing.deposit) }}</span>{% endif %}
-        {% if listing.event_date %}<span class="param">termin: <strong>{{ listing.event_date.strftime('%d.%m.%Y %H:%M') }}</strong></span>{% endif %}
-        {% if listing.deadline %}<span class="param">składanie ofert do: {{ listing.deadline.strftime('%d.%m.%Y') }}</span>{% endif %}
-        {% if listing.case_number %}<span class="param muted">sygn. {{ listing.case_number }}</span>{% endif %}
+    <div class="specs">
+      {% if listing.area %}<span class="spec"><strong>{{ area(listing.area) }}</strong></span>{% endif %}
+      {% if listing.rooms %}<span class="spec">{{ listing.rooms }} {{ 'pokój' if listing.rooms == 1 else ('pokoje' if listing.rooms < 5 else 'pokoi') }}</span>{% endif %}
+      {% if listing.floor is not none %}<span class="spec">{{ 'parter' if listing.floor == 0 else listing.floor ~ '. piętro' }}{% if listing.floors_total %} z {{ listing.floors_total }}{% endif %}</span>{% endif %}
+      {% if listing.year_built %}<span class="spec">rok {{ listing.year_built }}</span>{% endif %}
+      {% if listing.building_type %}<span class="spec">{{ listing.building_type }}</span>{% endif %}
+      {% if listing.market %}<span class="spec">rynek {{ listing.market }}</span>{% endif %}
+      {% if listing.transaction.value != 'sprzedaz' %}<span class="spec"><strong>{{ listing.transaction.value }}</strong></span>{% endif %}
+    </div>
+
+    {% if kind in ('licytacja', 'przetarg', 'wykaz') %}
+      <div class="specs">
+        {% if listing.opening_price %}<span class="spec">wywoławcza <strong>{{ money(listing.opening_price) }}</strong></span>{% endif %}
+        {% if listing.estimate_value %}<span class="spec">oszacowanie {{ money(listing.estimate_value) }}</span>{% endif %}
+        {% if listing.deposit %}<span class="spec">wadium {{ money(listing.deposit) }}</span>{% endif %}
+        {% if listing.event_date %}<span class="spec">termin <strong>{{ listing.event_date.strftime('%d.%m.%Y, %H:%M') }}</strong></span>{% endif %}
+        {% if listing.deadline %}<span class="spec">oferty do {{ listing.deadline.strftime('%d.%m.%Y') }}</span>{% endif %}
+        {% if listing.case_number %}<span class="spec muted">sygn. {{ listing.case_number }}</span>{% endif %}
       </div>
-      {% if listing.authority %}<div class="muted" style="font-size:13px">{{ listing.authority }}</div>{% endif %}
     {% endif %}
 
     {% if listing.description %}
-      <div class="excerpt">{{ listing.description[:190] }}{% if listing.description|length > 190 %}…{% endif %}</div>
+      <p class="offer__excerpt">{{ listing.description[:220] }}</p>
     {% endif %}
-    {% if listing.seller_name %}<div class="muted" style="font-size:13px;margin-top:5px">Oferent: {{ listing.seller_name }}</div>{% endif %}
+    {% if listing.seller_name %}<div class="offer__seller">Wystawia: {{ listing.seller_name }}</div>{% endif %}
   </div>
 
-  <div class="side">
-    {% if listing.phones %}
-      <div class="phone" onclick="revealPhone(this, {{ listing.id }})" title="Kliknij, aby zobaczyć pełny numer">
-        {{ listing.phones[0].masked }}
+  <div class="offer__aside">
+    {% set numbers = contacts if contacts is not none else contacts_for(listing) %}
+    {% if numbers %}
+      {% set first = numbers[0] %}
+      <div class="contact">
+        <button class="contact__number" type="button"
+                onclick="revealContact(this, {{ listing.id }})">{{ first.masked }}</button>
+        <span class="contact__origin">{{ first.label }}</span>
       </div>
     {% else %}
-      <div class="phone muted" style="cursor:default">brak numeru</div>
+      <div class="contact--none">numeru brak w ogłoszeniu</div>
     {% endif %}
-    <a class="btn ghost small" href="/oferta/{{ listing.id }}">ℹ️ Szczegóły</a>
-    <button class="btn muted small" data-on="0" onclick="toggleFavorite(this, {{ listing.id }})">☆ Do schowka</button>
-    <div class="muted" style="font-size:12px;text-align:center">
-      dodana {{ (listing.published_at or listing.first_seen_at).strftime('%d.%m.%Y %H:%M') }}
-    </div>
+    <a class="btn btn--ghost btn--sm" href="/oferta/{{ listing.id }}">Szczegóły oferty</a>
+    <button class="btn btn--quiet btn--sm" data-on="0"
+            onclick="toggleFavorite(this, {{ listing.id }})">☆ Zapisz</button>
+    <div class="offer__added">dodana {{ (listing.published_at or listing.first_seen_at).strftime('%d.%m.%Y') }}</div>
   </div>
 </article>
 {% endmacro %}
 
-{# ---------------------------------------------------------------- paginacja #}
-{% macro pagination(filters, pages, query_string) %}
+{# ------------------------------------------------------------ paginacja #}
+{% macro pager(filters, pages, query_string) %}
 {% if pages > 1 %}
-<nav class="pagination">
-  {% set qs = query_string | replace('page=' ~ filters.page, '') %}
+{% set qs = query_string | replace('page=' ~ filters.page, '') %}
+<nav class="pager" aria-label="Strony wyników">
+  {% if filters.page > 1 %}<a href="?{{ qs }}&page={{ filters.page - 1 }}">‹ poprzednia</a>{% endif %}
   {% for p in range(1, pages + 1) %}
-    {% if p == filters.page %}
-      <span class="current">{{ p }}</span>
-    {% elif p <= 3 or p > pages - 3 or (p - filters.page) | abs <= 2 %}
+    {% if p == filters.page %}<span class="is-current">{{ p }}</span>
+    {% elif p <= 2 or p > pages - 2 or (p - filters.page) | abs <= 2 %}
       <a href="?{{ qs }}&page={{ p }}">{{ p }}</a>
-    {% elif p == 4 and filters.page > 6 %}
-      <span>…</span>
+    {% elif p == 3 and filters.page > 5 %}<span class="muted">…</span>
     {% endif %}
   {% endfor %}
+  {% if filters.page < pages %}<a href="?{{ qs }}&page={{ filters.page + 1 }}">następna ›</a>{% endif %}
 </nav>
 {% endif %}
 {% endmacro %}

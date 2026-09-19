@@ -1,30 +1,38 @@
 {% extends "base.html" %}
-{% block heading %}Poszukiwania{% endblock %}
+{% block title %}Alerty o nowych ofertach{% endblock %}
+{% block heading %}Alerty{% endblock %}
 {% block content %}
 
-<div class="notice info">
-  Poszukiwanie to zapisany zestaw filtrów. Gdy skan znajdzie nową ofertę pasującą do filtrów,
-  dostaniesz powiadomienie (Telegram / e-mail / webhook) — raz na ofertę. Zapisujesz je przyciskiem
-  „Zapisz jako poszukiwanie" na liście nieruchomości.
+<div class="note">
+  Alert to zapamiętany zestaw filtrów. Gdy pojawi się nowa oferta, która do nich
+  pasuje, dostaniesz powiadomienie — <strong>raz na ofertę</strong>, bez zalewania
+  tą samą nieruchomością z sześciu portali. Alert zakładasz przyciskiem
+  „Powiadom o nowych" na liście ofert.
 </div>
 
-<table class="grid">
-  <tr><th>Nazwa</th><th>Filtry</th><th>Kanały</th><th class="right">Trafienia</th><th>Ostatnio</th><th></th></tr>
+<table class="table">
+  <thead><tr><th>Nazwa</th><th>Czego szuka</th><th>Gdzie wysyłać</th>
+             <th class="num">Trafień</th><th>Ostatnio</th><th></th></tr></thead>
+  <tbody>
   {% for search in searches %}
   <tr>
-    <td><strong>{{ search.name }}</strong>{% if search.only_original %}<div class="muted" style="font-size:12px">tylko oryginalne</div>{% endif %}</td>
-    <td class="muted" style="font-size:13px">
-      {% for key, value in (search.query or {}).items() %}{{ key }}={{ value }}{{ ", " if not loop.last }}{% endfor %}
+    <td><strong>{{ search.name }}</strong>
+        {% if search.only_original %}<div class="muted" style="font-size:12.5px">bez powtórek</div>{% endif %}</td>
+    <td class="muted" style="font-size:13.5px">
+      {% for key, value in (search.query or {}).items() %}{{ key }}: {{ value }}{{ ", " if not loop.last }}{% endfor %}
     </td>
     <td>{{ (search.channels or [])|join(', ') }}</td>
-    <td class="right">{{ search.hits }}</td>
-    <td class="nowrap muted">{{ search.last_fired_at.strftime('%d.%m %H:%M') if search.last_fired_at else '—' }}</td>
-    <td class="right">
-      <button class="btn muted small" onclick="fetch('/api/searches/{{ search.id }}',{method:'DELETE'}).then(()=>location.reload())">Usuń</button>
+    <td class="num">{{ search.hits }}</td>
+    <td class="nowrap muted">{{ search.last_fired_at.strftime('%d.%m, %H:%M') if search.last_fired_at else '—' }}</td>
+    <td style="text-align:right">
+      <button class="btn btn--quiet btn--sm"
+        onclick="fetch('/api/searches/{{ search.id }}',{method:'DELETE'}).then(()=>location.reload())">Usuń</button>
     </td>
   </tr>
   {% else %}
-  <tr><td colspan="6" class="empty">Nie masz jeszcze poszukiwań.</td></tr>
+  <tr><td colspan="6" class="empty"><strong>Nie masz jeszcze alertów.</strong>
+      Ustaw filtry na liście ofert i kliknij „Powiadom o nowych".</td></tr>
   {% endfor %}
+  </tbody>
 </table>
 {% endblock %}

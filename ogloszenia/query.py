@@ -145,7 +145,14 @@ def apply_filters(stmt: Select, filters: dict[str, Any] | Filters) -> Select:
         clauses.append(Listing.status == ListingStatus.AKTYWNA)
 
     if f.with_phone:
-        clauses.append(Listing.phones.any())
+        # „z telefonem" znaczy: da się zadzwonić. Numer z ogłoszenia albo
+        # centrala biura, które tę ofertę wystawiło — jedno i drugie się liczy.
+        clauses.append(
+            or_(
+                Listing.phones.any(),
+                Listing.agency.has(Agency.phones != []),
+            )
+        )
 
     if f.period and f.period in PERIODS:
         clauses.append(Listing.first_seen_at >= utcnow() - timedelta(days=PERIODS[f.period]))

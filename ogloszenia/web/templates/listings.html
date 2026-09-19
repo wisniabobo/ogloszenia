@@ -1,146 +1,149 @@
 {% extends "base.html" %}
-{% from "_macros.html" import listing_card, pagination %}
-{% block heading %}Nieruchomości{% endblock %}
-{% block topbar %}
-  <span class="muted">{{ total }} ofert</span>
-  <button class="btn small" onclick="saveSearch()">🔔 Zapisz jako poszukiwanie</button>
+{% from "_macros.html" import offer_card, pager %}
+{% block title %}Oferty nieruchomości — woj. opolskie{% endblock %}
+{% block heading %}Oferty{% endblock %}
+{% block subhead %}<span class="page__count">{{ '{:,}'.format(total).replace(',', ' ') }} ofert</span>{% endblock %}
+{% block actions %}
+  <a class="btn btn--quiet btn--sm" href="/mapa?{{ query_string }}">Zobacz na mapie</a>
+  <button class="btn btn--sm" onclick="saveSearch()">Powiadom o nowych</button>
 {% endblock %}
 {% block content %}
 
 <form class="filters" method="get">
-  <div class="row">
-    <div class="field"><label>Kategoria</label>
-      <select name="property_type">
-        <option value="">wszystkie</option>
+  <div class="filters__grid">
+    <div class="field"><label for="f-pt">Czego szukasz</label>
+      <select id="f-pt" name="property_type">
+        <option value="">wszystko</option>
         {% for value, label in [('mieszkanie','Mieszkania'),('dom','Domy'),('dzialka','Działki'),
-                                ('lokal','Lokale'),('biuro','Biura'),('hala','Hale i magazyny'),
+                                ('lokal','Lokale użytkowe'),('biuro','Biura'),('hala','Hale i magazyny'),
                                 ('garaz','Garaże'),('gospodarstwo','Gospodarstwa'),
                                 ('kamienica','Kamienice'),('pokoj','Pokoje')] %}
           <option value="{{ value }}" {{ 'selected' if filters.property_type == value }}>{{ label }}</option>
         {% endfor %}
       </select>
     </div>
-    <div class="field"><label>Transakcja</label>
-      <select name="transaction">
-        <option value="wszystkie" {{ 'selected' if not filters.transaction }}>wszystkie</option>
-        <option value="sprzedaz" {{ 'selected' if filters.transaction == 'sprzedaz' }}>sprzedaż</option>
-        <option value="wynajem"  {{ 'selected' if filters.transaction == 'wynajem' }}>wynajem</option>
+    <div class="field"><label for="f-tr">Sprzedaż czy wynajem</label>
+      <select id="f-tr" name="transaction">
+        <option value="sprzedaz" {{ 'selected' if filters.transaction == 'sprzedaz' }}>na sprzedaż</option>
+        <option value="wynajem"  {{ 'selected' if filters.transaction == 'wynajem' }}>do wynajęcia</option>
         <option value="dzierzawa"{{ 'selected' if filters.transaction == 'dzierzawa' }}>dzierżawa</option>
+        <option value="wszystkie" {{ 'selected' if not filters.transaction }}>wszystko razem</option>
       </select>
     </div>
-    <div class="field"><label>Miejscowość</label>
-      <input name="city" list="cities" value="{{ filters.city or '' }}" placeholder="np. Opole">
+    <div class="field"><label for="f-city">Miejscowość</label>
+      <input id="f-city" name="city" list="cities" value="{{ filters.city or '' }}" placeholder="np. Opole">
       <datalist id="cities">{% for c in cities %}<option value="{{ c }}">{% endfor %}</datalist>
     </div>
-    <div class="field"><label>Powiat</label>
-      <select name="county"><option value="">wszystkie</option>
+    <div class="field"><label for="f-county">Powiat</label>
+      <select id="f-county" name="county"><option value="">wszystkie</option>
         {% for c in counties %}<option value="{{ c }}" {{ 'selected' if filters.county == c }}>{{ c }}</option>{% endfor %}
       </select>
     </div>
-    <div class="field"><label>Ulica / dzielnica</label>
-      <input name="street" value="{{ filters.street or '' }}" placeholder="np. Wrocławska">
+    <div class="field"><label for="f-street">Ulica lub dzielnica</label>
+      <input id="f-street" name="street" value="{{ filters.street or '' }}" placeholder="np. Wrocławska">
     </div>
     <div class="field"><label>Cena [zł]</label>
-      <div class="pair">
-        <input name="price_min" value="{{ filters.price_min or '' }}" placeholder="od" inputmode="numeric">
-        <input name="price_max" value="{{ filters.price_max or '' }}" placeholder="do" inputmode="numeric">
+      <div class="field__pair">
+        <input name="price_min" value="{{ filters.price_min or '' }}" placeholder="od" inputmode="numeric" aria-label="Cena od">
+        <input name="price_max" value="{{ filters.price_max or '' }}" placeholder="do" inputmode="numeric" aria-label="Cena do">
       </div>
     </div>
     <div class="field"><label>Powierzchnia [m²]</label>
-      <div class="pair">
-        <input name="area_min" value="{{ filters.area_min or '' }}" placeholder="od" inputmode="numeric">
-        <input name="area_max" value="{{ filters.area_max or '' }}" placeholder="do" inputmode="numeric">
+      <div class="field__pair">
+        <input name="area_min" value="{{ filters.area_min or '' }}" placeholder="od" inputmode="numeric" aria-label="Powierzchnia od">
+        <input name="area_max" value="{{ filters.area_max or '' }}" placeholder="do" inputmode="numeric" aria-label="Powierzchnia do">
       </div>
     </div>
     <div class="field"><label>Cena za m²</label>
-      <div class="pair">
-        <input name="price_m2_min" value="{{ filters.price_m2_min or '' }}" placeholder="od" inputmode="numeric">
-        <input name="price_m2_max" value="{{ filters.price_m2_max or '' }}" placeholder="do" inputmode="numeric">
+      <div class="field__pair">
+        <input name="price_m2_min" value="{{ filters.price_m2_min or '' }}" placeholder="od" inputmode="numeric" aria-label="Cena za m² od">
+        <input name="price_m2_max" value="{{ filters.price_m2_max or '' }}" placeholder="do" inputmode="numeric" aria-label="Cena za m² do">
       </div>
     </div>
     <div class="field"><label>Pokoje</label>
-      <div class="pair">
-        <input name="rooms_min" value="{{ filters.rooms_min or '' }}" placeholder="od" inputmode="numeric">
-        <input name="rooms_max" value="{{ filters.rooms_max or '' }}" placeholder="do" inputmode="numeric">
+      <div class="field__pair">
+        <input name="rooms_min" value="{{ filters.rooms_min or '' }}" placeholder="od" inputmode="numeric" aria-label="Pokoje od">
+        <input name="rooms_max" value="{{ filters.rooms_max or '' }}" placeholder="do" inputmode="numeric" aria-label="Pokoje do">
       </div>
     </div>
     <div class="field"><label>Piętro</label>
-      <div class="pair">
-        <input name="floor_min" value="{{ filters.floor_min or '' }}" placeholder="od" inputmode="numeric">
-        <input name="floor_max" value="{{ filters.floor_max or '' }}" placeholder="do" inputmode="numeric">
+      <div class="field__pair">
+        <input name="floor_min" value="{{ filters.floor_min or '' }}" placeholder="od" inputmode="numeric" aria-label="Piętro od">
+        <input name="floor_max" value="{{ filters.floor_max or '' }}" placeholder="do" inputmode="numeric" aria-label="Piętro do">
       </div>
     </div>
-    <div class="field"><label>Oferent</label>
-      <select name="seller_type"><option value="">wszyscy</option>
-        <option value="prywatna"  {{ 'selected' if filters.seller_type == 'prywatna' }}>prywatna</option>
-        <option value="posrednik" {{ 'selected' if filters.seller_type == 'posrednik' }}>pośrednik</option>
+    <div class="field"><label for="f-seller">Kto wystawia</label>
+      <select id="f-seller" name="seller_type"><option value="">wszyscy</option>
+        <option value="prywatna"  {{ 'selected' if filters.seller_type == 'prywatna' }}>osoba prywatna</option>
+        <option value="posrednik" {{ 'selected' if filters.seller_type == 'posrednik' }}>biuro nieruchomości</option>
         <option value="deweloper" {{ 'selected' if filters.seller_type == 'deweloper' }}>deweloper</option>
       </select>
     </div>
-    <div class="field"><label>Źródło</label>
-      <select name="source"><option value="">wszystkie</option>
+    <div class="field"><label for="f-src">Serwis</label>
+      <select id="f-src" name="source"><option value="">wszystkie</option>
         {% for s in sources %}<option value="{{ s.key }}" {{ 'selected' if s.key in filters.source }}>{{ s.name }}</option>{% endfor %}
       </select>
     </div>
-    <div class="field"><label>Okres dodania</label>
-      <select name="period"><option value="">dowolny</option>
-        {% for value, label in [('dzis','dziś'),('7dni','7 dni'),('30dni','30 dni'),('90dni','90 dni'),('1rok','rok')] %}
+    <div class="field"><label for="f-period">Dodane</label>
+      <select id="f-period" name="period"><option value="">kiedykolwiek</option>
+        {% for value, label in [('dzis','dzisiaj'),('7dni','w tym tygodniu'),('30dni','w tym miesiącu'),
+                                ('90dni','w ciągu 3 miesięcy'),('1rok','w ciągu roku')] %}
           <option value="{{ value }}" {{ 'selected' if filters.period == value }}>{{ label }}</option>
         {% endfor %}
       </select>
     </div>
-    <div class="field"><label>Jak długo stoi [dni]</label>
-      <div class="pair">
-        <input name="days_on_market_min" value="{{ filters.days_on_market_min or '' }}" placeholder="od" inputmode="numeric">
-        <input name="days_on_market_max" value="{{ filters.days_on_market_max or '' }}" placeholder="do" inputmode="numeric">
+    <div class="field"><label>Jak długo wisi [dni]</label>
+      <div class="field__pair">
+        <input name="days_on_market_min" value="{{ filters.days_on_market_min or '' }}" placeholder="od" inputmode="numeric" aria-label="Wisi od">
+        <input name="days_on_market_max" value="{{ filters.days_on_market_max or '' }}" placeholder="do" inputmode="numeric" aria-label="Wisi do">
       </div>
     </div>
-    <div class="field"><label>Szukaj w treści</label>
-      <input name="q" value="{{ filters.q or '' }}" placeholder="np. garaż, balkon, piwnica">
+    <div class="field"><label for="f-q">Szukaj w treści</label>
+      <input id="f-q" name="q" value="{{ filters.q or '' }}" placeholder="np. garaż, balkon, piwnica">
     </div>
-    <div class="field"><label>Sortowanie</label>
-      <select name="sort">
-        {% for value, label in [('najnowsze','najnowsze'),('najstarsze','najstarsze'),
-                                ('cena_rosnaco','cena rosnąco'),('cena_malejaco','cena malejąco'),
-                                ('cena_m2_rosnaco','cena m² rosnąco'),('cena_m2_malejaco','cena m² malejąco'),
-                                ('powierzchnia','powierzchnia'),('najwiecej_kopii','najwięcej kopii')] %}
+    <div class="field"><label for="f-sort">Kolejność</label>
+      <select id="f-sort" name="sort">
+        {% for value, label in [('najnowsze','od najnowszych'),('cena_rosnaco','od najtańszych'),
+                                ('cena_malejaco','od najdroższych'),('cena_m2_rosnaco','najtańsze za m²'),
+                                ('cena_m2_malejaco','najdroższe za m²'),('powierzchnia','największe'),
+                                ('najwiecej_kopii','najczęściej powtarzane'),('najstarsze','najdłużej wiszące')] %}
           <option value="{{ value }}" {{ 'selected' if filters.sort == value }}>{{ label }}</option>
         {% endfor %}
       </select>
     </div>
   </div>
 
-  <div class="actions">
-    <label class="chip {{ 'on' if filters.only_original }}">
-      <input type="checkbox" name="only_original" value="1" {{ 'checked' if filters.only_original }} hidden
-             onchange="this.form.submit()"> tylko oryginalne
+  <div class="filters__actions">
+    <label class="toggle {{ 'is-on' if filters.only_original }}">
+      <input type="checkbox" name="only_original" value="1" {{ 'checked' if filters.only_original }} hidden>
+      bez powtórek z innych portali
     </label>
-    <label class="chip {{ 'on' if filters.only_active }}">
-      <input type="checkbox" name="only_active" value="1" {{ 'checked' if filters.only_active }} hidden
-             onchange="this.form.submit()"> tylko aktualne
+    <label class="toggle {{ 'is-on' if filters.only_active }}">
+      <input type="checkbox" name="only_active" value="1" {{ 'checked' if filters.only_active }} hidden>
+      tylko aktualne
     </label>
-    <label class="chip {{ 'on' if filters.with_phone }}">
-      <input type="checkbox" name="with_phone" value="1" {{ 'checked' if filters.with_phone }} hidden
-             onchange="this.form.submit()"> z telefonem
+    <label class="toggle {{ 'is-on' if filters.with_phone }}">
+      <input type="checkbox" name="with_phone" value="1" {{ 'checked' if filters.with_phone }} hidden>
+      da się zadzwonić
     </label>
-    <label class="chip {{ 'on' if filters.price_dropped }}">
-      <input type="checkbox" name="price_dropped" value="1" {{ 'checked' if filters.price_dropped }} hidden
-             onchange="this.form.submit()"> po obniżce
+    <label class="toggle {{ 'is-on' if filters.price_dropped }}">
+      <input type="checkbox" name="price_dropped" value="1" {{ 'checked' if filters.price_dropped }} hidden>
+      po obniżce
     </label>
     <div style="flex:1"></div>
-    <button class="btn" type="submit">🔍 Szukaj</button>
-    <a class="btn ghost" href="/nieruchomosci">Wyczyść</a>
+    <button class="btn" type="submit">Szukaj</button>
+    <a class="btn btn--quiet" href="/nieruchomosci">Wyczyść</a>
   </div>
 </form>
 
-<div style="margin-top:16px">
-  {% for listing in listings %}{{ listing_card(listing) }}{% else %}
+<div style="margin-top:18px">
+  {% for listing in listings %}{{ offer_card(listing) }}{% else %}
     <div class="empty">
-      <p><strong>Brak wyników.</strong></p>
-      <p>Poluzuj filtry albo uruchom skan: <code>ogl scan --region opolskie</code></p>
+      <strong>Nic nie pasuje do tych filtrów.</strong>
+      Spróbuj poszerzyć zakres ceny albo wybrać większy obszar.
     </div>
   {% endfor %}
 </div>
 
-{{ pagination(filters, pages, query_string) }}
+{{ pager(filters, pages, query_string) }}
 {% endblock %}
