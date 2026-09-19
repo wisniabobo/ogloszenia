@@ -363,6 +363,41 @@ sources:
     config:
       province: opolskie
 
+  - key: elicytacje_kas
+    name: eLicytacje KAS (urzędy skarbowe)
+    scraper: elicytacje_kas
+    kind: licytacja
+    category: licytacje
+    base_url: https://elicytacje.mf.gov.pl
+    enabled: true
+    interval_minutes: 90
+    coverage: krajowy
+    sprawdzono: 2026-09-19
+    notes: >
+      Portal KAS działa od 1 lipca 2026 i zebrał w jednym miejscu licytacje,
+      przetargi ofert i sprzedaż z wolnej ręki majątku zajętego w egzekucji
+      skarbowej. Publiczne API bez konta; filtra po województwie nie ma, więc
+      pobieramy całą sekcję "Nieruchomości" i odsiewamy słownikiem regionu.
+    config:
+      section_id: 8777b999-fbac-4696-a11e-5323a52760f1
+
+  - key: msig
+    name: Monitor Sądowy i Gospodarczy (syndycy)
+    scraper: msig
+    kind: licytacja
+    category: licytacje
+    base_url: https://wyszukiwarka-msig.ms.gov.pl
+    enabled: true
+    interval_minutes: 720
+    coverage: krajowy
+    sprawdzono: 2026-09-19
+    notes: >
+      Obwieszczenia syndyków o sprzedaży majątku z masy upadłości. API zwraca
+      metadane pozycji; pełna treść jest w numerze Monitora (PDF), więc
+      zapisujemy podmiot, sygnaturę i link.
+    config:
+      days_back: 120
+
   - key: krz
     name: Krajowy Rejestr Zadłużonych — obwieszczenia syndyków
     scraper: krz
@@ -493,8 +528,23 @@ sources:
         - https://www.zus.pl/o-zus/inne-ogloszenia/sprzedaz-i-wynajem-nieruchomosci
         - https://www.zus.pl/o-zus/inne-ogloszenia/mienie-zbedne
 
+  - key: pkp
+    name: PKP S.A. — sprzedaż nieruchomości
+    scraper: pkp
+    kind: przetarg
+    category: instytucje
+    base_url: https://www.pkp.pl
+    enabled: true
+    interval_minutes: 720
+    coverage: krajowy
+    sprawdzono: 2026-09-19
+    notes: >
+      Dworce, budynki przydworcowe, grunty kolejowe i mieszkania zakładowe.
+      Właściwy adres to pkp.pl/pl/sprzedaz — dawna domena nieruchomosci.pkp.pl
+      nie rozwiązuje się w DNS.
+
   - key: pkp_nieruchomosci
-    name: PKP S.A. — nieruchomości
+    name: PKP S.A. — nieruchomości (stary adres)
     scraper: generic_html
     kind: przetarg
     category: instytucje
@@ -510,23 +560,39 @@ sources:
       detail: true
 
   - key: lasy_panstwowe
-    name: Lasy Państwowe — sprzedaż nieruchomości
+    name: Lasy Państwowe — nieruchomości do sprzedaży
     scraper: generic_html
     kind: przetarg
     category: instytucje
-    base_url: https://www.lasy.gov.pl
+    base_url: https://www.gov.pl/web/dglp/nieruchomosci-przeznaczone-do-sprzedazy
     enabled: false
-    verify: true
+    sprawdzono: 2026-09-19
+    notes: >
+      Dyrekcja Generalna Lasów Państwowych publikuje wykaz na gov.pl. Strona
+      odpowiada; selektory do dostrojenia po pierwszym przebiegu.
+    config:
+      urls: ["https://www.gov.pl/web/dglp/nieruchomosci-przeznaczone-do-sprzedazy"]
+      list_selector: "article, li, tr"
+      link_selector: "a"
+      detail: true
+      seller_type: instytucja
+      authority: Lasy Państwowe
 
   - key: kzn
     name: Krajowy Zasób Nieruchomości
     scraper: generic_html
     kind: przetarg
     category: instytucje
-    base_url: https://kzn.gov.pl
+    base_url: https://kzn.bip.gov.pl
     enabled: false
     sprawdzono: 2026-09-19
-    notes: Serwer nie odpowiada (timeout) — do ponownego sprawdzenia.
+    notes: >
+      Domena kzn.gov.pl nie odpowiada, ale BIP pod kzn.bip.gov.pl działa —
+      tam trafiają ogłoszenia o gruntach pod budownictwo mieszkaniowe.
+    config:
+      urls: ["https://kzn.bip.gov.pl/ogloszenia/"]
+      list_selector: "article, li, tr"
+      detail: true
 
   - key: poczta_polska
     name: Poczta Polska — sprzedaż nieruchomości

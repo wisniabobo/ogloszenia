@@ -1,0 +1,42 @@
+# Caddy sam załatwia certyfikat i odnowienia — nie ma tu nic do konfigurowania
+# poza domeną i adresem e-mail (obie wartości z pliku .env).
+
+{
+	email {$ACME_EMAIL}
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Statyki są wersjonowane wraz z obrazem — można je trzymać długo.
+	@static path /static/*
+	header @static Cache-Control "public, max-age=604800, immutable"
+
+	# Publiczne API bez kluczy: pozwalamy używać go z dowolnej strony.
+	@api path /api/*
+	header @api Access-Control-Allow-Origin "*"
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "SAMEORIGIN"
+		-Server
+	}
+
+	reverse_proxy web:8000 {
+		health_uri /api/health
+		health_interval 30s
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 20mb
+			roll_keep 5
+		}
+		format json
+	}
+}

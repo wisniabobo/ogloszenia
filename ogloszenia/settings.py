@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     phone_hash_salt: str = "zmien-mnie"
     retention_days: int = 540  # po tylu dniach oferty archiwalne są czyszczone
 
+    # --- opcjonalne integracje ---
+    apify_token: str | None = None
+    nominatim_url: str | None = None
+
     # --- powiadomienia ---
     telegram_bot_token: str | None = None
     telegram_chat_id: str | None = None

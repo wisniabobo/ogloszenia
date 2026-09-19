@@ -1,4 +1,4 @@
-.PHONY: install dev run scan web test lint init
+.PHONY: install dev run scan geocode web watch test lint init sources check docker
 
 install:
 	python3 -m venv .venv && .venv/bin/pip install -U pip && .venv/bin/pip install -r requirements.txt
@@ -14,6 +14,15 @@ sources:
 
 scan:
 	.venv/bin/python -m ogloszenia.cli scan --region opolskie
+
+geocode:
+	.venv/bin/python -m ogloszenia.cli geocode --limit 500
+
+check:
+	.venv/bin/python -m ogloszenia.cli check-sources
+
+docker:
+	docker compose up -d --build
 
 web:
 	.venv/bin/python -m ogloszenia.cli web

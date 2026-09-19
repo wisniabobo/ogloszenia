@@ -1,0 +1,58 @@
+# Produkcyjny układ: aplikacja + osobny proces monitorujący + Caddy z HTTPS.
+#
+#   docker compose up -d
+#
+# Caddy sam wystawia i odnawia certyfikat Let's Encrypt dla domeny z pliku
+# .env (DOMAIN). Baza leży w wolumenie `ogl-data`, więc przeżywa przebudowę
+# obrazu.
+
+services:
+  web:
+    build: .
+    image: ogloszenia:latest
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      OGL_DATABASE_URL: sqlite:////data/ogloszenia.db
+      OGL_WEB_HOST: 0.0.0.0
+    volumes:
+      - ogl-data:/data
+    expose: ["8000"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # Zbieranie ofert chodzi osobno, żeby wolny portal nigdy nie spowolnił
+  # serwowania strony. Ten sam obraz, inna komenda.
+  worker:
+    build: .
+    image: ogloszenia:latest
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      OGL_DATABASE_URL: sqlite:////data/ogloszenia.db
+    volumes:
+      - ogl-data:/data
+    command: ["python", "-m", "ogloszenia.cli", "watch"]
+    depends_on:
+      web:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    env_file: [.env]
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [web]
+
+volumes:
+  ogl-data:
+  caddy-data:
+  caddy-config:

@@ -11,6 +11,7 @@ from .adresowo import AdresowoScraper
 from .amw import AMWScraper
 from .base import BaseScraper, RawListing, ScrapeContext
 from .domiporta import DomiportaScraper
+from .elicytacje_kas import ELicytacjeKASScraper
 from .ezamowienia import EZamowieniaScraper
 from .generic_html import GenericHtmlScraper
 from .gratka import GratkaScraper
@@ -18,9 +19,11 @@ from .komornik import ELicytacjeScraper, LicytacjeKomornikScraper
 from .kowr import KOWRScraper
 from .krz import KRZScraper
 from .morizon import MorizonScraper
+from .msig import MSiGScraper
 from .nieruchomosci_online import NieruchomosciOnlineScraper
 from .olx import OLXScraper
 from .otodom import OtodomScraper
+from .pkp import PKPScraper
 from .zus import ZUSScraper
 
 SCRAPERS: dict[str, type[BaseScraper]] = {
@@ -35,6 +38,9 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         AdresowoScraper,
         LicytacjeKomornikScraper,
         ELicytacjeScraper,
+        ELicytacjeKASScraper,
+        MSiGScraper,
+        PKPScraper,
         KRZScraper,
         EZamowieniaScraper,
         KOWRScraper,

@@ -216,6 +216,10 @@ class GenericHtmlScraper(BaseScraper):
         out: list[RawListing] = []
         for card in tree.css(list_sel):
             href = self.attr(card, cfg.get("link_selector", "a"), "href")
+            if not href and card.tag == "a":
+                # część serwisów robi z całego kafelka jeden link — wtedy
+                # karta i odnośnik to ten sam element (PKP, Adresowo)
+                href = card.attributes.get("href")
             if not href:
                 continue
             url = urljoin(page_url, href)

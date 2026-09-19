@@ -11,7 +11,7 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from rich.table import Table
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 
 from . import __version__
 from .db import init_db, session_scope
@@ -204,6 +204,63 @@ def cmd_web(
     port = port or settings.web_port
     console.print(f"[green]Interfejs:[/] http://{host}:{port}  ·  [dim]API: /docs[/]")
     uvicorn.run("ogloszenia.api:app", host=host, port=port, reload=reload, log_level="info")
+
+
+@app.command("geocode")
+def cmd_geocode(
+    limit: int = typer.Option(300, help="Ile ofert geokodować w tym przebiegu"),
+    region: str = typer.Option(None, help="Województwo (domyślnie z konfiguracji)"),
+    all_listings: bool = typer.Option(False, "--all", help="Także oferty nieaktywne"),
+) -> None:
+    """Nadaje ofertom współrzędne (GUGiK, zapasowo OpenStreetMap).
+
+    Wyniki trafiają do cache'u, więc ten sam adres pytamy raz w życiu —
+    powtórne uruchomienie jest niemal darmowe i nie obciąża cudzych serwerów.
+    """
+    from .pipeline.geocode import geocode_pending
+
+    init_db()
+    stats = asyncio.run(
+        geocode_pending(limit=limit, only_active=not all_listings, voivodeship=region)
+    )
+    console.print(
+        f"[green]Geokodowanie:[/] sprawdzone {stats.checked}, z cache {stats.from_cache}, "
+        f"nowe {stats.geocoded}, nieudane {stats.failed}"
+    )
+    with session_scope() as session:
+        total = session.scalar(select(func.count(Listing.id))) or 0
+        located = (
+            session.scalar(select(func.count(Listing.id)).where(Listing.lat.is_not(None))) or 0
+        )
+        console.print(f"Na mapie: {located}/{total} ofert")
+
+
+@app.command("apify-actors")
+def cmd_apify_actors(
+    query: str = typer.Argument("nieruchomosci", help="Czego szukać w katalogu Apify"),
+    limit: int = typer.Option(10),
+) -> None:
+    """Pokazuje gotowe scrapery z katalogu Apify (katalog jest publiczny, bez tokenu).
+
+    Przydaje się dla portali, które renderują wyniki w przeglądarce i których
+    nie da się odczytać samym pobieraniem HTML.
+    """
+    from .apis.apify import search_actors
+
+    actors = asyncio.run(search_actors(query, limit))
+    if not actors:
+        console.print("[yellow]Nic nie znaleziono albo katalog nie odpowiedział.[/]")
+        return
+    table = Table(title=f"Apify — wyniki dla: {query} ({len(actors)})")
+    for column in ("aktor", "tytuł", "uruchomienia", "adres"):
+        table.add_column(column, overflow="ellipsis")
+    for actor in actors:
+        table.add_row(actor.actor_id, actor.title[:44], str(actor.total_runs or "—"), actor.url)
+    console.print(table)
+    console.print(
+        "[dim]Uruchamianie aktorów wymaga tokenu (OGL_APIFY_TOKEN) i zużywa "
+        "jednostki z pakietu Apify. Reszta bota działa bez tego.[/]"
+    )
 
 
 @app.command("search")

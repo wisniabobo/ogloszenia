@@ -1,0 +1,12 @@
+[Unit]
+Description=ogloszenia — jednorazowy przebieg zbierania ofert
+
+[Service]
+Type=oneshot
+User=ogl
+Group=ogl
+WorkingDirectory=/opt/ogloszenia
+EnvironmentFile=/opt/ogloszenia/.env
+ExecStart=/opt/ogloszenia/.venv/bin/python -m ogloszenia.cli scan --notify
+ExecStartPost=/opt/ogloszenia/.venv/bin/python -m ogloszenia.cli geocode --limit 500
+TimeoutStartSec=3600

@@ -12,11 +12,13 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
+from starlette.middleware.cors import CORSMiddleware
 
 from . import __version__
 from .db import get_session_factory, init_db
@@ -46,8 +48,43 @@ from .utils.geo import all_cities, counties
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "web" / "templates"))
 
-app = FastAPI(title="ogloszenia — monitor rynku", version=__version__)
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "web" / "static")), name="static")
+app = FastAPI(
+    title="ogloszenia — otwarty monitor rynku nieruchomości",
+    version=__version__,
+    description=(
+        "Publiczne, darmowe API z ofertami nieruchomości, licytacjami "
+        "komorniczymi i skarbowymi oraz przetargami. Bez kluczy i bez limitów."
+    ),
+)
+
+# Strony i GeoJSON kompresują się ~8-krotnie — to jest różnica między mapą,
+# która wstaje od razu, a taką, na którą się czeka.
+app.add_middleware(GZipMiddleware, minimum_size=500, compresslevel=6)
+
+# API jest publiczne i ma być używane także z cudzych stron i skryptów.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "OPTIONS"],
+    allow_headers=["*"],
+    max_age=86400,
+)
+
+
+class CachedStatics(StaticFiles):
+    """Statyki z długim cache — przeglądarka pobiera je raz."""
+
+    def file_response(self, *args, **kwargs):  # type: ignore[override]
+        response = super().file_response(*args, **kwargs)
+        response.headers.setdefault("Cache-Control", "public, max-age=86400")
+        return response
+
+
+app.mount(
+    "/static",
+    CachedStatics(directory=str(BASE_DIR / "web" / "static")),
+    name="static",
+)
 
 
 def get_db() -> Session:

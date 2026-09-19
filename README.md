@@ -1,186 +1,239 @@
-# ogłoszenia — monitor rynku nieruchomości, licytacji i przetargów
+<div align="center">
 
-Bot, który pilnuje rynku **województwa opolskiego**: co kilka minut obchodzi portale
-ogłoszeniowe, obwieszczenia komornicze i ogłoszenia instytucji, sprowadza wszystko do
-jednego formatu, **wykrywa kopie tej samej nieruchomości**, liczy jak długo oferta stoi,
-zapamiętuje zmiany ceny i wysyła powiadomienie, gdy pojawi się coś pasującego do
-zapisanych filtrów.
+# ogłoszenia
 
-```
-ogl scan          # jednorazowy przebieg
-ogl watch         # ciągły monitoring wg harmonogramu
-ogl web           # interfejs + API na http://127.0.0.1:8000
+### Otwarty monitor rynku nieruchomości
+
+**Wszystkie portale. Licytacje komornicze i skarbowe. Przetargi. Na jednej mapie.**
+
+Za darmo, bez konta, bez limitów zapytań.
+
+[![testy](https://github.com/wisniabobo/ogloszenia/actions/workflows/ci.yml/badge.svg)](https://github.com/wisniabobo/ogloszenia/actions/workflows/ci.yml)
+![python](https://img.shields.io/badge/python-3.11%2B-3776ab)
+![licencja](https://img.shields.io/badge/licencja-MIT-green)
+![region](https://img.shields.io/badge/start-woj.%20opolskie-0a84c4)
+
+</div>
+
+---
+
+## Po co to jest
+
+Ta sama nieruchomość potrafi wisieć na ośmiu portalach, w trzech biurach i pod
+czterema różnymi cenami. Kupujący nie ma jak sprawdzić, czy „nowa oferta" to
+faktycznie nowa oferta, czy ta sama kawalerka, która stoi od ośmiu miesięcy
+i właśnie potaniała o 40 tysięcy. Płatne narzędzia, które to pokazują, kosztują
+kilkaset złotych miesięcznie i są skierowane do pośredników.
+
+**To narzędzie robi to samo i jest darmowe.** Zbiera oferty z portali, obwieszczenia
+komornicze, licytacje urzędów skarbowych, sprzedaż z mas upadłości i przetargi
+instytucji publicznych, sprowadza wszystko do jednego formatu, **wykrywa kopie**,
+liczy **jak długo oferta stoi** i pamięta **każdą zmianę ceny**.
+
+```bash
+git clone https://github.com/wisniabobo/ogloszenia.git && cd ogloszenia
+make install
+.venv/bin/python -m ogloszenia.cli init-db
+.venv/bin/python -m ogloszenia.cli scan
+.venv/bin/python -m ogloszenia.cli geocode
+.venv/bin/python -m ogloszenia.cli web        # http://127.0.0.1:8000
 ```
 
 ---
 
-## Co to właściwie robi
+## Co robi
 
 | | |
 |---|---|
-| **Zbiera** | portale ogłoszeniowe, licytacje komornicze, przetargi, wykazy urzędowe |
-| **Odróżnia** | ofertę **oryginalną** od **kopii** (ta sama nieruchomość na sześciu portalach) |
-| **Rozpoznaje** | pośrednik / prywatna / deweloper / komornik / syndyk / urząd |
-| **Liczy** | cenę za m², **ile dni oferta stoi**, historię obniżek, liczbę kopii |
-| **Buduje** | rejestr biur nieruchomości — z danych, nie z przepisanej listy |
-| **Powiadamia** | Telegram, e-mail, webhook — raz na ofertę, tylko o oryginałach |
+| 🗺️ **Mapa** | wszystkie oferty na jednej mapie, pinezki w kolorze ceny za m², klastrowanie, szukanie w promieniu, mediana cen w widocznym obszarze |
+| 🔁 **Oryginał vs kopia** | ta sama nieruchomość z sześciu portali pokazana **raz**, z licznikiem kopii i porównaniem cen między portalami |
+| ⏱️ **Ile oferta stoi** | licznik dni od publikacji; oferta wisząca pół roku to inna sytuacja negocjacyjna niż wczorajsza |
+| 📉 **Historia ceny** | każda obniżka zapisana z datą i procentem |
+| ⚖️ **Licytacje** | komornicze (cena wywoławcza, suma oszacowania, rękojmia, termin), skarbowe, syndyczne — łącznie z etapem **przed licytacją** |
+| 🏢 **Rejestr biur** | budowany z danych, nie przepisany z listy — kto ile ofert wystawia |
+| 📞 **Wyszukiwanie po telefonie** | czy ta „prywatna" oferta to nie kolejne ogłoszenie tego samego biura |
+| 🔔 **Alerty** | zapisane filtry → Telegram / e-mail / webhook, raz na ofertę |
+| 🔌 **Otwarte API** | bez kluczy, bez limitów, CORS dla wszystkich — buduj na tym własne rzeczy |
 
 ---
 
-## Instalacja
+## Skąd bierze dane
 
-```bash
-git clone https://github.com/wisniabobo/ogloszenia.git
-cd ogloszenia
-make install          # tworzy .venv i instaluje zależności
-cp .env.example .env  # (opcjonalnie) tokeny powiadomień, proxy, baza
-.venv/bin/python -m ogloszenia.cli init-db
-```
-
-Chcesz najpierw zobaczyć interfejs, bez ruszania sieci:
-
-```bash
-.venv/bin/python scripts/seed_demo.py
-.venv/bin/python -m ogloszenia.cli web
-```
-
----
-
-## Stan źródeł — sprawdzony na żywo 19.09.2026
-
-Rejestr ma **52 źródła**. To nie jest lista życzeń — każde zostało odpytane komendą
-`ogl check-sources`, a te działające przepuszczone przez pełny pipeline.
+**55 źródeł** w rejestrze, **27 zweryfikowanych realnym zapytaniem** (19.09.2026).
+Nic tu nie jest wpisane „z pamięci" — każdy adres i każde API zostało odpytane,
+a wyniki (łącznie z porażkami) zapisane w `config/sources.yaml`.
 
 ### Działają i wnoszą dane
 
-| Źródło | Rodzaj | Uwagi |
+| Źródło | Co daje | Jak |
 |---|---|---|
-| **OLX.pl** | portal | `/api/v1/offers/` — jedyna ścieżka API, którą OLX sam dopuszcza w robots.txt |
-| **Otodom.pl** | portal | dane z `__NEXT_DATA__` |
-| **Domiporta.pl** | portal | HTML + JSON-LD |
-| **Morizon.pl** | portal | paginacja tylko przez `page=` (reszta parametrów zabroniona) |
-| **Gratka.pl** | portal | robots dopuszcza wyłącznie `page=2` … `page=10` |
-| **licytacje.komornik.pl** | licytacje | cena wywołania, suma oszacowania, termin, adres |
+| **OLX.pl** | oferty prywatne, najszybciej | `/api/v1/offers/` — jedyna ścieżka API, którą OLX sam dopuszcza w robots.txt |
+| **Otodom.pl** | oferty biur i deweloperów | dane z `__NEXT_DATA__` |
+| **Domiporta.pl** | oferty biur | HTML + JSON-LD |
+| **Morizon.pl** | oferty biur | paginacja tylko przez `page=` (reszta zabroniona w robots) |
+| **Gratka.pl** | oferty biur | robots dopuszcza wyłącznie `page=2`…`page=10` |
+| **licytacje.komornik.pl** | licytacje komornicze | cena wywoławcza, oszacowanie, rękojmia, termin, adres |
+| **eLicytacje KAS** | licytacje urzędów skarbowych | publiczne API; także **etap przed licytacją** (opis i oszacowanie) |
+| **Monitor Sądowy i Gospodarczy** | sprzedaż z mas upadłości | publiczne API wyszukiwarki MSiG |
+| **e-Zamówienia / BZP** | przetargi publiczne | publiczne API, filtr CPV 45/70/71, województwo `PL16` |
+| **PKP S.A.** | dworce, grunty kolejowe | `pkp.pl/pl/sprzedaz` |
 
-Kontrolny przebieg (`--pages 2 --limit 60`) dał **228 ofert z woj. opolskiego** i zero błędów.
+### Wymagają przeglądarki
 
-### Źródła wymagające przeglądarki
+Kilka serwisów buduje listę wyników skryptem — w HTML nie ma ani jednej oferty.
+Są oznaczone `requires_js: true`, wyłączone, a skan mówi o tym wprost, zamiast
+zwracać ciche zero: **Nieruchomosci-online**, **Adresowo**, **KOWR**.
+Scrapery czekają gotowe; brakuje tylko renderera (patrz `ogl apify-actors`).
 
-Kilka serwisów renderuje listę wyników dopiero skryptem — w HTML-u nie ma ani jednej
-oferty. Są oznaczone `requires_js: true`, domyślnie wyłączone, a skan mówi o tym wprost
-zamiast zwracać ciche zero:
+### Pełna mapa źródeł
 
-- **Nieruchomosci-online.pl** — strona odpowiada, ale bez JS nie ma linków do ofert
-- **Adresowo.pl** — karta w HTML ma tylko lokalizację; cena i metraż dochodzą skryptem
-- **KOWR** (`nieruchomoscikowr.gov.pl`) — lista ofert ładowana skryptem
+```
+portale ogólnopolskie (17)  OLX · Otodom · Gratka · Morizon · Domiporta · Adresowo
+                            Nieruchomosci-online · Oferty.net · Szybko · GetHome
+                            RynekPierwotny · TabelaOfert · KRN · Domy.pl · Nportal
+                            Facebook Marketplace (wyłączony) · Gumtree (nie istnieje)
 
-Żeby je uruchomić, trzeba podpiąć renderer (np. Playwright) i nadpisać
-`BaseScraper.html()` tak, by zwracał drzewo po wykonaniu JS. Reszta pipeline'u jest
-gotowa — scrapery czekają ze skonfigurowanymi selektorami.
+portale lokalne (6)         NTO · Opole NaszeMiasto · KedzierzynKozle.info
+                            Nysa.info · Brzeg24 · StrzelceOpolskie
 
-### Do weryfikacji przed włączeniem
+licytacje (8)               licytacje.komornik.pl · e-Licytacje · eLicytacje KAS
+                            MSiG · KRZ · iMSiG · portale syndyków · KAS
 
-Pozostałe wpisy (portale lokalne, BIP-y gmin i powiatów, PKP, KZN, Lasy Państwowe,
-KAS, iMSiG) mają wpisane adresy i selektory, ale wymagają dostrojenia. Kilka rzeczy
-ustalonych przy sprawdzaniu i zapisanych w `config/sources.yaml`:
+przetargi (2)               e-Zamówienia · BZP
 
-- `bip.nysa.pl`, `bip.kluczbork.pl` — działają **bez** `www`
-- `olesno.biuletyn.info.pl` → przekierowuje na `bip.olesno.pl` (certyfikat z niepełnym łańcuchem)
-- `nieruchomosci.pkp.pl`, `kzn.gov.pl`, `syndyk.pl`, `kedzierzynkozle.info` — nie odpowiadają
-- `tabelaofert.pl`, `nto.pl` — odrzucają automaty (HTTP 403)
-- **Facebook Marketplace** — świadomie wyłączony: wymaga zalogowanego konta, a regulamin
-  Meta zakazuje automatycznego pobierania. Możliwy wyłącznie przez oficjalne API partnerskie.
+instytucje (8)              KOWR · AMW · ZUS · PKP · Lasy Państwowe · KZN
+                            Poczta Polska · KAS
 
-Zanim włączysz cokolwiek nowego:
+BIP gmin i powiatów (14)    Opole (miasto i powiat) · Nysa · Kędzierzyn-Koźle
+                            Brzeg · Kluczbork · Prudnik · Strzelce Opolskie
+                            Krapkowice · Namysłów · Głubczyce · Olesno
+                            Urząd Marszałkowski · Opolski Urząd Wojewódzki
+```
+
+BIP-y nie są tu przypadkiem: gminy mają **ustawowy obowiązek** publikować wykazy
+nieruchomości przeznaczonych do sprzedaży (art. 35 ustawy o gospodarce
+nieruchomościami). Tych ogłoszeń nie ma na żadnym portalu.
 
 ```bash
-ogl check-sources              # odpyta każdy adres i pokaże, co odpowiada
-ogl check-sources --only kowr  # albo pojedyncze źródło
+ogl sources              # co jest skonfigurowane i w jakim stanie
+ogl check-sources        # odpyta każdy adres i pokaże, co odpowiada
 ```
-
-### Pełna lista kategorii
-
-```
-portale ogólnopolskie (17)   OLX, Otodom, Gratka, Morizon, Nieruchomosci-online,
-                             Domiporta, Adresowo, Oferty.net, Szybko, GetHome,
-                             RynekPierwotny, TabelaOfert, KRN, Domy.pl, Nportal,
-                             Facebook Marketplace (wyłączony), Gumtree (nie istnieje)
-portale lokalne (6)          NTO, Opole NaszeMiasto, KedzierzynKozle.info,
-                             Nysa.info, Brzeg24, StrzelceOpolskie
-licytacje (6)                licytacje.komornik.pl, e-Licytacje, KRZ (syndycy),
-                             iMSiG, KAS, portale syndyków
-przetargi (2)                e-Zamówienia, BZP
-instytucje (7)               KOWR, AMW, ZUS, PKP, Lasy Państwowe, KZN, Poczta Polska
-BIP gmin i powiatów (14)     Opole (miasto i powiat), Nysa, Kędzierzyn-Koźle, Brzeg,
-                             Kluczbork, Prudnik, Strzelce Opolskie, Krapkowice,
-                             Namysłów, Głubczyce, Olesno, Urząd Marszałkowski, OUW
-```
-
-BIP-y są tu nieprzypadkowo: gminy mają ustawowy obowiązek publikować wykazy
-nieruchomości przeznaczonych do sprzedaży (art. 35 ustawy o gospodarce nieruchomościami).
-Tych ogłoszeń nie ma na żadnym portalu.
 
 ---
 
-## Lista biur nieruchomości
+## Darmowe API, na których to stoi
 
-Pytanie „z których biur ściągasz oferty" ma tylko jedną uczciwą odpowiedź: **z tych,
-które faktycznie wystawiają oferty** — a to widać dopiero po skanie. Dlatego rejestr biur
-powstaje z danych:
+Cały projekt opiera się na publicznych usługach **bez kluczy i bez opłat**.
+Każda sprawdzona na żywo 19.09.2026.
 
-1. każda oferta oznaczona jako pośrednik dokłada nazwę, miasto i telefon,
-2. warianty zapisu tej samej firmy („ABC Nieruchomości", „ABC NIERUCHOMOSCI Sp. z o.o.")
-   są scalane porównaniem rozmytym,
-3. rejestr rośnie przy każdym przebiegu.
+| Usługa | Do czego | Klucz |
+|---|---|---|
+| **GUGiK UUG** | geokodowanie polskich adresów — punkty adresowe z ewidencji, razem z kodami TERYT/SIMC/ULIC | nie |
+| **GUGiK ULDK** | działka ewidencyjna po współrzędnych lub identyfikatorze, z geometrią | nie |
+| **Nominatim (OSM)** | zapasowy geokoder | nie |
+| **Overpass (OSM)** | co jest w okolicy: szkoły, sklepy, przystanki, parki | nie |
+| **e-Zamówienia** | przetargi publiczne | nie |
+| **eLicytacje KAS** | licytacje skarbowe | nie |
+| **MSiG** | obwieszczenia syndyków | nie |
+| **OpenStreetMap** | kafelki mapy | nie |
+| Apify | *opcjonalnie* — gotowe scrapery dla portali z JS | tak, darmowy pakiet |
 
-```bash
-ogl agencies                                       # co już wiemy
-ogl agencies --min-offers 3                        # tylko aktywne biura
-ogl agencies --export config/agencies_opolskie.yaml
-```
+Geokodowanie idzie kaskadą **adres → ulica → dzielnica → miejscowość** i wszystko
+przechodzi przez cache, więc ten sam adres pytamy **raz w życiu**. Trzy portale
+z tą samą kamienicą to jedno zapytanie, nie trzy.
 
-`config/agencies_opolskie.yaml` zawiera **ziarno**: wzorce rozpoznawania pośrednika oraz
-sieci franczyzowe, po których marce rozpoznajemy oddział. Nie ma tam wymyślonych nazw
-i numerów — biura powstają i znikają, a lista przepisana z pamięci byłaby fikcją.
+> **Dlaczego to ma znaczenie:** „Opole" istnieje w Polsce kilka razy. Pierwsza
+> wersja geokodera wysłała opolskie mieszkania do **Opola Lubelskiego**, 300 km
+> dalej. Teraz wynik jest sprawdzany po kodzie TERYT województwa, a ramka
+> współrzędnych stanowi drugą linię obrony. Na kontrolnym przebiegu: **0 punktów
+> poza regionem**.
 
 ---
 
-## Jak działa rozpoznawanie kopii
+## Mapa
 
-Ta sama nieruchomość potrafi wisieć na ośmiu portalach, w trzech biurach i pod czterema
-cenami. Bot pokazuje ją **raz**, z licznikiem kopii i porównaniem cen.
+Sercem interfejsu jest mapa (`/mapa`):
+
+- **pinezka = cena**, kolor = cena za m² (zielony tani → czerwony drogi),
+  licytacje i przetargi mają własne kolory,
+- **klastrowanie** — kilka tysięcy ofert nie zamula przeglądarki,
+- **szukanie w promieniu** — klikasz punkt, dostajesz wszystko w okolicy,
+- **mediana cen w widoku** — jednym kliknięciem wiesz, ile się płaci w tej okolicy,
+- oferty bez podanej ulicy są **rozsunięte wokół środka miejscowości**
+  i dymek mówi wprost, że to przybliżenie — mapa nie udaje precyzji, której nie ma.
+
+Dane pod mapę idą przez `/api/geojson` — tylko pola potrzebne do narysowania
+dymka, spakowane gzipem. 2000 ofert to ~86 kB i kilka milisekund po stronie serwera.
+
+---
+
+## Otwarte API
+
+Bez kluczy, bez rejestracji, bez limitów. CORS otwarty, żeby dało się tego
+używać z cudzych stron i skryptów.
+
+```bash
+GET /api/listings?city=Opole&price_max=600000&property_type=mieszkanie
+GET /api/listings/{id}              # + historia cen + kopie na innych portalach
+GET /api/listings/{id}/okolica      # szkoły, sklepy, przystanki (OpenStreetMap)
+GET /api/geojson?kind=licytacja     # punkty na mapę
+GET /api/phone-lookup?number=537…   # wszystkie oferty spod numeru
+GET /api/market-report?city=Opole&days=90
+GET /api/stats  /api/sources  /api/agencies  /api/runs
+```
+
+Dokumentacja interaktywna: **`/docs`**.
+
+---
+
+## Jak rozpoznaje kopie
 
 Sygnały, od najmocniejszego:
 
-1. **telefon** — ten sam numer + zbliżony metraż,
-2. **odcisk parametrów** — miasto + metraż + pokoje + typ + transakcja, czyli
-   wyłącznie cechy, które podaje każdy portal (ulica i piętro tu nie wchodzą,
-   bo jeden serwis je zna, a drugi nie),
-3. **shingle opisu** — odporny na przestawienie zdań; liczony dopiero od 12 słów,
-4. **licytacje osobno** — łączone wyłącznie po sygnaturze akt albo identycznej cenie
-   wywołania i terminie.
+1. **telefon** — ten sam numer i zbliżony metraż,
+2. **odcisk parametrów** — miejscowość + metraż + pokoje + typ + transakcja,
+   czyli wyłącznie cechy, które podaje *każdy* portal,
+3. **shingle opisu** — odporny na przestawienie zdań; liczony od 12 słów w górę,
+4. **licytacje osobno** — łączone tylko po sygnaturze akt albo identycznej cenie
+   wywoławczej i terminie.
 
-Nad wszystkim stoi warunek zgodności: **brak danych nie jest sprzecznością, ale dwie
-różne znane wartości już tak**. Inna ulica, inne piętro albo cena rozjeżdżająca się
-o ponad 25% wykluczają połączenie niezależnie od tego, który sygnał je zaproponował.
+Nad wszystkim stoi warunek zgodności: **brak danych nie jest sprzecznością, ale
+dwie różne znane wartości już tak.** Inna ulica, inne piętro albo cena
+rozjeżdżająca się o ponad 25% wykluczają połączenie.
 
 Oryginałem zostaje oferta **najwcześniejsza**; przy remisie prywatna przed biurem.
 
-Obie zasady wzięły się z prawdziwych danych. Obwieszczenia komornicze mają tytuły
-w rodzaju „nieruchomość gruntowa zabudowana" — pierwsza wersja łączyła w jedno działki
-z dwóch różnych powiatów. Z drugiej strony ten sam apartament w Górkach nie był
-rozpoznawany, bo OLX znał piętro i nie znał ulicy, a Otodom odwrotnie.
+> Obie zasady wzięły się z prawdziwych pomyłek. Obwieszczenia komornicze mają
+> tytuły w rodzaju „nieruchomość gruntowa zabudowana" — pierwsza wersja łączyła
+> w jedno działki z dwóch różnych powiatów. W drugą stronę: ten sam apartament
+> z OLX i Otodom nie był rozpoznawany, bo jeden portal znał piętro, a drugi ulicę.
 
-Na kontrolnym przebiegu (228 ofert) bot znalazł **13 kopii** rozsianych po OLX, Otodom
-i Domiporcie — wszystkie zweryfikowane ręcznie jako trafne.
+---
+
+## Rejestr biur nieruchomości
+
+Pytanie „z których biur ściągasz oferty" ma jedną uczciwą odpowiedź: **z tych,
+które faktycznie wystawiają oferty** — a to widać dopiero po skanie.
+
+1. każda oferta oznaczona jako pośrednik dokłada nazwę, miasto i telefon,
+2. warianty zapisu tej samej firmy są scalane porównaniem rozmytym,
+3. miasto biura ustalane jest z najczęstszej lokalizacji jego ofert.
+
+```bash
+ogl agencies --min-offers 3
+ogl agencies --export config/agencies_opolskie.yaml
+```
+
+W repozytorium nie ma wymyślonych nazw ani numerów — biura powstają i znikają,
+a lista przepisana z pamięci byłaby fikcją.
 
 ---
 
 ## Zgodność z robots.txt
 
-Bot domyślnie respektuje `robots.txt` i ma **własny parser zgodny z RFC 9309**, bo
-`urllib.robotparser` z biblioteki standardowej stosuje regułę „pierwsze dopasowanie
-wygrywa", a standard wymaga **najdłuższego dopasowania**. Różnica jest praktyczna:
+Bot ma **własny parser robots.txt zgodny z RFC 9309**, bo `urllib.robotparser`
+z biblioteki standardowej stosuje regułę „pierwsze dopasowanie wygrywa", a
+standard wymaga **najdłuższego dopasowania**. Różnica jest praktyczna:
 
 ```
 # robots.txt OLX
@@ -188,34 +241,36 @@ Disallow: /api/
 Allow: /api/v1/offers/
 ```
 
-Zgodnie ze standardem `/api/v1/offers/` jest dozwolone — i to jedyna ścieżka API,
-z której korzystamy. `urllib` uznawał ją za zabronioną, więc bot nie pobierał niczego
+Zgodnie ze standardem `/api/v1/offers/` jest **dozwolone** — i tylko z tej ścieżki
+korzystamy. `urllib` uznawał ją za zabronioną, więc bot nie pobierał niczego
 z serwisu, który sam wskazał, co udostępnia.
 
-Parser obsługuje `*` i `$`, scala grupy o tej samej nazwie user-agenta i czyta
-`Crawl-delay`. Poza tym klient HTTP trzyma limit równoległości **per host**, odstęp
-między żądaniami, wykładniczy backoff z jitterem i honoruje `Retry-After`.
+**Osobna sprawa: zadeklarowane API.** Nominatim ma w robots.txt `Disallow: /search`,
+bo nie chce, żeby wyszukiwarki indeksowały dynamiczne wyniki — a jednocześnie
+w swojej polityce użycia wprost dopuszcza zapytania API do 1/s z identyfikującym
+się User-Agentem. Tak samo GUGiK i Overpass. Dlatego w kodzie jest jawna,
+krótka lista takich usług (`DECLARED_APIS` w `utils/http.py`), a każda z nich ma
+**wpisany na sztywno limit tempa z własnego regulaminu**. Przeglądanie portali
+ogłoszeniowych podlega robots.txt w całości i bez wyjątków.
 
-`OGL_RESPECT_ROBOTS=false` wyłącza sprawdzanie — to świadoma decyzja operatora,
-nie domyślne zachowanie.
+Poza tym klient HTTP trzyma limit równoległości per host, odstęp między
+żądaniami, wykładniczy backoff z jitterem i honoruje `Retry-After`.
 
 ---
 
 ## Numery telefonów a RODO
 
-Numer z ogłoszenia to dana osobowa. Domyślne ustawienia są ostrożne:
+Numer z ogłoszenia to dana osobowa. Ustawienia domyślne są ostrożne:
 
-- na liście numery są **maskowane** (`537 *** ***`) — tak jak w podglądzie wyników,
-- pełny numer wymaga osobnego żądania (`GET /api/listings/{id}/phone`), więc nie da się
-  jednym zapytaniem pobrać całej bazy,
-- `OGL_STORE_PHONE_HASH_ONLY=true` zapisuje **wyłącznie skrót** numeru — deduplikacja
-  nadal działa, a numerów w bazie nie ma,
+- na listach numery są **maskowane** (`537 *** ***`),
+- pełny numer wymaga osobnego żądania (`/api/listings/{id}/phone`) — nie da się
+  jednym zapytaniem pobrać całej bazy numerów,
+- `OGL_STORE_PHONE_HASH_ONLY=true` zapisuje **wyłącznie skrót** — deduplikacja
+  nadal działa, a numerów w bazie nie ma w ogóle,
 - eksport do CSV/JSON zawiera numery zamaskowane,
 - `ogl prune` czyści stare, nieaktywne oferty (domyślnie po 540 dniach).
 
-Odpowiedzialność za zgodność z prawem i regulaminami serwisów spoczywa na operatorze
-bota. Dane osobowe zebrane w ten sposób mają swojego administratora — i jest nim ten,
-kto uruchamia bota.
+Administratorem danych zebranych przez instancję jest ten, kto ją uruchamia.
 
 ---
 
@@ -223,68 +278,33 @@ kto uruchamia bota.
 
 ```bash
 ogl init-db                              # baza + rejestr źródeł
-ogl sources [--enabled] [--category X]   # co jest skonfigurowane i w jakim stanie
+ogl sources [--enabled] [--category X]   # stan źródeł
 ogl check-sources [--only klucz]         # czy adresy odpowiadają
 ogl scan [-s olx] [-c licytacje]         # jednorazowy przebieg
          [--pages N] [--limit N] [--no-details] [--all] [--notify]
+ogl geocode [--limit N]                  # nadaj współrzędne (GUGiK + OSM)
 ogl watch                                # ciągły monitoring
 ogl web [--host] [--port]                # interfejs + API
 ogl search --city Opole --price-max 500000
 ogl phone 537214908                      # wszystkie oferty spod numeru
 ogl agencies [--min-offers N] [--export plik.yaml]
-ogl stats
-ogl export wyniki.csv [--city Opole]
-ogl prune [--days N]
+ogl apify-actors "nieruchomosci"         # gotowe scrapery dla portali z JS
+ogl stats · ogl export plik.csv · ogl prune · ogl searches
 ```
-
-`ogl phone` odpowiada na pytanie, które w tej branży zadaje się najczęściej: czy ta
-„prywatna" oferta to nie przypadkiem kolejne ogłoszenie tego samego biura.
 
 ---
 
-## Interfejs
-
-| Widok | Co pokazuje |
-|---|---|
-| **Pulpit** | liczby, oferty wg źródła i miejscowości, dziennik przebiegów |
-| **Nieruchomości** | lista z pełnym panelem filtrów (kategoria, lokalizacja, ulica, cena, cena za m², powierzchnia, pokoje, piętro, oferent, źródło, okres dodania, jak długo stoi) |
-| **Licytacje** | termin, cena wywołania, suma oszacowania, rękojmia, sygnatura |
-| **Przetargi i wykazy** | instytucje, gminy, terminy składania ofert |
-| **Karta oferty** | parametry, historia ceny, **ta sama nieruchomość na innych portalach** |
-| **Biura** | rejestr zbudowany z ofert |
-| **Poszukiwania** | zapisane filtry z powiadomieniami |
-| **Źródła** | stan każdego źródła, ostatni przebieg, błędy |
-
-Interfejs działa na telefonie i ma tryb ciemny. Bez build-stepu — czysty CSS i kilkadziesiąt
-linii JavaScriptu.
-
-### API
-
-```
-GET  /api/listings?city=Opole&price_max=600000&property_type=mieszkanie
-GET  /api/listings/{id}            # + historia cen + lista kopii
-GET  /api/listings/{id}/phone      # pełny numer (świadome żądanie)
-GET  /api/phone-lookup?number=537
-GET  /api/stats  /api/sources  /api/agencies  /api/runs
-GET  /api/market-report?city=Opole&days=90
-POST /api/searches                 # zapisane poszukiwanie z alertem
-```
-
-Dokumentacja interaktywna: `/docs`.
-
----
-
-## Powiadomienia
+## Wdrożenie
 
 ```bash
-# .env
-OGL_TELEGRAM_BOT_TOKEN=...
-OGL_TELEGRAM_CHAT_ID=...
+ssh-copy-id user@TWOJ_SERWER      # najpierw klucz, hasła nie używamy
+./deploy/deploy.sh user@TWOJ_SERWER
 ```
 
-Poszukiwanie zapisujesz przyciskiem „Zapisz jako poszukiwanie" na liście — zapisuje
-dokładnie te filtry, które widzisz. Alert leci raz na parę (poszukiwanie, oferta),
-domyślnie tylko dla ofert oryginalnych.
+Trzy kontenery: **web** (uvicorn, 2 procesy), **worker** (zbieranie ofert osobno,
+żeby wolny portal nigdy nie spowolnił strony) i **caddy** (HTTPS sam się robi
+i sam odnawia). Szczegóły, kopie zapasowe i wariant bez Dockera:
+[`deploy/README.md`](deploy/README.md).
 
 ---
 
@@ -292,52 +312,52 @@ domyślnie tylko dla ofert oryginalnych.
 
 ```
 ogloszenia/
-  settings.py          konfiguracja (ENV + YAML)
+  api.py               FastAPI: widoki + otwarte REST API (gzip, CORS, cache)
+  query.py             wspólny builder filtrów — API = interfejs = alerty = mapa
   models.py            model danych
-  query.py             wspólny builder filtrów (API = interfejs = alerty)
-  api.py               FastAPI: widoki + REST
   cli.py               komendy
   scheduler.py         każde źródło we własnym tempie
   alerts.py            Telegram / e-mail / webhook
+  apis/                darmowe API: GUGiK (geokoder + działki), Nominatim,
+                       Overpass (POI), Apify (opcjonalnie)
   utils/
     robots.py          parser robots.txt wg RFC 9309
-    http.py            limity per host, backoff, jitter
+    http.py            limity per host, backoff, jitter, zadeklarowane API
     text.py            polskie liczby, daty, parametry z opisu
     phones.py          wykrywanie, maskowanie, haszowanie numerów
     geo.py             słownik woj. opolskiego + polska odmiana nazw
-  scrapers/
-    base.py            interfejs: zwróć strumień RawListing
-    generic_html.py    JSON-LD -> __NEXT_DATA__ -> selektory z YAML-a
-    olx.py otodom.py gratka.py morizon.py domiporta.py adresowo.py
-    nieruchomosci_online.py komornik.py krz.py ezamowienia.py kowr.py amw.py zus.py
+  scrapers/            18 scraperów; generic_html sterowany selektorami z YAML-a
   pipeline/
-    normalize.py       uzupełnianie parametrów, geokodowanie, odsiew
+    normalize.py       parametry z opisu, lokalizacja, odsiew
     dedup.py           oryginał vs kopia
     enrich.py          typ oferenta + rejestr biur
+    geocode.py         współrzędne z cache'em i walidacją regionu
     runner.py          orkiestracja, historia cen, wygaszanie ofert
 config/
-  sources.yaml             52 źródła
+  sources.yaml             55 źródeł, 27 zweryfikowanych na żywo
   regions_opolskie.yaml    12 powiatów, 444 miejscowości, dzielnice Opola
   agencies_opolskie.yaml   ziarno rejestru biur
+deploy/                Docker Compose, Caddy, systemd, skrypt wdrożeniowy
 ```
 
 Dopisanie portalu to zwykle wpis w `sources.yaml` (gdy wystarczą selektory) albo
-40–80 linii nowej klasy. Selektory siedzą w konfiguracji właśnie dlatego, że portale
-przemeblowują front — zmiana szaty graficznej nie powinna wymagać zmian w kodzie.
+40–80 linii nowej klasy. Selektory siedzą w konfiguracji właśnie dlatego, że
+portale przemeblowują front — zmiana szaty graficznej nie powinna wymagać
+zmian w kodzie.
 
 ---
 
 ## Polska odmiana
 
 Osobny akapit, bo to w praktyce największe źródło błędów przy polskich danych.
-Wszystkie te przypadki mają testy:
+Wszystkie przypadki mają testy:
 
-- „w **Opolu**", „na **Zaodrzu**", „w **Kędzierzynie-Koźlu**", „w **Strzelcach Opolskich**"
-  — dopasowanie po rdzeniu, z limitem długości końcówki,
+- „w **Opolu**", „na **Zaodrzu**", „w **Kędzierzynie-Koźlu**", „w **Strzelcach Opolskich**",
 - „na **parterze**", „budynek **parterowy**",
 - `1 240 m2` to 1240 m², ale `3 pokoje, 49 m2` to 49 m², a nie 349,
-- „mieszkanie 3 **pokoje**" **nie** jest ofertą z gminy **Pokój** — nazwy wieloznaczne
-  (Pokój, Dzielnica, Dobra, Sucha, Rogi…) liczą się tylko pisane wielką literą,
+- „mieszkanie 3 **pokoje**" **nie** jest ofertą z gminy **Pokój** — nazwy
+  wieloznaczne (Pokój, Dzielnica, Dobra, Sucha, Rogi…) liczą się tylko pisane
+  wielką literą,
 - „ul. Leona Powolnego**. Kontakt 537…**" — nazwa ulicy kończy się na kropce zdania.
 
 ---
@@ -348,21 +368,43 @@ Wszystkie te przypadki mają testy:
 make dev && make test
 ```
 
-84 testy: parsowanie polskich liczb i dat, wykrywanie i maskowanie telefonów,
-słownik geograficzny z odmianą, normalizacja, deduplikacja (w tym przypadki
-z prawdziwych obwieszczeń komorniczych), scrapery na zamrożonych odpowiedziach
-oraz 12 testów parsera robots.txt na regułach z prawdziwych plików portali.
+84 testy: parsowanie polskich liczb i dat, telefony, słownik geograficzny
+z odmianą, normalizacja, deduplikacja (w tym przypadki z prawdziwych obwieszczeń
+komorniczych), scrapery na zamrożonych odpowiedziach oraz 12 testów parsera
+robots.txt na regułach z prawdziwych plików portali.
 
 ---
 
-## Rozszerzenie na inne województwa
+## Inne województwa
 
 Region jest parametrem, nie założeniem:
 
 ```bash
 ogl scan --region dolnoslaskie
+ogl geocode --region dolnoslaskie
 ```
 
-Trzeba dodać słownik administracyjny (`config/regions_<woj>.yaml`) i poprawić parametry
-regionu w `sources.yaml` — mapa `REGIONS` w scraperze OLX zawiera już wszystkie 16
-województw.
+Trzeba dodać słownik administracyjny (`config/regions_<woj>.yaml`) i poprawić
+parametry regionu w `sources.yaml`. Mapy kodów (OLX, e-Zamówienia, TERYT) mają
+już wszystkie 16 województw.
+
+---
+
+## Współpraca
+
+Najbardziej przydają się: **nowe źródła** (zwłaszcza BIP-y gmin), **poprawki
+selektorów**, gdy portal przemebluje front, oraz **słowniki innych województw**.
+
+Przed zgłoszeniem: `make lint && make test`, a dla nowego źródła
+`ogl check-sources --only twoj_klucz`.
+
+---
+
+## Licencja i zastrzeżenia
+
+MIT. Projekt nie jest powiązany z żadnym z monitorowanych serwisów.
+
+Narzędzie zbiera **publicznie dostępne ogłoszenia** i respektuje `robots.txt`.
+Odpowiedzialność za zgodność konkretnej instalacji z prawem i regulaminami
+serwisów spoczywa na tym, kto ją uruchamia. Dane mają charakter informacyjny —
+przed decyzją zakupową zawsze sprawdź ofertę u źródła.

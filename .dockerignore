@@ -1,0 +1,16 @@
+.venv/
+venv/
+data/
+.git/
+.github/
+tests/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.db
+*.db-wal
+*.db-shm
+.env
+.DS_Store
+deploy/

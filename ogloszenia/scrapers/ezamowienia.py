@@ -1,7 +1,18 @@
 """Platforma e-Zamówienia (ezamowienia.gov.pl) — przetargi publiczne.
 
-Filtrujemy po kodach CPV związanych z nieruchomościami i robotami budowlanymi
-oraz po województwie, żeby nie zasypywać bazy zamówieniami na tonery.
+Publiczne API, zweryfikowane 19.09.2026 — **metodą GET**, nie POST (POST zwraca
+405, na czym wykładała się pierwsza wersja tego scrapera)::
+
+    GET /mo-board/api/v1/Board/Search?SortingColumnName=PublicationDate
+        &SortingDirection=DESC&PageNumber=1&PageSize=50
+
+Województwo siedzi w polu `organizationProvince` jako kod `PL` + numer TERYT
+(opolskie = **PL16**). Parametr filtrujący po stronie serwera nie działa —
+sprawdzone: przekazanie `Province` nie zmienia wyniku — więc odsiewamy sami.
+
+Z całego BZP interesują nas zamówienia okołonieruchomościowe, czyli CPV
+45 (roboty budowlane), 70 (usługi w zakresie nieruchomości) i 71 (usługi
+architektoniczne). Reszta to tonery i catering.
 """
 
 from __future__ import annotations
@@ -13,11 +24,22 @@ from ..utils.text import clean, parse_datetime, parse_number
 from .base import BaseScraper, RawListing, ScrapeContext
 
 BASE = "https://ezamowienia.gov.pl"
-DEFAULT_API = f"{BASE}/mo-board/api/v1/Board/Search"
+SEARCH = f"{BASE}/mo-board/api/v1/Board/Search"
 
-# CPV: 70* usługi w zakresie nieruchomości, 45* roboty budowlane,
-# 71* usługi architektoniczne/budowlane
-CPV_PREFIXES = ("70", "45", "71")
+#: kod województwa w polu organizationProvince (PL + numer TERYT)
+PROVINCE_CODES = {
+    "dolnoslaskie": "PL02", "kujawsko-pomorskie": "PL04", "lubelskie": "PL06",
+    "lubuskie": "PL08", "lodzkie": "PL10", "malopolskie": "PL12", "mazowieckie": "PL14",
+    "opolskie": "PL16", "podkarpackie": "PL18", "podlaskie": "PL20", "pomorskie": "PL22",
+    "slaskie": "PL24", "swietokrzyskie": "PL26", "warminsko-mazurskie": "PL28",
+    "wielkopolskie": "PL30", "zachodniopomorskie": "PL32",
+}
+
+#: CPV, które mają cokolwiek wspólnego z nieruchomościami
+CPV_PREFIXES = ("45", "70", "71")
+
+#: rodzaje ogłoszeń — domyślnie pomijamy wyniki postępowań (już rozstrzygnięte)
+SKIP_NOTICE_TYPES = {"TenderResultNotice"}
 
 
 class EZamowieniaScraper(BaseScraper):
@@ -28,64 +50,85 @@ class EZamowieniaScraper(BaseScraper):
     coverage = "krajowy"
 
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
-        endpoint = self.config.get("api_url", DEFAULT_API)
+        from ..utils.text import deaccent
+
+        wanted = PROVINCE_CODES.get(
+            deaccent(ctx.voivodeship or "opolskie").lower(), "PL16"
+        )
         cpv = tuple(self.config.get("cpv_prefixes", CPV_PREFIXES))
+        skip_types = set(self.config.get("skip_notice_types", SKIP_NOTICE_TYPES))
+        page_size = 100
         produced = 0
-        for page in range(ctx.max_pages):
-            body = {
+
+        for page in range(1, ctx.max_pages + 1):
+            if produced >= ctx.max_items:
+                return
+            params = {
                 "SortingColumnName": "PublicationDate",
                 "SortingDirection": "DESC",
-                "PageNumber": page + 1,
-                "PageSize": 50,
-                "NoticeType": "ContractNotice",
-                "Voivodeship": self.config.get("voivodeship", "OPOLSKIE"),
-            } | dict(self.config.get("payload", {}))
+                "PageNumber": page,
+                "PageSize": page_size,
+            }
             try:
-                payload = await self.client.post_json(endpoint, body)
+                payload = await self.client.get_json(SEARCH, params=params)
             except Exception:
                 return
-            rows = (
-                self.dig(payload, "items", default=None)
-                or self.dig(payload, "data", default=None)
-                or (payload if isinstance(payload, list) else [])
-            )
+            rows = payload if isinstance(payload, list) else (payload or {}).get("items") or []
             if not rows:
                 return
             for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                if row.get("organizationProvince") != wanted:
+                    continue
+                if row.get("noticeType") in skip_types:
+                    continue
                 item = self._parse(row, cpv)
-                if item:
-                    yield item
-                    produced += 1
-                    if produced >= ctx.max_items:
-                        return
+                if item is None:
+                    continue
+                yield item
+                produced += 1
+                if produced >= ctx.max_items:
+                    return
 
+    # ------------------------------------------------------------------ #
     def _parse(self, row: dict, cpv_prefixes: tuple[str, ...]) -> RawListing | None:
-        if not isinstance(row, dict):
+        notice_number = row.get("noticeNumber") or row.get("bzpNumber")
+        title = clean(row.get("orderObject") or "")
+        if not notice_number or not title:
             return None
-        notice_id = row.get("noticeNumber") or row.get("id") or row.get("bzpNumber")
-        title = clean(row.get("orderObject") or row.get("title") or row.get("name") or "")
-        if not notice_id or not title:
-            return None
-        cpv = str(row.get("cpvCode") or row.get("mainCpv") or "")
+
+        cpv = str(row.get("cpvCode") or "")
         if cpv_prefixes and cpv and not cpv.startswith(cpv_prefixes):
             return None
-        authority = clean(row.get("organizationName") or row.get("contractingAuthority") or "")
+
+        object_id = row.get("objectId") or row.get("moIdentifier")
+        contractors = row.get("contractors") or []
         return RawListing(
-            external_id=str(notice_id),
-            url=row.get("htmlUrl") or f"{BASE}/mp-client/search/list/{notice_id}",
+            external_id=str(notice_number),
+            url=f"{BASE}/mo-client-board/bzp/notice-details/id/{object_id}"
+            if object_id
+            else f"{BASE}/mo-client-board/bzp/list",
             source_key=self.key,
             kind=OfferKind.PRZETARG,
             transaction=TransactionType.NIEZNANY,
             title=title[:400],
-            description=clean(row.get("shortDescription") or "") or None,
-            price=parse_number(row.get("orderValue")),
-            deadline=parse_datetime(row.get("submittingOffersDate") or row.get("tenderSubmissionDeadline")),
-            event_date=parse_datetime(row.get("openingOffersDate")),
+            deadline=parse_datetime(row.get("submittingOffersDate")),
             published_at=parse_datetime(row.get("publicationDate")),
-            authority=authority or None,
+            price=parse_number(row.get("orderValue")),
+            authority=clean(row.get("organizationName") or "") or None,
             seller_type=SellerType.URZAD,
-            location_text=clean(row.get("organizationCity") or row.get("voivodeship") or "") or None,
             city=clean(row.get("organizationCity") or "") or None,
-            extra={"cpv": cpv, "noticeType": row.get("noticeType"), "procedure": row.get("procedureType")},
+            location_text=clean(row.get("organizationCity") or "") or None,
+            extra={
+                "cpv": cpv or None,
+                "rodzaj_ogloszenia": row.get("noticeType"),
+                "rodzaj_zamowienia": row.get("orderType"),
+                "nr_bzp": row.get("bzpNumber"),
+                "nip_zamawiajacego": row.get("organizationNationalId"),
+                "ponizej_progu_ue": row.get("isTenderAmountBelowEU"),
+                "wykonawcy": [c.get("contractorName") for c in contractors if isinstance(c, dict)],
+                "pdf": row.get("pdfUrl"),
+            },
             raw=row,
         )

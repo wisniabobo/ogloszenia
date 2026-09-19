@@ -1,0 +1,11 @@
+[Unit]
+Description=ogloszenia — zbieranie ofert co 15 minut
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=15min
+RandomizedDelaySec=90
+Persistent=true
+
+[Install]
+WantedBy=timers.target

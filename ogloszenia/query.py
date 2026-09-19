@@ -181,8 +181,15 @@ def apply_sort(stmt: Select, sort: str = "najnowsze") -> Select:
 
 
 def search_listings(session, filters: Filters) -> tuple[list[Listing], int]:
-    """Zwraca (strona wyników, łączna liczba trafień)."""
-    base = select(Listing)
+    """Zwraca (strona wyników, łączna liczba trafień).
+
+    Telefony dociągamy jednym dodatkowym zapytaniem (`selectinload`), a nie
+    osobnym dla każdej oferty — przy 25 pozycjach na stronie to różnica
+    między 2 a 26 zapytaniami do bazy.
+    """
+    from sqlalchemy.orm import selectinload
+
+    base = select(Listing).options(selectinload(Listing.phones))
     base = apply_filters(base, filters)
 
     total = session.scalar(

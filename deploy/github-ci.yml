@@ -1,0 +1,64 @@
+name: testy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Zależności
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check ogloszenia tests scripts
+
+      - name: Testy
+        run: pytest -q
+
+      - name: Konfiguracja się parsuje
+        run: |
+          python - <<'PY'
+          import yaml, pathlib
+          for name in ("sources.yaml", "regions_opolskie.yaml", "agencies_opolskie.yaml"):
+              data = yaml.safe_load(pathlib.Path("config", name).read_text(encoding="utf-8"))
+              assert data, name
+              print(f"{name}: ok")
+          PY
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Obraz się buduje
+        run: docker build -t ogloszenia:ci .
+      - name: Obraz wstaje i odpowiada
+        run: |
+          docker run -d --name ogl -p 8000:8000 ogloszenia:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/api/health; then echo; exit 0; fi
+            sleep 2
+          done
+          echo "aplikacja nie odpowiedziała"; docker logs ogl; exit 1
+
+# ---------------------------------------------------------------------------
+# Ten plik należy do .github/workflows/ci.yml — leży tutaj, bo token użyty przy
+# pierwszym wypchnięciu nie miał zakresu `workflow` i GitHub odrzucał zmiany
+# w katalogu .github/. Żeby włączyć CI:
+#
+#   gh auth refresh -s workflow        # jednorazowo, doda brakujący zakres
+#   mkdir -p .github/workflows
+#   git mv deploy/github-ci.yml .github/workflows/ci.yml
+#   git commit -m "Włącz CI" && git push
+# ---------------------------------------------------------------------------
