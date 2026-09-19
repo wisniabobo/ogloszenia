@@ -322,3 +322,36 @@ class TestBezpieczneUsuwanie:
         session.flush()
         assert removed >= 1
         assert session.query(Listing).filter(Listing.source_key == "src-zrodlo-a").count() == 0
+
+
+class TestPrzeliczanieWspolrzednych:
+    """Cache geokodowania trzyma też nieudane dopasowania.
+
+    Gdy poprawka w geokoderze pozwala trafić lepiej, trzeba unieważnić wpisy
+    po TREŚCI ZAPYTANIA — bo przy trafieniu na poziomie miejscowości wynik
+    nie zawiera ulicy i filtrowanie po nim niczego nie znajduje.
+    """
+
+    def test_wpis_z_ulica_w_zapytaniu_jest_wykrywany(self, session):
+        from sqlalchemy import select
+
+        from ogloszenia.models import GeocodeCache
+
+        session.add_all([
+            GeocodeCache(query_hash="h-ulica", query="Opole, Telesfora",
+                         lat=50.6, lon=17.9, precision="city", street=None),
+            GeocodeCache(query_hash="h-miasto", query="Zawadzkie",
+                         lat=50.6, lon=18.4, precision="city", street=None),
+        ])
+        session.flush()
+
+        do_przeliczenia = {
+            row[0] for row in session.execute(
+                select(GeocodeCache.query_hash).where(
+                    GeocodeCache.precision.in_(["city", "district"]),
+                    GeocodeCache.query.contains(","),
+                )
+            )
+        }
+        assert "h-ulica" in do_przeliczenia      # zapytanie zawierało ulicę
+        assert "h-miasto" not in do_przeliczenia  # sama miejscowość — nie ma co poprawiać

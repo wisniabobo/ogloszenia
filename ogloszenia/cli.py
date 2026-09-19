@@ -374,12 +374,16 @@ def cmd_regeocode(
                 Listing.street.is_not(None),
                 Listing.geo_precision.in_(["city", "district"]),
             )
+            # Uwaga: o tym, czy wpis nadaje się do przeliczenia, decyduje
+            # ZAPYTANIE, a nie wynik. Gdy GUGiK odpowie poziomem miejscowości,
+            # pole `street` w wyniku jest puste — filtrowanie po nim nie
+            # znajdowało niczego i cache zostawał z błędnymi danymi.
             keys = {
                 row[0]
                 for row in session.execute(
                     select(GeocodeCache.query_hash).where(
                         GeocodeCache.precision.in_(["city", "district"]),
-                        GeocodeCache.street.is_not(None),
+                        GeocodeCache.query.contains(","),
                     )
                 )
             }
