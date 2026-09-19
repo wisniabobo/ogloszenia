@@ -8,6 +8,8 @@
 
 Za darmo, bez konta, bez limitów zapytań.
 
+**▶ [bot.wisnia.dev](https://bot.wisnia.dev)**
+
 [![testy](https://github.com/wisniabobo/ogloszenia/actions/workflows/ci.yml/badge.svg)](https://github.com/wisniabobo/ogloszenia/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.10%2B-3776ab)
 ![licencja](https://img.shields.io/badge/licencja-MIT-green)
@@ -52,7 +54,8 @@ make install
 | ⚖️ **Licytacje** | komornicze (cena wywoławcza, suma oszacowania, rękojmia, termin), skarbowe, syndyczne — łącznie z etapem **przed licytacją** |
 | 🏢 **Rejestr biur** | z katalogu, w którym pośrednicy sami się rejestrują: nazwa, adres, telefon i **ile ofert deklarują** |
 | 📊 **Pokrycie** | ile ofert danego biura faktycznie mamy wobec liczby, którą samo podaje — widać, czy zbieranie jest kompletne |
-| 📞 **Wyszukiwanie po telefonie** | czy ta „prywatna" oferta to nie kolejne ogłoszenie tego samego biura |
+| 📞 **Kontakt** | numer z ogłoszenia, a gdy portal go chowa — centrala biura z katalogu, zawsze z etykietą, skąd pochodzi |
+| 🔎 **Wyszukiwanie po telefonie** | czy ta „prywatna" oferta to nie kolejne ogłoszenie tego samego biura |
 | 🔔 **Alerty** | zapisane filtry → Telegram / e-mail / webhook, raz na ofertę |
 | 🔌 **Otwarte API** | bez kluczy, bez limitów, CORS dla wszystkich — buduj na tym własne rzeczy |
 
@@ -189,6 +192,23 @@ Sercem interfejsu jest mapa (`/mapa`):
 
 Dane pod mapę idą przez `/api/geojson` — tylko pola potrzebne do narysowania
 dymka, spakowane gzipem. 2000 ofert to ~86 kB i kilka milisekund po stronie serwera.
+
+---
+
+## Telefony: co się da, a czego nie
+
+Portale coraz mocniej chowają numery. OLX na zapytanie o telefon odpowiada
+wprost `Disallowed for this user` — bez zalogowanego konta numeru nie wyda
+i nie ma na to obejścia. W treści ogłoszeń numer podaje mniej niż 5% ofert.
+
+Jest jednak druga, całkowicie jawna droga: **katalog biur, w którym pośrednicy
+sami publikują swój numer**. Jeśli ofertę wystawiło biuro, którego numer znamy,
+to jest to numer kontaktowy do tej oferty.
+
+Dlatego każdy numer niesie **etykietę pochodzenia** — „z ogłoszenia" albo
+„centrala biura". Bez tego rozróżnienia podsuwalibyśmy numer, sugerując, że
+stoi w ogłoszeniu. Efekt: kontakt jest dostępny przy **1 867 z 4 965** ofert
+zamiast przy 284.
 
 ---
 
