@@ -26,7 +26,7 @@
 
 {# Nazwa ulicy bywa podana razem z typem ("Aleja Przyjaźni", "Osiedle AK").
    W takim razie nie doklejamy przed nią jeszcze "ul.". #}
-{% set STREET_TYPES = ['al', 'aleja', 'alei', 'aleje', 'os', 'osiedle', 'pl', 'plac', 'rynek'] %}
+{% set STREET_TYPES = ['ul', 'ulica', 'al', 'aleja', 'alei', 'aleje', 'os', 'osiedle', 'pl', 'plac', 'rynek'] %}
 {% macro street_label(street) %}
   {%- if street -%}
     {%- set head = street.split(' ')[0] | lower | replace('.', '') -%}

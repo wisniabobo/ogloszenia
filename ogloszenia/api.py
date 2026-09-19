@@ -31,7 +31,15 @@ from .models import (
     Source,
     utcnow,
 )
-from .query import Filters, apply_filters, apply_sort, dashboard_stats, phone_lookup, search_listings
+from .query import (
+    Filters,
+    apply_filters,
+    apply_sort,
+    dashboard_stats,
+    map_points,
+    phone_lookup,
+    search_listings,
+)
 from .settings import get_settings
 from .utils.geo import all_cities, counties
 
@@ -264,6 +272,24 @@ def view_listing(listing_id: int, request: Request, db: DB):
     )
 
 
+@app.get("/mapa", response_class=HTMLResponse)
+def view_map(request: Request, db: DB):
+    filters = _filters_from_query(request)
+    sources = list(db.scalars(select(Source).where(Source.enabled.is_(True)).order_by(Source.name)))
+    return templates.TemplateResponse(
+        request,
+        "map.html",
+        {
+            "filters": filters,
+            "sources": sources,
+            "cities": all_cities(),
+            "counties": counties(),
+            "active": "mapa",
+            "query_string": str(request.query_params),
+        },
+    )
+
+
 @app.get("/biura", response_class=HTMLResponse)
 def view_agencies(request: Request, db: DB):
     q = request.query_params.get("q")
@@ -390,6 +416,39 @@ def api_phone_lookup(db: DB, number: str = Query(min_length=4)) -> dict:
             for x in listings
         ],
     }
+
+
+@app.get("/api/geojson")
+def api_geojson(request: Request, db: DB, limit: int = 5000) -> JSONResponse:
+    """Punkty na mapę w formacie GeoJSON.
+
+    Zwraca tylko to, czego mapa naprawdę potrzebuje (bez opisów i zdjęć), więc
+    nawet kilka tysięcy ofert to kilkaset kilobajtów. Odpowiedź jest oznaczona
+    do cache'owania na minutę — przesuwanie mapy nie odpytuje bazy od nowa.
+    """
+    filters = _filters_from_query(request)
+    filters.per_page = min(limit, 20000)
+    features = map_points(db, filters)
+    payload = {
+        "type": "FeatureCollection",
+        "count": len(features),
+        "features": features,
+    }
+    return JSONResponse(payload, headers={"Cache-Control": "public, max-age=60"})
+
+
+@app.get("/api/listings/{listing_id}/okolica")
+async def api_surroundings(listing_id: int, db: DB, radius: int = 1000) -> dict:
+    """Co jest w okolicy oferty — z OpenStreetMap, liczone na żądanie."""
+    from .pipeline.geocode import enrich_surroundings
+
+    listing = db.get(Listing, listing_id)
+    if not listing:
+        raise HTTPException(404, "Nie ma takiej oferty")
+    if listing.lat is None:
+        return {"listing_id": listing_id, "poi": {}, "info": "oferta nie ma współrzędnych"}
+    summary = await enrich_surroundings(listing_id, radius_m=radius)
+    return {"listing_id": listing_id, "radius_m": radius, "poi": summary}
 
 
 @app.get("/api/stats")

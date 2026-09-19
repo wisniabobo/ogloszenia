@@ -7,6 +7,7 @@ powiadomieniem.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
@@ -273,3 +274,71 @@ def dashboard_stats(session) -> dict[str, Any]:
         "by_source": [{"source": k, "count": v} for k, v in by_source],
         "by_city": [{"city": k, "count": v} for k, v in by_city],
     }
+
+
+# --------------------------------------------------------------------------- #
+# Mapa
+# --------------------------------------------------------------------------- #
+#: oferty bez ulicy siadają na środku miejscowości — bez rozsunięcia setka
+#: pinezek nakłada się na jeden punkt i mapa wygląda na pustą
+JITTER_DEG = 0.013   # ~1,4 km — tyle mniej więcej znaczy "gdzieś w tym mieście"
+
+
+def _jitter(listing_id: int, lat: float, lon: float, precision: str | None) -> tuple[float, float]:
+    """Deterministyczne rozsunięcie punktów o dokładności do miejscowości.
+
+    Deterministyczne, bo pinezka nie może skakać przy każdym odświeżeniu.
+    Danych w bazie nie ruszamy — to wyłącznie sposób rysowania.
+    """
+    if precision == "address":
+        return lat, lon
+    spread = JITTER_DEG if precision == "city" else JITTER_DEG / 4
+    angle = (listing_id * 137.508) % 360  # kąt złoty — równomierny rozrzut
+    radius = spread * (((listing_id * 31) % 100) / 100) ** 0.5
+    return (
+        lat + radius * math.cos(math.radians(angle)),
+        lon + radius * math.sin(math.radians(angle)) * 1.55,  # korekta na szerokość PL
+    )
+
+
+def map_points(session, filters: Filters) -> list[dict]:
+    """Lekki GeoJSON: tylko pola, które mapa rysuje w dymku."""
+    stmt = select(
+        Listing.id, Listing.lat, Listing.lon, Listing.geo_precision, Listing.title,
+        Listing.price, Listing.price_per_m2, Listing.area, Listing.rooms,
+        Listing.city, Listing.street, Listing.kind, Listing.property_type,
+        Listing.seller_type, Listing.source_key, Listing.copies_count,
+        Listing.first_seen_at, Listing.url,
+    ).where(Listing.lat.is_not(None), Listing.lon.is_not(None))
+    stmt = apply_filters(stmt, filters)
+    stmt = stmt.order_by(desc(Listing.first_seen_at)).limit(filters.per_page)
+
+    now = utcnow()
+    features = []
+    for row in session.execute(stmt).all():
+        lat, lon = _jitter(row.id, row.lat, row.lon, row.geo_precision)
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [round(lon, 6), round(lat, 6)]},
+                "properties": {
+                    "id": row.id,
+                    "t": row.title[:110],
+                    "p": row.price,
+                    "m2": row.price_per_m2,
+                    "a": row.area,
+                    "r": row.rooms,
+                    "c": row.city,
+                    "st": row.street,
+                    "k": row.kind.value if row.kind else None,
+                    "pt": row.property_type.value if row.property_type else None,
+                    "s": row.seller_type.value if row.seller_type else None,
+                    "src": row.source_key,
+                    "cop": row.copies_count,
+                    "d": (now - row.first_seen_at).days,
+                    "prec": row.geo_precision,
+                    "u": row.url,
+                },
+            }
+        )
+    return features

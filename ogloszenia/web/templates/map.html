@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Mapa ofert — woj. opolskie{% endblock %}
+{% block heading %}Mapa{% endblock %}
+{% block topbar %}
+  <span class="muted" id="map-count">wczytywanie…</span>
+{% endblock %}
+{% block content %}
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
+
+<form class="filters map-filters" method="get" id="map-form">
+  <div class="row">
+    <div class="field"><label>Kategoria</label>
+      <select name="property_type">
+        <option value="">wszystkie</option>
+        {% for value, label in [('mieszkanie','Mieszkania'),('dom','Domy'),('dzialka','Działki'),
+                                ('lokal','Lokale'),('hala','Hale'),('garaz','Garaże'),
+                                ('gospodarstwo','Gospodarstwa')] %}
+          <option value="{{ value }}" {{ 'selected' if filters.property_type == value }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field"><label>Rodzaj</label>
+      <select name="kind">
+        <option value="">wszystko</option>
+        <option value="nieruchomosc" {{ 'selected' if filters.kind == 'nieruchomosc' }}>ogłoszenia</option>
+        <option value="licytacja"    {{ 'selected' if filters.kind == 'licytacja' }}>licytacje</option>
+        <option value="przetarg"     {{ 'selected' if filters.kind == 'przetarg' }}>przetargi</option>
+      </select>
+    </div>
+    <div class="field"><label>Cena [zł]</label>
+      <div class="pair">
+        <input name="price_min" value="{{ filters.price_min or '' }}" placeholder="od" inputmode="numeric">
+        <input name="price_max" value="{{ filters.price_max or '' }}" placeholder="do" inputmode="numeric">
+      </div>
+    </div>
+    <div class="field"><label>Powierzchnia [m²]</label>
+      <div class="pair">
+        <input name="area_min" value="{{ filters.area_min or '' }}" placeholder="od" inputmode="numeric">
+        <input name="area_max" value="{{ filters.area_max or '' }}" placeholder="do" inputmode="numeric">
+      </div>
+    </div>
+    <div class="field"><label>Pokoje</label>
+      <div class="pair">
+        <input name="rooms_min" value="{{ filters.rooms_min or '' }}" placeholder="od" inputmode="numeric">
+        <input name="rooms_max" value="{{ filters.rooms_max or '' }}" placeholder="do" inputmode="numeric">
+      </div>
+    </div>
+    <div class="field"><label>Oferent</label>
+      <select name="seller_type"><option value="">wszyscy</option>
+        <option value="prywatna"  {{ 'selected' if filters.seller_type == 'prywatna' }}>prywatna</option>
+        <option value="posrednik" {{ 'selected' if filters.seller_type == 'posrednik' }}>pośrednik</option>
+        <option value="deweloper" {{ 'selected' if filters.seller_type == 'deweloper' }}>deweloper</option>
+        <option value="komornik"  {{ 'selected' if filters.seller_type == 'komornik' }}>komornik</option>
+      </select>
+    </div>
+    <div class="field"><label>Miejscowość</label>
+      <input name="city" list="cities" value="{{ filters.city or '' }}" placeholder="np. Opole">
+      <datalist id="cities">{% for c in cities %}<option value="{{ c }}">{% endfor %}</datalist>
+    </div>
+  </div>
+  <div class="actions">
+    <button class="btn" type="submit">🔍 Pokaż na mapie</button>
+    <a class="btn ghost" href="/mapa">Wyczyść</a>
+    <button class="btn muted small" type="button" id="btn-radius">📍 Szukaj w promieniu</button>
+    <button class="btn muted small" type="button" id="btn-heat">🌡️ Ceny za m²</button>
+    <div style="flex:1"></div>
+    <a class="btn ghost small" href="/nieruchomosci?{{ query_string }}">Pokaż listą</a>
+  </div>
+</form>
+
+<div id="map"></div>
+<div class="map-legend card card-pad" id="legend">
+  <strong style="font-size:13px">Cena za m²</strong>
+  <div id="legend-scale"></div>
+  <div class="muted" style="font-size:11.5px;margin-top:6px">
+    Pinezki ofert bez podanej ulicy są rozsunięte wokół środka miejscowości —
+    dokładny adres znajdziesz w ogłoszeniu.
+  </div>
+</div>
+
+<style>
+  #map { height: calc(100vh - 290px); min-height: 420px; margin-top: 14px;
+         border: 1px solid var(--border); border-radius: var(--radius); z-index: 1; }
+  .map-legend { position: relative; margin-top: 10px; }
+  #legend-scale { display: flex; gap: 0; margin-top: 6px; border-radius: 4px; overflow: hidden; }
+  #legend-scale span { flex: 1; padding: 3px 4px; font-size: 11px; text-align: center; color: #fff; }
+  .price-pin { border-radius: 13px; padding: 2px 7px; font-size: 11.5px; font-weight: 700;
+               white-space: nowrap; border: 1.5px solid rgba(255,255,255,.85);
+               box-shadow: 0 1px 4px rgba(0,0,0,.35); color: #fff; text-align: center; }
+  .leaflet-popup-content { margin: 10px 12px; font-size: 13.5px; line-height: 1.45; }
+  .leaflet-popup-content h4 { margin: 0 0 5px; font-size: 14px; }
+  .popup-params { color: #5a6b7d; margin: 3px 0 6px; }
+  @media (max-width: 860px) { #map { height: 62vh; } }
+</style>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.js"></script>
+<script>
+const QUERY = {{ query_string | tojson }};
+window.addEventListener('DOMContentLoaded', () => initMap(QUERY));
+</script>
+<script src="/static/map.js"></script>
+{% endblock %}

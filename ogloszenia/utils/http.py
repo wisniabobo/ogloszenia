@@ -27,6 +27,35 @@ DESKTOP_UA = (
     "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
 
+# --------------------------------------------------------------------------- #
+# Zadeklarowane API kontra przeglądanie stron
+# --------------------------------------------------------------------------- #
+# robots.txt reguluje **indeksowanie stron przez roboty**, a nie korzystanie
+# z publicznego API, które właściciel udostępnia właśnie do użytku
+# programistycznego i opisuje własnym regulaminem. Nominatim ma w robots.txt
+# `Disallow: /search`, bo nie chce, żeby wyszukiwarki indeksowały dynamiczne
+# wyniki — a jednocześnie w swojej polityce użycia wprost dopuszcza zapytania
+# API do 1/s z identyfikującym się User-Agentem. Tak samo GUGiK i Overpass.
+#
+# Dlatego host wpisany tutaj jest zwolniony z bramki robots.txt, ale **w zamian
+# dostaje twardy, wpisany na sztywno limit tempa** z regulaminu danej usługi.
+# To świadoma i udokumentowana decyzja, a nie obejście: przeglądanie portali
+# ogłoszeniowych nadal w całości podlega robots.txt.
+DECLARED_APIS: dict[str, float] = {
+    # Nominatim: polityka OSMF — maks. 1 zapytanie na sekundę
+    "nominatim.openstreetmap.org": 1.05,
+    # GUGiK: publiczne usługi geokodowania i ewidencji działek
+    "services.gugik.gov.pl": 0.5,
+    "uldk.gugik.gov.pl": 0.5,
+    # Overpass: publiczna instancja, 2 równoległe zapytania na IP
+    "overpass-api.de": 2.0,
+    # API instytucji publicznych
+    "api-krs.ms.gov.pl": 0.4,
+    "bdl.stat.gov.pl": 0.4,
+    "api.dane.gov.pl": 0.4,
+    "api.nbp.pl": 0.3,
+}
+
 
 @dataclass
 class FetchError(Exception):
@@ -97,9 +126,18 @@ class HttpClient:
             self._hosts[host] = state
         return host, state
 
+    @staticmethod
+    def is_declared_api(url: str) -> bool:
+        return urlparse(url).netloc.lower() in DECLARED_APIS
+
     async def _load_robots(self, url: str, state: HostState) -> None:
         if state.robots_loaded or not get_settings().respect_robots:
             state.robots_loaded = True
+            return
+        if self.is_declared_api(url):
+            # zadeklarowane API: zamiast robots.txt obowiązuje limit z regulaminu
+            state.robots_loaded = True
+            state.delay = max(state.delay, DECLARED_APIS[urlparse(url).netloc.lower()])
             return
         state.robots_loaded = True
         robots_url = urljoin(f"{urlparse(url).scheme}://{urlparse(url).netloc}", "/robots.txt")
@@ -116,6 +154,8 @@ class HttpClient:
             state.robots = None
 
     def allowed(self, url: str) -> bool:
+        if self.is_declared_api(url):
+            return True
         _, state = self._host_state(url)
         if not get_settings().respect_robots or state.robots is None:
             return True

@@ -158,6 +158,10 @@ class Listing(Base):
         Index("ix_listing_seen", "first_seen_at", "last_seen_at"),
         Index("ix_listing_fp", "fingerprint"),
         Index("ix_listing_price", "price"),
+        # mapa pyta o prostokąt widoku — bez tego indeksu każde przesunięcie
+        # mapy skanowałoby całą tabelę
+        Index("ix_listing_latlon", "lat", "lon"),
+        Index("ix_listing_map", "status", "is_original", "lat"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -206,6 +210,13 @@ class Listing(Base):
     street: Mapped[str | None] = mapped_column(String(200))
     lat: Mapped[float | None] = mapped_column(Float)
     lon: Mapped[float | None] = mapped_column(Float)
+    geo_precision: Mapped[str | None] = mapped_column(String(16))   # address/street/city
+    geo_source: Mapped[str | None] = mapped_column(String(24))      # gugik/nominatim/portal
+    teryt: Mapped[str | None] = mapped_column(String(16), index=True)
+    simc: Mapped[str | None] = mapped_column(String(16))
+    postal_code: Mapped[str | None] = mapped_column(String(8))
+    parcel_id: Mapped[str | None] = mapped_column(String(64))       # działka ewidencyjna
+    poi: Mapped[dict] = mapped_column(JSON, default=dict)           # odległości do udogodnień
 
     # --- oferent ---
     seller_type: Mapped[SellerType] = mapped_column(
@@ -389,3 +400,33 @@ class Region(Base):
     lat: Mapped[float | None] = mapped_column(Float)
     lon: Mapped[float | None] = mapped_column(Float)
     teryt: Mapped[str | None] = mapped_column(String(16))
+
+
+class GeocodeCache(Base):
+    """Zapamiętane wyniki geokodowania.
+
+    Darmowe usługi mają limity (Nominatim: 1 zapytanie na sekundę), a adresy
+    powtarzają się między portalami. Cache sprawia, że ten sam adres pytamy raz
+    w życiu — dzięki temu skan tysięcy ofert nie obciąża cudzych serwerów.
+    """
+
+    __tablename__ = "geocode_cache"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    query_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    query: Mapped[str] = mapped_column(String(400))
+    lat: Mapped[float | None] = mapped_column(Float)
+    lon: Mapped[float | None] = mapped_column(Float)
+    precision: Mapped[str | None] = mapped_column(String(16))
+    source: Mapped[str | None] = mapped_column(String(24))
+    teryt: Mapped[str | None] = mapped_column(String(16))
+    simc: Mapped[str | None] = mapped_column(String(16))
+    postal_code: Mapped[str | None] = mapped_column(String(8))
+    city: Mapped[str | None] = mapped_column(String(160))
+    street: Mapped[str | None] = mapped_column(String(200))
+    hits: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    @property
+    def found(self) -> bool:
+        return self.lat is not None and self.lon is not None
