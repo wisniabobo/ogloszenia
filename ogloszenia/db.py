@@ -21,7 +21,9 @@ def _configure_sqlite(dbapi_conn, _record) -> None:
     cur.execute("PRAGMA journal_mode=WAL")
     cur.execute("PRAGMA synchronous=NORMAL")
     cur.execute("PRAGMA foreign_keys=ON")
-    cur.execute("PRAGMA busy_timeout=10000")
+    # Skan zapisuje partiami, ale przy równoległych zadaniach warto dać
+    # zapisowi czas na doczekanie swojej kolei zamiast wywalać się od razu.
+    cur.execute("PRAGMA busy_timeout=30000")
     cur.close()
 
 

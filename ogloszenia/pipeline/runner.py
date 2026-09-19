@@ -36,6 +36,11 @@ log = logging.getLogger("ogloszenia.runner")
 #: po ilu przebiegach bez zobaczenia oferty uznajemy ją za zdjętą
 MISSING_RUNS_BEFORE_REMOVAL = 2
 
+#: Co tyle ofert zamykamy transakcję. Przy pełnym przejściu jedno źródło
+#: potrafi dać kilka tysięcy pozycji — jedna transakcja na całość blokowałaby
+#: bazę na kilkanaście minut i każdy inny zapis kończyłby się błędem.
+COMMIT_EVERY = 100
+
 
 @dataclass
 class SourceResult:
@@ -231,6 +236,7 @@ def _persist(source_key: str, items: list[RawListing], error: str,
         run = ScanRun(source_key=source_key)
         session.add(run)
         session.flush()
+        processed = 0
 
         # Katalog biur nie produkuje ogłoszeń — zasila rejestr pośredników.
         if items and (items[0].extra or {}).get("katalog"):
@@ -280,6 +286,11 @@ def _persist(source_key: str, items: list[RawListing], error: str,
                 result.updated += 1
             if price_changed:
                 result.price_changes += 1
+
+            processed += 1
+            if processed % COMMIT_EVERY == 0:
+                # oddajemy blokadę zapisu, żeby inne zadania mogły się wcisnąć
+                session.commit()
 
         # oznaczanie ofert zdjętych ze źródła
         if not error and items:
