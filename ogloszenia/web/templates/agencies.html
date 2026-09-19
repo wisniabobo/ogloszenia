@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block heading %}Biura nieruchomości{% endblock %}
+{% block topbar %}<span class="muted">{{ agencies|length }} podmiotów</span>{% endblock %}
+{% block content %}
+
+<div class="notice info">
+  Lista powstaje <strong>z danych</strong>: każda oferta oznaczona jako pośrednik dokłada nazwę,
+  miasto i telefon, a warianty zapisu tej samej firmy są scalane. Eksport do pliku:
+  <code>ogl agencies --export config/agencies_opolskie.yaml</code>
+</div>
+
+<form class="filters" method="get">
+  <div class="row">
+    <div class="field"><label>Szukaj</label><input name="q" value="{{ q }}" placeholder="nazwa biura"></div>
+  </div>
+  <div class="actions"><div style="flex:1"></div><button class="btn" type="submit">🔍 Szukaj</button></div>
+</form>
+
+<table class="grid" style="margin-top:14px">
+  <tr><th>Biuro</th><th>Miasto</th><th class="right">Oferty</th><th>Telefony</th><th>WWW</th><th>Status</th></tr>
+  {% for agency in agencies %}
+  <tr>
+    <td><a href="/nieruchomosci?agency_id={{ agency.id }}&only_original=0">{{ agency.name }}</a></td>
+    <td>{{ agency.city or '—' }}</td>
+    <td class="right">{{ agency.listings_count }}</td>
+    <td class="muted">{{ (agency.phones or [])|join(', ') or '—' }}</td>
+    <td>{% if agency.website %}<a href="{{ agency.website }}" target="_blank" rel="noopener noreferrer">link</a>{% else %}—{% endif %}</td>
+    <td>{% if agency.verified %}<span class="dot-ok"></span>zweryfikowane
+        {% elif agency.discovered %}<span class="dot-warn"></span>wykryte z ofert
+        {% else %}<span class="dot-off"></span>ziarno{% endif %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="empty">Rejestr jest pusty — uruchom skan, a biura dopiszą się same.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

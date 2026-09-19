@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Monitor rynku — woj. opolskie{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🏠</text></svg>">
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span> ogłoszenia</div>
+    <nav>
+      <a href="/"               class="{{ 'active' if active == 'pulpit' }}">📊 Pulpit</a>
+      <a href="/nieruchomosci"  class="{{ 'active' if active == 'nieruchomosci' }}">🏠 Nieruchomości</a>
+      <a href="/licytacje"      class="{{ 'active' if active == 'licytacje' }}">⚖️ Licytacje</a>
+      <a href="/przetargi"      class="{{ 'active' if active == 'przetargi' }}">📋 Przetargi i wykazy</a>
+      <a href="/poszukiwania"   class="{{ 'active' if active == 'poszukiwania' }}">🔔 Poszukiwania</a>
+      <a href="/biura"          class="{{ 'active' if active == 'biura' }}">🏢 Biura nieruchomości</a>
+      <a href="/schowek"        class="{{ 'active' if active == 'schowek' }}">⭐ Schowek</a>
+      <a href="/zrodla"         class="{{ 'active' if active == 'zrodla' }}">🔌 Źródła</a>
+      <a href="/docs"           class="">🧩 API</a>
+    </nav>
+    <div class="foot">woj. opolskie<br>dane odświeżane co kilka minut</div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="burger" onclick="toggleSidebar()" aria-label="Menu">☰</button>
+      <h1>{% block heading %}{% endblock %}</h1>
+      <div class="spacer"></div>
+      {% block topbar %}{% endblock %}
+    </header>
+    <main class="content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

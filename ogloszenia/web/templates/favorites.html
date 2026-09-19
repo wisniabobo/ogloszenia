@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% from "_macros.html" import listing_card %}
+{% block heading %}Schowek{% endblock %}
+{% block content %}
+{% for favorite, listing in rows %}
+  {{ listing_card(listing) }}
+{% else %}
+  <div class="empty">Schowek jest pusty. Dodawaj oferty przyciskiem „Do schowka".</div>
+{% endfor %}
+{% endblock %}

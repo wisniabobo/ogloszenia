@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block heading %}Źródła danych{% endblock %}
+{% block topbar %}<span class="muted">{{ sources|length }} źródeł</span>{% endblock %}
+{% block content %}
+
+<div class="notice info">
+  Źródła włącza się w <code>config/sources.yaml</code>. Przed włączeniem nowego warto sprawdzić
+  dostępność: <code>ogl check-sources</code> — odpyta każdy adres i pokaże, co odpowiada.
+</div>
+
+{% for category, label in [('portal_krajowy','Portale ogólnopolskie'), ('portal_lokalny','Portale lokalne i regionalne'),
+                           ('licytacje','Licytacje komornicze i syndyczne'), ('przetargi','Przetargi publiczne'),
+                           ('instytucje','Instytucje i spółki Skarbu Państwa'), ('bip','BIP gmin i powiatów')] %}
+  {% set group = sources | selectattr('category', 'equalto', category) | list %}
+  {% if group %}
+    <div class="section-title">{{ label }} <span class="muted">({{ group|length }})</span></div>
+    <table class="grid">
+      <tr><th>Źródło</th><th>Rodzaj</th><th>Zasięg</th><th class="right">Oferty</th>
+          <th>Co ile</th><th>Ostatni przebieg</th><th>Status</th></tr>
+      {% for source in group %}
+      <tr>
+        <td>
+          {% if source.base_url %}<a href="{{ source.base_url }}" target="_blank" rel="noopener noreferrer">{{ source.name }}</a>
+          {% else %}{{ source.name }}{% endif %}
+          {% if source.notes %}<div class="muted" style="font-size:12.5px">{{ source.notes[:160] }}</div>{% endif %}
+        </td>
+        <td>{{ source.kind.value }}</td>
+        <td class="muted">{{ source.coverage }}</td>
+        <td class="right">{{ source.total_listings }}</td>
+        <td class="nowrap muted">{{ source.interval_minutes }} min</td>
+        <td class="nowrap muted">{{ source.last_run_at.strftime('%d.%m %H:%M') if source.last_run_at else '—' }}</td>
+        <td>
+          {% if not source.enabled %}<span class="dot-off"></span>wyłączone
+          {% elif source.last_error %}<span class="dot-err"></span><span title="{{ source.last_error }}">błąd</span>
+          {% elif source.last_ok_at %}<span class="dot-ok"></span>ok
+          {% else %}<span class="dot-warn"></span>nieuruchomione{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+{% endfor %}
+{% endblock %}

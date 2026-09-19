@@ -6,7 +6,7 @@ import functools
 import re
 
 from ..settings import regions_config
-from .text import clean, norm_key
+from .text import clean, deaccent, norm_key
 
 VOIVODESHIP = "opolskie"
 
@@ -68,36 +68,112 @@ def resolve_place(name: str | None) -> dict | None:
     return dict(region_index().get(head)) if region_index().get(head) else None
 
 
-def detect_location(text: str | None) -> dict:
-    """Wyszukuje w dowolnym tekście miejscowość z woj. opolskiego.
+#: maksymalna długość polskiej końcówki fleksyjnej dopuszczanej przy dopasowaniu
+MAX_INFLECTION = 3
 
-    Zwraca {} gdy nic nie znaleziono (oferta prawdopodobnie spoza regionu).
+
+@functools.lru_cache(maxsize=1)
+def ambiguous_names() -> set[str]:
+    """Nazwy miejscowości, które są jednocześnie zwykłymi polskimi słowami.
+
+    W woj. opolskim są wsie o nazwach „Pokój", „Dzielnica", „Dobra", „Sucha"
+    czy „Rogi". Bez ostrożności ogłoszenie „mieszkanie 3 pokoje" trafiłoby do
+    gminy Pokój. Takie nazwy uznajemy za lokalizację tylko wtedy, gdy w tekście
+    występują z wielkiej litery — tak jak nazwy własne.
     """
-    result: dict = {}
-    if not text:
-        return result
-    key = f" {norm_key(text)} "
-    for place_key, meta in region_index().items():
-        if len(place_key) < 4:
+    from ..settings import regions_config
+
+    configured = regions_config().get("nazwy_wieloznaczne", [])
+    return {norm_key(name) for name in configured}
+
+
+@functools.lru_cache(maxsize=2048)
+def _pattern_for(name: str) -> re.Pattern[str] | None:
+    r"""Wzorzec dopasowujący nazwę w dowolnym przypadku gramatycznym.
+
+    Każdy człon nazwy jest skracany o końcową literę i może przyjąć dowolną
+    końcówkę do MAX_INFLECTION znaków, bo w polskim odmieniają się wszystkie
+    człony naraz: „Strzelce Opolskie" -> „w Strzelcach Opolskich",
+    „Kędzierzyn-Koźle" -> „w Kędzierzynie-Koźlu".
+    """
+    tokens = [t for t in re.split(r"[\s\-]+", deaccent(name)) if t]
+    if not tokens:
+        return None
+    parts = []
+    for token in tokens:
+        stem = token[:-1] if len(token) > 4 else token
+        ending = rf"(\w{{0,{MAX_INFLECTION}}})" if len(token) > 4 else "()"
+        parts.append(re.escape(stem) + ending)
+    if len(tokens) == 1 and len(tokens[0]) < 4:
+        return None
+    return re.compile(r"\b" + r"[\s\-]+".join(parts) + r"\b", re.IGNORECASE)
+
+
+def _score_match(name: str, text_deacc: str, *, is_seat: bool) -> int | None:
+    """Ocenia trafienie nazwy w tekście. `None` = brak wiarygodnego trafienia.
+
+    Punktujemy dokładność (bez końcówki), pisownię wielką literą i to, czy
+    miejscowość jest siedzibą gminy — dzięki temu „Opola" wygrywa z przypadkową
+    wioską o krótkiej nazwie.
+    """
+    pattern = _pattern_for(name)
+    if pattern is None:
+        return None
+    ambiguous = norm_key(name) in ambiguous_names()
+    best: int | None = None
+    for match in pattern.finditer(text_deacc):
+        capitalized = match.group(0)[0].isupper()
+        if ambiguous and not capitalized:
             continue
-        if f" {place_key} " in key:
-            result = dict(meta)
-            if meta["city"].lower() == "opole":
-                district = detect_opole_district(text)
-                if district:
-                    result["district"] = district
-            break
+        score = len(norm_key(name))
+        if not any(match.groups()):
+            score += 20                      # trafienie dokładne, bez odmiany
+        if capitalized:
+            score += 15
+        if is_seat:
+            score += 8
+        best = score if best is None else max(best, score)
+    return best
+
+
+def detect_location(text: str | None) -> dict:
+    """Wyszukuje w tekście miejscowość z woj. opolskiego.
+
+    Zamiast brać pierwsze trafienie, zbiera wszystkich kandydatów i wybiera
+    najlepiej punktowanego. Zwraca {}, gdy nic nie pasuje (oferta spoza regionu).
+    """
+    if not text:
+        return {}
+    text_deacc = deaccent(text)
+    best_score = 0
+    best_meta: dict | None = None
+
+    for _, meta in region_index().items():
+        city = meta["city"]
+        score = _score_match(city, text_deacc, is_seat=(city == meta.get("commune")))
+        if score is not None and score > best_score:
+            best_score, best_meta = score, meta
+
+    if best_meta is None:
+        return {}
+    result = dict(best_meta)
+    if result["city"].lower() == "opole":
+        district = detect_opole_district(text)
+        if district:
+            result["district"] = district
     return result
 
 
 def detect_opole_district(text: str | None) -> str | None:
     if not text:
         return None
-    key = f" {norm_key(text)} "
+    text_deacc = deaccent(text)
+    best_score, best_name = 0, None
     for district in OPOLE_DISTRICTS:
-        if f" {norm_key(district)} " in key:
-            return district
-    return None
+        score = _score_match(district, text_deacc, is_seat=False)
+        if score is not None and score > best_score:
+            best_score, best_name = score, district
+    return best_name
 
 
 def is_in_opolskie(*texts: str | None) -> bool:

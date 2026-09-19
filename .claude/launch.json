@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ogloszenia-web",
+      "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["-m", "uvicorn", "ogloszenia.api:app", "--host", "127.0.0.1", "--port", "8931"],
+      "port": 8931
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block heading %}Poszukiwania{% endblock %}
+{% block content %}
+
+<div class="notice info">
+  Poszukiwanie to zapisany zestaw filtrów. Gdy skan znajdzie nową ofertę pasującą do filtrów,
+  dostaniesz powiadomienie (Telegram / e-mail / webhook) — raz na ofertę. Zapisujesz je przyciskiem
+  „Zapisz jako poszukiwanie" na liście nieruchomości.
+</div>
+
+<table class="grid">
+  <tr><th>Nazwa</th><th>Filtry</th><th>Kanały</th><th class="right">Trafienia</th><th>Ostatnio</th><th></th></tr>
+  {% for search in searches %}
+  <tr>
+    <td><strong>{{ search.name }}</strong>{% if search.only_original %}<div class="muted" style="font-size:12px">tylko oryginalne</div>{% endif %}</td>
+    <td class="muted" style="font-size:13px">
+      {% for key, value in (search.query or {}).items() %}{{ key }}={{ value }}{{ ", " if not loop.last }}{% endfor %}
+    </td>
+    <td>{{ (search.channels or [])|join(', ') }}</td>
+    <td class="right">{{ search.hits }}</td>
+    <td class="nowrap muted">{{ search.last_fired_at.strftime('%d.%m %H:%M') if search.last_fired_at else '—' }}</td>
+    <td class="right">
+      <button class="btn muted small" onclick="fetch('/api/searches/{{ search.id }}',{method:'DELETE'}).then(()=>location.reload())">Usuń</button>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="empty">Nie masz jeszcze poszukiwań.</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

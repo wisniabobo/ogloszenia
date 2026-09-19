@@ -4,6 +4,50 @@ wojewodztwo: opolskie
 teryt: "16"
 stolica: Opole
 
+
+# Nazwy miejscowości, które są jednocześnie zwykłymi polskimi słowami.
+# Uznajemy je za lokalizację tylko wtedy, gdy w tekście występują z wielkiej
+# litery — inaczej "mieszkanie 3 pokoje" trafiałoby do gminy Pokój.
+nazwy_wieloznaczne:
+  - Pokój
+  - Dzielnica
+  - Dobra
+  - Dobre
+  - Sucha
+  - Wysoka
+  - Zawada
+  - Rogi
+  - Sady
+  - Borki
+  - Górki
+  - Kępa
+  - Łany
+  - Knieja
+  - Węgry
+  - Rynek
+  - Trawniki
+  - Osiny
+  - Lipki
+  - Raków
+  - Kujawy
+  - Brzezina
+  - Przylesie
+  - Zieleniec
+  - Miejsce
+  - Bielice
+  - Nowaki
+  - Szklary
+  - Solarnia
+  - Grodziec
+  - Kruszyna
+  - Włochy
+  - Strzelce
+  - Krępna
+  - Komorniki
+  - Piotrówka
+  - Wierzch
+  - Pustków
+
 powiaty:
   - nazwa: Opole
     typ: miasto na prawach powiatu

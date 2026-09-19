@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "_macros.html" import listing_card, pagination %}
+{% block heading %}{{ 'Licytacje' if active == 'licytacje' else 'Przetargi i wykazy' }}{% endblock %}
+{% block topbar %}<span class="muted">{{ total }} pozycji</span>{% endblock %}
+{% block content %}
+
+<div class="notice info">
+  {% if active == 'licytacje' %}
+    Cena wywoławcza w I terminie licytacji to zwykle <strong>3/4 sumy oszacowania</strong>,
+    w II terminie <strong>2/3</strong>. Rękojmia (wadium) to 1/10 sumy oszacowania i trzeba ją
+    wpłacić najpóźniej dzień przed licytacją.
+  {% else %}
+    Wykazy nieruchomości gmin publikowane są na 21 dni (art. 35 ustawy o gospodarce
+    nieruchomościami) — to ogłoszenia, których nie ma na portalach.
+  {% endif %}
+</div>
+
+<form class="filters" method="get">
+  <div class="row">
+    <div class="field"><label>Miejscowość</label><input name="city" value="{{ filters.city or '' }}"></div>
+    <div class="field"><label>Powiat</label><input name="county" value="{{ filters.county or '' }}"></div>
+    <div class="field"><label>Cena / wywoławcza [zł]</label>
+      <div class="pair">
+        <input name="price_min" value="{{ filters.price_min or '' }}" placeholder="od" inputmode="numeric">
+        <input name="price_max" value="{{ filters.price_max or '' }}" placeholder="do" inputmode="numeric">
+      </div>
+    </div>
+    <div class="field"><label>Rodzaj</label>
+      <select name="property_type"><option value="">wszystkie</option>
+        {% for value, label in [('mieszkanie','mieszkanie'),('dom','dom'),('dzialka','działka'),
+                                ('lokal','lokal'),('hala','hala'),('gospodarstwo','gospodarstwo')] %}
+          <option value="{{ value }}" {{ 'selected' if filters.property_type == value }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field"><label>Szukaj</label>
+      <input name="q" value="{{ filters.q or '' }}" placeholder="sygnatura, komornik, gmina…">
+    </div>
+    <div class="field"><label>Sortowanie</label>
+      <select name="sort">
+        <option value="termin_licytacji" {{ 'selected' if filters.sort == 'termin_licytacji' }}>najbliższy termin</option>
+        <option value="najnowsze" {{ 'selected' if filters.sort == 'najnowsze' }}>najnowsze</option>
+        <option value="cena_rosnaco" {{ 'selected' if filters.sort == 'cena_rosnaco' }}>cena rosnąco</option>
+      </select>
+    </div>
+  </div>
+  <div class="actions">
+    <div style="flex:1"></div>
+    <button class="btn" type="submit">🔍 Szukaj</button>
+  </div>
+</form>
+
+<div style="margin-top:16px">
+  {% for listing in listings %}{{ listing_card(listing) }}{% else %}
+    <div class="empty">Brak pozycji. Uruchom <code>ogl scan --category licytacje</code>.</div>
+  {% endfor %}
+</div>
+
+{{ pagination(filters, pages, query_string) }}
+{% endblock %}

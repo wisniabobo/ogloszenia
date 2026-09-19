@@ -131,8 +131,8 @@ def parse_datetime(value: str | datetime | None) -> datetime | None:
 # --------------------------------------------------------------------------- #
 AREA_RE = re.compile(r"(\d+[.,]?\d*)\s*(?:m2|m²|mkw|m\.kw|metrów|metry)", re.I)
 ROOMS_RE = re.compile(r"(\d+)[\s-]*(?:pokoj|pokoi|pok\.|pokoje|pokój|pokojow)", re.I)
-FLOOR_RE = re.compile(r"(?:piętro|pietro)[:\s]*(\d+|parter)", re.I)
-FLOOR_OF_RE = re.compile(r"(\d+|parter)\s*piętro\s*z\s*(\d+)", re.I)
+FLOOR_RE = re.compile(r"(?:piętro|pietro)[:\s]*(\d+|parter\w*)", re.I)
+FLOOR_OF_RE = re.compile(r"(\d+|parter\w*)\s*piętro\s*z\s*(\d+)", re.I)
 YEAR_RE = re.compile(r"(?:rok budowy|wybudowan\w*|z roku)[:\s]*((?:1[89]|20)\d{2})", re.I)
 PLOT_RE = re.compile(r"(?:działk\w+|powierzchnia działki)[^\d]{0,20}(\d+[\s.,]?\d*)\s*(?:m2|m²|ar|ha)?", re.I)
 CASE_RE = re.compile(r"\b((?:K[Mm]|GKm|Kmp|Kms|GKM|KM)\s?\d+/\d+)\b")
@@ -152,12 +152,13 @@ def extract_rooms(text: str) -> int | None:
 def extract_floor(text: str) -> tuple[int | None, int | None]:
     m = FLOOR_OF_RE.search(text or "")
     if m:
-        fl = 0 if m.group(1).lower() == "parter" else parse_int(m.group(1))
+        fl = 0 if m.group(1).lower().startswith("parter") else parse_int(m.group(1))
         return fl, parse_int(m.group(2))
     m = FLOOR_RE.search(text or "")
     if m:
-        return (0 if m.group(1).lower() == "parter" else parse_int(m.group(1))), None
-    if re.search(r"\bparter\b", text or "", re.I):
+        return (0 if m.group(1).lower().startswith("parter") else parse_int(m.group(1))), None
+    # „parter", „na parterze", „parterowy" — polska odmiana
+    if re.search(r"\bparter\w*", text or "", re.I):
         return 0, None
     return None, None
 
