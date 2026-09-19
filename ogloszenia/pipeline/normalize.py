@@ -21,6 +21,7 @@ from ..utils.text import (
     extract_floor,
     extract_rooms,
     extract_year,
+    strip_html,
 )
 
 MARKET_PRIMARY = re.compile(r"rynek pierwotn|pierwotny|od dewelopera|nowa inwestycja", re.I)
@@ -62,7 +63,7 @@ def normalize(
 ) -> NormalizedListing | None:
     """Zwraca `NormalizedListing` albo `None`, jeśli oferta odpada."""
     title = clean(raw.title)
-    description = clean(raw.description or "")
+    description = strip_html(raw.description)
     if not title or not raw.url:
         return None
 

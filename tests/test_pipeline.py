@@ -165,15 +165,73 @@ class TestDeduplikacja:
         session.flush()
         assert second.duplicate_of_id == first.id
 
+    def test_laczy_mimo_roznych_danych_uzupelniajacych(self, session):
+        """Jeden portal zna ulicę, drugi piętro — to wciąż ta sama nieruchomość.
+
+        Przypadek z prawdziwych danych: ten sam apartament w Górkach na OLX
+        (piętro znane, ulica nie) i na Otodom (ulica znana, piętro nie).
+        """
+        first = self._add(
+            session, external_id="G1", source_key="olx", url="https://olx.pl/g1",
+            title="Nowoczesny apartament z ogrodem", description=None, city="Górki",
+            price=680000.0, area=50.4, rooms=3, floor=0,
+        )
+        second = self._add(
+            session, external_id="G2", source_key="otodom", url="https://otodom.pl/g2",
+            title="NOWOCZESNY APARTAMENT Z OGRODEM", description=None, city="Górki",
+            price=680000.0, area=50.4, rooms=3, street="Zbożowa",
+        )
+        link_duplicates(session, second)
+        session.flush()
+        assert second.duplicate_of_id == first.id
+
+    def test_inna_ulica_wyklucza_polaczenie(self, session):
+        first = self._add(
+            session, external_id="U1", source_key="olx", url="https://olx.pl/u1",
+            title="Mieszkanie 2 pokoje", description=None, city="Opole",
+            price=400000.0, area=45.0, rooms=2, street="Wrocławska",
+        )
+        second = self._add(
+            session, external_id="U2", source_key="otodom", url="https://otodom.pl/u2",
+            title="Mieszkanie 2 pokoje", description=None, city="Opole",
+            price=400000.0, area=45.0, rooms=2, street="Ozimska",
+        )
+        link_duplicates(session, second)
+        session.flush()
+        assert second.is_original is True
+        assert first.copies_count == 0
+
+    def test_duza_roznica_ceny_wyklucza_polaczenie(self, session):
+        self._add(
+            session, external_id="P1", source_key="olx", url="https://olx.pl/p1",
+            title="Mieszkanie 3 pokoje", description=None, city="Opole",
+            price=300000.0, area=60.0, rooms=3,
+        )
+        second = self._add(
+            session, external_id="P2", source_key="otodom", url="https://otodom.pl/p2",
+            title="Mieszkanie 3 pokoje", description=None, city="Opole",
+            price=700000.0, area=60.0, rooms=3,
+        )
+        link_duplicates(session, second)
+        session.flush()
+        assert second.is_original is True
+
+    def test_odcisk_wymaga_metrazu(self):
+        data = {"city": "Opole", "area": None, "rooms": 2,
+                "property_type": PropertyType.MIESZKANIE,
+                "transaction": TransactionType.SPRZEDAZ, "title": "x", "description": ""}
+        compute_fingerprints(data, [])
+        assert data["fingerprint"] is None
+
     def test_krotki_tytul_nie_daje_odcisku_tekstowego(self):
         from ogloszenia.utils.text import shingle_hash
 
         assert shingle_hash("lokal mieszkalny") is None
         assert shingle_hash(" ".join(f"slowo{i}" for i in range(20))) is not None
 
-    def test_odcisk_wymaga_kilku_cech(self):
-        data = {"city": None, "street": None, "area": None, "rooms": None,
-                "floor": None, "property_type": PropertyType.INNE,
+    def test_odcisk_powstaje_z_miasta_i_metrazu(self):
+        data = {"city": "Opole", "area": 49.0, "rooms": 2,
+                "property_type": PropertyType.MIESZKANIE,
                 "transaction": TransactionType.SPRZEDAZ, "title": "x", "description": ""}
         compute_fingerprints(data, [])
-        assert data["fingerprint"] is None
+        assert data["fingerprint"] is not None

@@ -35,35 +35,29 @@ TEXT_THRESHOLD = 88
 WINDOW_DAYS = 400
 
 
-#: ile cech naprawdę identyfikujących musi być znanych, żeby liczyć odcisk
-MIN_IDENTIFYING_PARTS = 3
-
-
 def compute_fingerprints(data: dict, phones: list[PhoneNumber]) -> dict:
     """Uzupełnia `fingerprint`, `phone_fingerprint` i `text_shingle`.
 
-    Do progu liczą się tylko cechy, które faktycznie wyróżniają nieruchomość
-    (miejscowość, ulica, metraż, pokoje, piętro). Typ i rodzaj transakcji
-    wchodzą do odcisku, ale się nie liczą — są znane praktycznie zawsze,
-    więc dopuszczenie ich do progu sklejało przypadkowe oferty z tego samego
-    miasta.
+    Odcisk budujemy **tylko z cech, które podaje praktycznie każdy portal**:
+    miejscowość, metraż, liczba pokoi, typ i rodzaj transakcji. Ulica i piętro
+    do niego nie wchodzą, bo jeden serwis potrafi je znać, a drugi nie — i ta
+    sama nieruchomość dostawała dwa różne odciski. Zamiast tego ulica i cena
+    są sprawdzane przy samym dopasowaniu (`_compatible`).
+
+    Metraż jest tu najważniejszy: bez niego odcisk w ogóle nie powstaje.
     """
     area = data.get("area")
-    identifying = [
-        norm_key(data.get("city")),
-        norm_key(data.get("street") or data.get("district") or ""),
-        f"{round(float(area), 1)}" if area else "",
-        str(data.get("rooms") or ""),
-        str(data.get("floor") if data.get("floor") is not None else ""),
-    ]
-    context = [
-        str(data.get("property_type").value if data.get("property_type") else ""),
-        str(data.get("transaction").value if data.get("transaction") else ""),
-    ]
-    known = [p for p in identifying if p]
-    data["fingerprint"] = (
-        sha1(*identifying, *context) if len(known) >= MIN_IDENTIFYING_PARTS else None
-    )
+    city = norm_key(data.get("city"))
+    if not area or not city:
+        data["fingerprint"] = None
+    else:
+        data["fingerprint"] = sha1(
+            city,
+            f"{round(float(area), 1)}",
+            str(data.get("rooms") or ""),
+            str(data.get("property_type").value if data.get("property_type") else ""),
+            str(data.get("transaction").value if data.get("transaction") else ""),
+        )
     data["phone_fingerprint"] = phones_fingerprint(phones)
     text = f"{data.get('title', '')} {(data.get('description') or '')[:2500]}"
     data["text_shingle"] = shingle_hash(text)
@@ -131,6 +125,11 @@ def _match(a: Listing, b: Listing) -> tuple[str, float] | None:
     if a.kind == OfferKind.LICYTACJA:
         return ("licytacja", 0.95) if _auctions_match(a, b) else None
 
+    # sprzeczne dane (inna ulica, inne piętro, rozjechana cena) wykluczają
+    # połączenie niezależnie od tego, który sygnał je zaproponował
+    if not _compatible(a, b):
+        return None
+
     if a.phone_fingerprint and a.phone_fingerprint == b.phone_fingerprint:
         if _similar_area(a.area, b.area):
             return "phone", 0.97
@@ -154,6 +153,27 @@ def _match(a: Listing, b: Listing) -> tuple[str, float] | None:
             if desc_score >= TEXT_THRESHOLD - 8:
                 return "text", round(min(title_score, desc_score) / 100, 2)
     return None
+
+
+#: o ile mogą różnić się ceny tej samej nieruchomości na dwóch portalach
+MAX_PRICE_SPREAD = 0.25
+
+
+def _compatible(a: Listing, b: Listing) -> bool:
+    """Sprawdza cechy, których część portali nie podaje.
+
+    Zasada: brak danych nie jest sprzecznością. Sprzecznością są dwie **różne**
+    znane wartości — inna ulica albo cena rozjeżdżająca się o ćwierć.
+    """
+    if a.street and b.street and norm_key(a.street) != norm_key(b.street):
+        return False
+    if a.floor is not None and b.floor is not None and a.floor != b.floor:
+        return False
+    if a.price and b.price:
+        spread = abs(a.price - b.price) / max(a.price, b.price)
+        if spread > MAX_PRICE_SPREAD:
+            return False
+    return True
 
 
 def _is_earlier(a: Listing, b: Listing) -> bool:

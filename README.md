@@ -153,17 +153,26 @@ cenami. Bot pokazuje ją **raz**, z licznikiem kopii i porównaniem cen.
 Sygnały, od najmocniejszego:
 
 1. **telefon** — ten sam numer + zbliżony metraż,
-2. **odcisk parametrów** — miasto + ulica + metraż + pokoje + piętro
-   (wymagane min. 3 cechy naprawdę identyfikujące),
+2. **odcisk parametrów** — miasto + metraż + pokoje + typ + transakcja, czyli
+   wyłącznie cechy, które podaje każdy portal (ulica i piętro tu nie wchodzą,
+   bo jeden serwis je zna, a drugi nie),
 3. **shingle opisu** — odporny na przestawienie zdań; liczony dopiero od 12 słów,
 4. **licytacje osobno** — łączone wyłącznie po sygnaturze akt albo identycznej cenie
    wywołania i terminie.
 
+Nad wszystkim stoi warunek zgodności: **brak danych nie jest sprzecznością, ale dwie
+różne znane wartości już tak**. Inna ulica, inne piętro albo cena rozjeżdżająca się
+o ponad 25% wykluczają połączenie niezależnie od tego, który sygnał je zaproponował.
+
 Oryginałem zostaje oferta **najwcześniejsza**; przy remisie prywatna przed biurem.
 
-> Ostatni punkt wziął się z prawdziwego błędu: obwieszczenia komornicze mają tytuły
-> w rodzaju „nieruchomość gruntowa zabudowana" i pierwsza wersja łączyła w jedno
-> działki z dwóch różnych powiatów.
+Obie zasady wzięły się z prawdziwych danych. Obwieszczenia komornicze mają tytuły
+w rodzaju „nieruchomość gruntowa zabudowana" — pierwsza wersja łączyła w jedno działki
+z dwóch różnych powiatów. Z drugiej strony ten sam apartament w Górkach nie był
+rozpoznawany, bo OLX znał piętro i nie znał ulicy, a Otodom odwrotnie.
+
+Na kontrolnym przebiegu (228 ofert) bot znalazł **13 kopii** rozsianych po OLX, Otodom
+i Domiporcie — wszystkie zweryfikowane ręcznie jako trafne.
 
 ---
 
@@ -339,7 +348,7 @@ Wszystkie te przypadki mają testy:
 make dev && make test
 ```
 
-78 testów: parsowanie polskich liczb i dat, wykrywanie i maskowanie telefonów,
+84 testy: parsowanie polskich liczb i dat, wykrywanie i maskowanie telefonów,
 słownik geograficzny z odmianą, normalizacja, deduplikacja (w tym przypadki
 z prawdziwych obwieszczeń komorniczych), scrapery na zamrożonych odpowiedziach
 oraz 12 testów parsera robots.txt na regułach z prawdziwych plików portali.

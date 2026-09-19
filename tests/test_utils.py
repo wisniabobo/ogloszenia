@@ -76,6 +76,19 @@ class TestDaty:
         assert parse_datetime("2025-06-01T10:00:00Z").year == 2025
 
 
+class TestHtml:
+    def test_usuwa_znaczniki(self):
+        """OLX zwraca opis jako HTML — do bazy ma trafić czysty tekst."""
+        from ogloszenia.utils.text import strip_html
+
+        assert strip_html("<p>Ładne <b>mieszkanie</b></p><br>49 m2") == "Ładne mieszkanie 49 m2"
+
+    def test_zamienia_encje(self):
+        from ogloszenia.utils.text import strip_html
+
+        assert strip_html("Dom&nbsp;z ogrodem &amp; garażem") == "Dom z ogrodem & garażem"
+
+
 class TestTelefony:
     def test_numer_ze_spacjami(self):
         phones = extract_phones("Kontakt: 537 123 123")

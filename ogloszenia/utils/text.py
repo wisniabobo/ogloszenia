@@ -10,6 +10,8 @@ from datetime import UTC, datetime, timedelta
 from dateutil import parser as dateparser
 
 _WS = re.compile(r"\s+")
+_TAG = re.compile(r"<[^>]{1,400}>")
+_ENTITY = {"&nbsp;": " ", "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'"}
 _NUM = re.compile(r"(\d[\d\s .,]*)")
 
 MONTHS_PL = {
@@ -37,6 +39,20 @@ def clean(text: object | None) -> str:
         text = str(text)
     text = text.replace(" ", " ").replace("​", "")
     return _WS.sub(" ", text).strip()
+
+
+def strip_html(text: str | None) -> str:
+    """Usuwa znaczniki HTML z opisu.
+
+    OLX zwraca opis w postaci `<p>…</p><br>`; bez tego znaczniki trafiałyby
+    do bazy i psuły porównywanie opisów między portalami.
+    """
+    if not text:
+        return ""
+    out = _TAG.sub(" ", text)
+    for entity, char in _ENTITY.items():
+        out = out.replace(entity, char)
+    return clean(out)
 
 
 def deaccent(text: str) -> str:

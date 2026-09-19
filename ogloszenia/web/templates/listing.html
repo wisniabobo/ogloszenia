@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import money, seller_badge, age_label %}
+{% from "_macros.html" import money, seller_badge, age_label, street_label %}
 {% block heading %}Szczegóły oferty{% endblock %}
 {% block content %}
 
@@ -23,7 +23,7 @@
 
   <h2 style="margin:6px 0 4px">{{ listing.title }}</h2>
   <div class="muted" style="margin-bottom:12px">
-    {% if listing.street %}ul. {{ listing.street }}, {% endif %}
+    {% if listing.street %}{{ street_label(listing.street) }}, {% endif %}
     {% if listing.district %}{{ listing.district }}, {% endif %}
     {{ listing.city }}{% if listing.county and listing.county != listing.city %}, pow. {{ listing.county }}{% endif %}
     · <a href="{{ listing.url }}" target="_blank" rel="noopener noreferrer">otwórz w źródle ↗</a>

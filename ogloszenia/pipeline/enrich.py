@@ -176,19 +176,49 @@ def enrich_listing(session: Session, data: dict, phones: list[PhoneNumber]) -> d
 
 
 def recount_agencies(session: Session) -> int:
-    """Przelicza liczbę ofert przy każdym biurze (po skanie)."""
+    """Przelicza liczniki ofert i ustala miasto biura (po skanie).
+
+    Miasto z pojedynczej oferty to lokalizacja *nieruchomości*, a nie siedziba
+    biura — jedno ogłoszenie z Górek robiło z opolskiego biura firmę z Górek.
+    Bierzemy więc miasto, które przy danym biurze występuje najczęściej, i to
+    tylko wtedy, gdy ma wyraźną przewagę.
+    """
+    from collections import Counter
+
     from sqlalchemy import func
 
-    rows = session.execute(
-        select(Listing.agency_id, func.count(Listing.id))
-        .where(Listing.agency_id.is_not(None))
-        .group_by(Listing.agency_id)
-    ).all()
-    counts = dict(rows)
+    counts = dict(
+        session.execute(
+            select(Listing.agency_id, func.count(Listing.id))
+            .where(Listing.agency_id.is_not(None))
+            .group_by(Listing.agency_id)
+        ).all()
+    )
+
+    cities: dict[int, Counter] = {}
+    for agency_id, city, hits in session.execute(
+        select(Listing.agency_id, Listing.city, func.count(Listing.id))
+        .where(Listing.agency_id.is_not(None), Listing.city.is_not(None))
+        .group_by(Listing.agency_id, Listing.city)
+    ).all():
+        cities.setdefault(agency_id, Counter())[city] = hits
+
     updated = 0
     for agency in session.scalars(select(Agency)):
+        changed = False
         new_count = int(counts.get(agency.id, 0))
         if agency.listings_count != new_count:
             agency.listings_count = new_count
-            updated += 1
+            changed = True
+
+        if not agency.verified:
+            ranking = (cities.get(agency.id) or Counter()).most_common(2)
+            if ranking:
+                top_city, top_hits = ranking[0]
+                runner_up = ranking[1][1] if len(ranking) > 1 else 0
+                # przewaga musi być wyraźna, inaczej wolimy nie zgadywać
+                if top_hits > runner_up and agency.city != top_city:
+                    agency.city = top_city
+                    changed = True
+        updated += int(changed)
     return updated
