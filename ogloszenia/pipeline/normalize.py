@@ -73,9 +73,15 @@ def normalize(
         return None
 
     # --- lokalizacja ---
+    # Kolejność ma znaczenie: pole z portalu > tytuł > krótki opis lokalizacji >
+    # pełny opis. Opis potrafi wspominać sąsiednie miasta w zupełnie innym
+    # kontekście ("przy drodze krajowej Opole – Strzelce Opolskie", "15 minut
+    # od Nysy") i bez tej kolejności oferta z Walidróg lądowała w Strzelcach.
     place = (
         resolve_place(raw.city)
+        or detect_location(title)
         or resolve_place(raw.location_text)
+        or detect_location(raw.location_text or "")
         or detect_location(haystack)
         or {}
     )

@@ -93,6 +93,25 @@ LIST_PAGE_TITLE = re.compile(
 #: jeśli JSON-LD podaje cenę, to jest wiarygodniejsze niż liczenie kwot w tekście.
 MAX_DISTINCT_PRICES = 12
 
+#: elementy, które trzeba wyciąć przed czytaniem treści — inaczej opisem
+#: oferty staje się menu witryny, a wtedy lokalizacja bierze się z listy miast
+#: w nawigacji ("Opole Krapkowice Brzeg") zamiast z samej oferty
+CHROME_SELECTORS = (
+    "nav", "header", "footer", "aside", "script", "style", "noscript", "form",
+    "[class*=menu]", "[class*=nav]", "[class*=breadcrumb]", "[class*=footer]",
+    "[class*=header]", "[class*=sidebar]", "[id*=menu]", "[id*=nav]",
+    "[class*=cookie]", "[class*=popup]", "[class*=modal]", "[class*=similar]",
+    "[class*=podobne]", "[class*=related]", "[class*=polecane]",
+)
+
+#: obrazki, które nie są zdjęciem nieruchomości
+NON_PHOTO = re.compile(
+    r"logo|baner|banner|nagrod|award|laureat|konkurs|ikon|icon|sprite|avatar|"
+    r"placeholder|pixel|tracking|facebook|instagram|youtube|certyfikat|plebiscyt|"
+    r"aside|social|\.svg\b|/tr\?|badge|emblem|stopka|naglowek|header|footer",
+    re.I,
+)
+
 SCHEMA_TYPES = {
     "product", "offer", "residence", "apartment", "house", "singlefamilyresidence",
     "realestatelisting", "accommodation", "place",
@@ -256,9 +275,17 @@ class SitemapScraper(BaseScraper):
 
     # ------------------------------------------------------------------ #
     async def parse_offer(self, entry: SitemapEntry, base: str) -> RawListing | None:
-        tree = await self.html(entry.url)
+        html = await self.client.get_text(entry.url)
+        tree = HTMLParser(html)
+
+        # Do czytania treści potrzebujemy strony BEZ nawigacji i stopki, ale
+        # cena i zdjęcia siedzą w nagłówku oferty. Czyszczenie usuwa elementy
+        # z drzewa na trwałe, więc pracujemy na dwóch osobnych drzewach:
+        # `tree` zostaje nietknięte, `content` jest przycięte.
         data = self._from_structured(tree) or {}
-        text = clean((tree.css_first("main") or tree.css_first("body") or tree).text())[:8000]
+        price_from_page = self._price_from_page(tree, "")
+        photos = self._photos(tree, entry.url)
+        text = self._content_text(HTMLParser(html))
 
         title = data.get("title") or self.text(tree, "h1") or self.text(tree, "title")
         title = clean(title)
@@ -282,7 +309,7 @@ class SitemapScraper(BaseScraper):
                 return None
 
         description = data.get("description") or text
-        price = data.get("price") or self._price_from_page(tree, text)
+        price = data.get("price") or price_from_page or self._price_from_text(text)
 
         # Parametry czytamy z TYTUŁU i początku opisu, nie z całej strony.
         # Strona biura ma w menu „mieszkania / domy / działki / wynajem", więc
@@ -296,11 +323,7 @@ class SitemapScraper(BaseScraper):
         if price is None and area is None:
             return None  # strona bez ceny i metrażu to prawie na pewno nie oferta
 
-        images = data.get("images") or [
-            urljoin(entry.url, img.attributes.get("src", ""))
-            for img in tree.css("img")
-            if img.attributes.get("src") and "logo" not in (img.attributes.get("src") or "").lower()
-        ][:8]
+        images = data.get("images") or photos
 
         return RawListing(
             external_id=self._external_id(entry.url),
@@ -316,7 +339,10 @@ class SitemapScraper(BaseScraper):
             floors_total=floors_total,
             city=data.get("city"),
             street=data.get("street"),
-            location_text=data.get("location"),
+            # Lokalizację czytamy z TYTUŁU, nie z treści strony. Strona biura ma
+            # w menu listę obsługiwanych miast i bez tego oferta z Opola lądowała
+            # w Krapkowicach, bo tak akurat wypadło w nawigacji.
+            location_text=data.get("location") or title,
             seller_type=SellerType(self.config["seller_type"])
             if self.config.get("seller_type")
             else SellerType.POSREDNIK,
@@ -328,6 +354,42 @@ class SitemapScraper(BaseScraper):
             extra={"strona": urlparse(base).netloc, "dane_strukturalne": bool(data)},
             raw={"sitemap_lastmod": entry.lastmod},
         )
+
+    @staticmethod
+    def _content_text(tree: HTMLParser) -> str:
+        """Treść oferty bez nawigacji, stopki i bloków „podobne oferty"."""
+        for selector in CHROME_SELECTORS:
+            try:
+                for node in tree.css(selector):
+                    node.decompose()
+            except Exception:
+                continue
+        main = tree.css_first("main") or tree.css_first("article") or tree.css_first("body")
+        return clean(main.text())[:8000] if main else ""
+
+    @staticmethod
+    def _photos(tree: HTMLParser, page_url: str) -> list[str]:
+        """Zdjęcia nieruchomości — bez logotypów, banerów i plakietek."""
+        out: list[str] = []
+        for img in tree.css("img"):
+            src = (
+                img.attributes.get("src")
+                or img.attributes.get("data-src")
+                or img.attributes.get("data-lazy")
+                or img.attributes.get("data-original")
+                or ""
+            )
+            if not src or src.startswith("data:"):
+                continue
+            haystack = f"{src} {img.attributes.get('alt', '')} {img.attributes.get('class', '')}"
+            if NON_PHOTO.search(haystack):
+                continue
+            full = urljoin(page_url, src)
+            if full not in out:
+                out.append(full)
+            if len(out) >= 12:
+                break
+        return out
 
     def _from_structured(self, tree: HTMLParser) -> dict:
         """Wyciąga, co się da, z JSON-LD; potem z OpenGraph."""
@@ -400,12 +462,21 @@ class SitemapScraper(BaseScraper):
 
         # `(?<![\w])` jest tu istotne: bez tego z "220m2 295 000 zł" wychodziło
         # 2 295 000, bo dwójka z "m2" doklejała się do kwoty.
+        return self._price_from_text(text) if text else None
+
+    @staticmethod
+    def _price_from_text(text: str) -> float | None:
+        r"""Pierwsza sensowna kwota w treści — czyli ta przy nagłówku oferty.
+
+        `(?<![\w])` jest tu istotne: bez tego z "220m2 295 000 zł" wychodziło
+        2 295 000, bo dwójka z "m2" doklejała się do kwoty.
+        """
         for match in re.finditer(
-            r"(?<![\w])([\d\u00a0 .,]{4,15})\s*(?:zł|PLN)\b", text, re.I
+            r"(?<![\w])([\d\u00a0 .,]{4,15})\s*(?:zł|PLN)\b", text or "", re.I
         ):
             value = parse_number(match.group(1))
             if value and 1000 <= value <= 50_000_000:
-                return value   # pierwsza sensowna kwota = cena przy nagłówku
+                return value
         return None
 
     @staticmethod
