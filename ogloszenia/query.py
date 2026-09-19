@@ -293,7 +293,13 @@ def dashboard_stats(session) -> dict[str, Any]:
                              Listing.price < Listing.initial_price),
         "auctions": count(active, Listing.kind == OfferKind.LICYTACJA),
         "tenders": count(active, Listing.kind == OfferKind.PRZETARG),
-        "with_phone": count(active, original, Listing.phones.any()),
+        # „z kontaktem" liczymy tak samo jak filtr: numer z ogłoszenia albo
+        # centrala biura, które ofertę wystawiło
+        "with_phone": count(
+            active,
+            original,
+            or_(Listing.phones.any(), Listing.agency.has(Agency.phones != [])),
+        ),
         "agencies": int(session.scalar(select(func.count(Agency.id))) or 0),
         "avg_price_m2": round(median_price_m2, 0) if median_price_m2 else None,
         "by_kind": {k.value if hasattr(k, "value") else str(k): v for k, v in by_kind.items()},
