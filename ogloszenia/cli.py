@@ -581,17 +581,43 @@ def cmd_prune(days: int = typer.Option(None, help="Usuń oferty nieaktywne stars
     init_db()
     days = days or get_settings().retention_days
     cutoff = utcnow() - timedelta(days=days)
+    from .pipeline.prune import delete_listings
+
     with session_scope() as session:
-        stale = list(
-            session.scalars(
-                select(Listing).where(
+        ids = [
+            row[0]
+            for row in session.execute(
+                select(Listing.id).where(
                     Listing.status != ListingStatus.AKTYWNA, Listing.last_seen_at < cutoff
                 )
             )
-        )
-        for listing in stale:
-            session.delete(listing)
-    console.print(f"[green]Usunięto[/] {len(stale)} ofert starszych niż {days} dni")
+        ]
+        removed = delete_listings(session, ids)
+    console.print(f"[green]Usunięto[/] {removed} ofert starszych niż {days} dni")
+
+
+@app.command("drop-source")
+def cmd_drop_source(
+    source: str = typer.Argument(..., help="Klucz źródła do wyczyszczenia"),
+    yes: bool = typer.Option(False, "--yes", help="Nie pytaj o potwierdzenie"),
+) -> None:
+    """Usuwa wszystkie oferty danego źródła (np. po zmianie jego klucza)."""
+    from .pipeline.prune import delete_by_source
+
+    init_db()
+    with session_scope() as session:
+        count = session.scalar(
+            select(func.count(Listing.id)).where(Listing.source_key == source)
+        ) or 0
+    if not count:
+        console.print(f"[yellow]Źródło {source} nie ma żadnych ofert.[/]")
+        return
+    if not yes and not typer.confirm(f"Usunąć {count} ofert ze źródła {source}?"):
+        console.print("[dim]Anulowano.[/]")
+        return
+    with session_scope() as session:
+        removed = delete_by_source(session, source)
+    console.print(f"[green]Usunięto[/] {removed} ofert ze źródła {source}")
 
 
 @app.command("version")

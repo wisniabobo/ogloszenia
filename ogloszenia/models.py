@@ -240,7 +240,9 @@ class Listing(Base):
     image_fingerprint: Mapped[str | None] = mapped_column(String(64))
     text_shingle: Mapped[str | None] = mapped_column(String(64))
     is_original: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
-    duplicate_of_id: Mapped[int | None] = mapped_column(ForeignKey("listings.id"))
+    duplicate_of_id: Mapped[int | None] = mapped_column(
+        ForeignKey("listings.id", ondelete="SET NULL")
+    )
     copies_count: Mapped[int] = mapped_column(Integer, default=0)
 
     # --- czas ---

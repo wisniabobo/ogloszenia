@@ -271,3 +271,54 @@ class TestBudowanieScrapera:
         built = _build_scraper(self._source("nie-ma-takiego", "cokolwiek"), client=None)
         assert isinstance(built, GenericHtmlScraper)
         assert built.source_key == "cokolwiek"
+
+
+class TestBezpieczneUsuwanie:
+    """Oferta, na którą wskazują kopie, też musi dać się usunąć.
+
+    Zwykłe DELETE kończyło się naruszeniem klucza obcego — na produkcji
+    wywróciło to czyszczenie źródła zapisanego pod błędnym kluczem.
+    """
+
+    def _pair(self, session, tag: str):
+        """Para oryginał + kopia. `tag` rozdziela przypadki, bo baza jest
+        wspólna dla całej sesji testowej i identyfikatory nie mogą się powtarzać."""
+        from ogloszenia.pipeline.dedup import link_duplicates
+
+        common = {"description": None, "price": 500000.0, "area": 55.0, "rooms": 2,
+                  "city": "Opole"}
+        first = TestDeduplikacja()._add(
+            session, external_id=f"{tag}-1", source_key=f"src-{tag}-a",
+            url=f"https://a/{tag}", title="Mieszkanie do usunięcia", **common)
+        second = TestDeduplikacja()._add(
+            session, external_id=f"{tag}-2", source_key=f"src-{tag}-b",
+            url=f"https://b/{tag}", title="Mieszkanie do usunięcia", **common)
+        link_duplicates(session, second)
+        session.flush()
+        assert second.duplicate_of_id == first.id
+        return first, second
+
+    def test_usuwa_oryginal_majacy_kopie(self, session):
+        from ogloszenia.models import Listing
+        from ogloszenia.pipeline.prune import delete_listings
+
+        first, second = self._pair(session, "usun")
+        removed = delete_listings(session, [first.id])
+        session.flush()
+        assert removed == 1
+        assert session.get(Listing, first.id) is None
+        # kopia zostaje i przestaje być kopią
+        survivor = session.get(Listing, second.id)
+        assert survivor is not None
+        assert survivor.duplicate_of_id is None
+        assert survivor.is_original is True
+
+    def test_usuwa_cale_zrodlo(self, session):
+        from ogloszenia.models import Listing
+        from ogloszenia.pipeline.prune import delete_by_source
+
+        self._pair(session, "zrodlo")
+        removed = delete_by_source(session, "src-zrodlo-a")
+        session.flush()
+        assert removed >= 1
+        assert session.query(Listing).filter(Listing.source_key == "src-zrodlo-a").count() == 0
