@@ -84,19 +84,20 @@ class GugikClient:
         if not city:
             return None
 
-        suffix = f", {voivodeship}" if voivodeship else ""
+        # UWAGA: nie dopisujemy tu województwa. Sprawdzone na żywym API —
+        # „Opole, Wrocławska" zwraca trafienie, a „Opole, Wrocławska, opolskie"
+        # zwraca ZERO wyników. Dopisek powodował, że pierwsza próba zawsze
+        # przepadała i każdy adres kosztował dwa zapytania zamiast jednego.
+        # Region pilnuje `teryt_prefix`, sprawdzany na wszystkich trafieniach.
         attempts: list[tuple[str, str]] = []
         if street and number:
-            attempts.append((f"{city}, {street} {number}{suffix}", "address"))
+            attempts.append((f"{city}, {street} {number}", "address"))
         if street:
-            attempts.append((f"{city}, {street}{suffix}", "street"))
+            attempts.append((f"{city}, {street}", "street"))
         if district and district.lower() != (city or "").lower():
             # dzielnica jest dokładniejsza niż środek miasta — Zaodrze to nie centrum
-            attempts.append((f"{district}{suffix}", "district"))
-            attempts.append((f"{city}, {district}{suffix}", "district"))
-        attempts.append((f"{city}{suffix}", "city"))
-        if suffix:
-            attempts.append((city, "city"))  # ostatnia próba bez województwa
+            attempts.append((f"{city}, {district}", "district"))
+        attempts.append((city, "city"))
 
         for address, precision in attempts:
             results = await self._query_uug(address, precision)
