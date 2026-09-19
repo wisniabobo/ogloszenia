@@ -235,3 +235,39 @@ class TestDeduplikacja:
                 "transaction": TransactionType.SPRZEDAZ, "title": "x", "description": ""}
         compute_fingerprints(data, [])
         assert data["fingerprint"] is not None
+
+
+class TestBudowanieScrapera:
+    """Każde źródło musi zapisywać się pod WŁASNYM kluczem.
+
+    Scrapery uniwersalne (sitemap, generic_html) obsługują wiele witryn naraz.
+    Bez przekazania klucza wszystkie strony biur lądowały pod wspólnym
+    „sitemap" i zlewały się w jedno źródło.
+    """
+
+    def _source(self, scraper: str, key: str):
+        from ogloszenia.models import OfferKind, Source
+
+        return Source(key=key, scraper=scraper, kind=OfferKind.NIERUCHOMOSC, name=key, config={})
+
+    def test_scrapery_uniwersalne_dostaja_klucz_zrodla(self):
+        from ogloszenia.pipeline.runner import _build_scraper
+
+        for scraper, key in [("sitemap", "investdom_pl"), ("generic_html", "bip_nysa")]:
+            built = _build_scraper(self._source(scraper, key), client=None)
+            assert built.source_key == key
+
+    def test_scrapery_dedykowane_maja_wlasny_klucz(self):
+        from ogloszenia.pipeline.runner import _build_scraper
+
+        for scraper in ("olx", "otodom", "licytacje_komornik"):
+            built = _build_scraper(self._source(scraper, scraper), client=None)
+            assert built.key == scraper
+
+    def test_nieznany_scraper_schodzi_na_generyczny(self):
+        from ogloszenia.pipeline.runner import _build_scraper
+        from ogloszenia.scrapers.generic_html import GenericHtmlScraper
+
+        built = _build_scraper(self._source("nie-ma-takiego", "cokolwiek"), client=None)
+        assert isinstance(built, GenericHtmlScraper)
+        assert built.source_key == "cokolwiek"

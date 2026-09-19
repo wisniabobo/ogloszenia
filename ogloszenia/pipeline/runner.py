@@ -111,9 +111,20 @@ def sync_sources(session: Session) -> int:
 
 
 def _build_scraper(source: Source, client: HttpClient):
+    """Tworzy scraper dla źródła.
+
+    Scrapery uniwersalne (generic_html, sitemap) obsługują wiele różnych
+    witryn, więc muszą dostać klucz źródła — inaczej wszystkie strony biur
+    zapisywałyby się pod jednym wspólnym kluczem i zlewały w jedno źródło.
+    """
+    import inspect
+
     cls = SCRAPERS.get(source.scraper or "")
-    if cls is None or cls is GenericHtmlScraper:
-        return GenericHtmlScraper(
+    if cls is None:
+        cls = GenericHtmlScraper
+
+    if "source_key" in inspect.signature(cls.__init__).parameters:
+        return cls(
             client, source.config, source_key=source.key, kind=source.kind, name=source.name
         )
     return cls(client, source.config)
