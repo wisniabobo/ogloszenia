@@ -4,9 +4,12 @@
 # Każdy wpis: key (unikalny), name, scraper (klasa z ogloszenia/scrapers albo
 # `generic_html`), kind, category, enabled, interval_minutes, config.
 #
-# `verify: true` oznacza, że adres/selektory zostały wpisane z rozpoznania, ale
-# nie były potwierdzone na żywym serwisie — przed włączeniem uruchom
-# `ogl check-sources`, który odpyta każdy URL i pokaże, co odpowiada.
+# Pola pomocnicze:
+#   verify: true        -> adres/selektory niepotwierdzone na żywym serwisie;
+#                          uruchom `ogl check-sources` przed włączeniem
+#   sprawdzono: DATA    -> data ostatniej weryfikacji na żywym serwisie
+#   config.requires_js  -> wyniki powstają dopiero w przeglądarce; bez silnika JS
+#                          źródło nic nie zwróci i skan mówi o tym wprost
 #
 # Portale zmieniają HTML — dlatego selektory są w konfiguracji, a nie w kodzie.
 # =============================================================================
@@ -30,22 +33,15 @@ sources:
     enabled: true
     interval_minutes: 8
     coverage: krajowy
+    sprawdzono: 2026-09-19
     notes: >
-      Publiczne API v1. Najszybsze źródło ofert prywatnych — tu najczęściej
-      pojawiają się okazje przed biurami. Pełne numery telefonów wymagają
-      tokenu konta OLX (config.auth_token); bez niego numery lecą z treści.
+      Najszybsze źródło ofert prywatnych — tu najczęściej pojawiają się okazje,
+      zanim trafią do biur. Korzystamy wyłącznie z /api/v1/offers/, czyli
+      jedynej ścieżki API, którą OLX sam dopuszcza w robots.txt
+      (Disallow: /api/ + Allow: /api/v1/offers/). Pełne numery telefonów
+      wymagają tokenu konta OLX — bez niego numery bierzemy z treści ogłoszenia.
     config:
-      paths:
-        - nieruchomosci/mieszkania/sprzedaz/opolskie/
-        - nieruchomosci/mieszkania/wynajem/opolskie/
-        - nieruchomosci/domy/sprzedaz/opolskie/
-        - nieruchomosci/domy/wynajem/opolskie/
-        - nieruchomosci/dzialki/sprzedaz/opolskie/
-        - nieruchomosci/lokale/sprzedaz/opolskie/
-        - nieruchomosci/lokale/wynajem/opolskie/
-        - nieruchomosci/garaze-parkingi/opolskie/
-        - nieruchomosci/pokoje/opolskie/
-        - nieruchomosci/stancje-pokoje/opolskie/
+      region_id: 12        # opolskie (zweryfikowane na żywym API)
 
   - key: otodom
     name: Otodom.pl
@@ -56,6 +52,7 @@ sources:
     enabled: true
     interval_minutes: 10
     coverage: krajowy
+    sprawdzono: 2026-09-19
     notes: Największy portal ofert biur i deweloperów. Dane w __NEXT_DATA__.
     config:
       region_slug: opolskie
@@ -69,6 +66,10 @@ sources:
     enabled: true
     interval_minutes: 20
     coverage: krajowy
+    sprawdzono: 2026-09-19
+    notes: >
+      robots.txt dopuszcza wyłącznie strony page=2 … page=10 i zabrania
+      parametru sort= — scraper trzyma się tych granic.
 
   - key: morizon
     name: Morizon.pl
@@ -79,7 +80,11 @@ sources:
     enabled: true
     interval_minutes: 20
     coverage: krajowy
-    notes: Grupa Morizon-Gratka; duże pokrycie ofert biur.
+    sprawdzono: 2026-09-19
+    notes: >
+      Grupa Morizon-Gratka; duże pokrycie ofert biur. robots.txt zabrania
+      parametrów ps[...], sort= i limit=, więc paginujemy samym page=
+      i bierzemy domyślne sortowanie.
 
   - key: nieruchomosci_online
     name: Nieruchomosci-online.pl
@@ -87,9 +92,15 @@ sources:
     kind: nieruchomosc
     category: portal_krajowy
     base_url: https://www.nieruchomosci-online.pl
-    enabled: true
+    enabled: false
     interval_minutes: 20
     coverage: krajowy
+    sprawdzono: 2026-09-19
+    notes: >
+      Strona odpowiada, ale lista wyników powstaje dopiero w przeglądarce —
+      w HTML-u nie ma ani jednego linku do oferty. Wymaga silnika JS.
+    config:
+      requires_js: true
 
   - key: domiporta
     name: Domiporta.pl
@@ -100,6 +111,7 @@ sources:
     enabled: true
     interval_minutes: 30
     coverage: krajowy
+    sprawdzono: 2026-09-19
 
   - key: adresowo
     name: Adresowo.pl
@@ -107,10 +119,15 @@ sources:
     kind: nieruchomosc
     category: portal_krajowy
     base_url: https://adresowo.pl
-    enabled: true
+    enabled: false
     interval_minutes: 30
     coverage: krajowy
-    notes: Agreguje też oferty bez pośredników.
+    sprawdzono: 2026-09-19
+    notes: >
+      Agreguje też oferty bez pośredników, ale w HTML-u karty mają wyłącznie
+      lokalizację — cena i metraż dociągane są skryptem. Wymaga silnika JS.
+    config:
+      requires_js: true
 
   - key: otoprzeprowadzki_oferty_net
     name: Oferty.net
@@ -179,7 +196,8 @@ sources:
     category: portal_krajowy
     base_url: https://tabelaofert.pl
     enabled: false
-    verify: true
+    sprawdzono: 2026-09-19
+    notes: Serwis odrzuca automaty (HTTP 403).
 
   - key: krn
     name: KRN.pl
@@ -191,7 +209,8 @@ sources:
     verify: true
     config:
       urls:
-        - https://www.krn.pl/nieruchomosci/mieszkania/opolskie/sprzedaz?page={page}
+        - https://www.krn.pl/nieruchomosci/mieszkania/opolskie/sprzedaz
+    sprawdzono: 2026-09-19   # strona główna odpowiada, ścieżka do poprawienia
 
   - key: domy_pl
     name: Domy.pl
@@ -247,12 +266,10 @@ sources:
     base_url: https://nto.pl
     coverage: regionalny
     enabled: false
-    verify: true
-    config:
-      urls:
-        - https://ogloszenia.nto.pl/nieruchomosci?page={page}
-      list_selector: "article, div.ogloszenie"
-      link_selector: "a"
+    sprawdzono: 2026-09-19
+    notes: >
+      Subdomena ogloszenia.nto.pl nie odpowiada, a nto.pl odrzuca automaty
+      (HTTP 403). Wpis zostaje na wypadek powrotu serwisu.
 
   - key: opole_naszemiasto
     name: Opole — NaszeMiasto
@@ -272,7 +289,8 @@ sources:
     base_url: https://kedzierzynkozle.info
     coverage: lokalny
     enabled: false
-    verify: true
+    sprawdzono: 2026-09-19
+    notes: Domena nie rozwiązuje się — do sprawdzenia, czy serwis zmienił adres.
 
   - key: nysa_info
     name: Nysa.info / Nyskie.info — ogłoszenia
@@ -316,12 +334,17 @@ sources:
     enabled: true
     interval_minutes: 60
     coverage: krajowy
+    sprawdzono: 2026-09-19
     notes: >
-      Obwieszczenia o licytacjach nieruchomości i ruchomości. Cena wywoławcza
-      w I terminie to 3/4 sumy oszacowania, w II — 2/3. To najważniejsze
-      źródło okazji cenowych.
+      Najważniejsze źródło okazji cenowych. Cena wywoławcza w I terminie to
+      3/4 sumy oszacowania, w II — 2/3; rękojmia to 1/10 oszacowania (liczymy
+      ją sami, bo karta wyników jej nie podaje). Serwis został przebudowany:
+      stary /Notice/Search jest dziś w robots.txt zabroniony, korzystamy
+      z /wyszukiwarka-licytacji. Szczegóły obwieszczenia (sygnatura, kancelaria)
+      dociągane są skryptem, więc bierzemy to, co jest na karcie wyników.
     config:
-      voivodeship_id: 16
+      province: opolskie
+      main_categories: ["REAL_ESTATE"]   # dodaj "MOVABLE" dla ruchomości
 
   - key: elicytacje
     name: e-Licytacje komornicze
@@ -332,9 +355,13 @@ sources:
     enabled: true
     interval_minutes: 45
     coverage: krajowy
-    verify: true
+    sprawdzono: 2026-09-19
+    notes: >
+      Osobny serwis elicytacje.komornik.pl został wygaszony i przekierowuje na
+      licytacje.komornik.pl. To źródło filtruje ten sam serwis po trybie
+      elektronicznym — bywa puste, gdy akurat nie ma e-licytacji w regionie.
     config:
-      voivodeship: opolskie
+      province: opolskie
 
   - key: krz
     name: Krajowy Rejestr Zadłużonych — obwieszczenia syndyków
@@ -379,7 +406,8 @@ sources:
     category: licytacje
     base_url: https://syndyk.pl
     enabled: false
-    verify: true
+    sprawdzono: 2026-09-19
+    notes: Serwer nie odpowiada (timeout) — do ponownego sprawdzenia.
 
   # ---------------------------------------------------------------------------
   # 4. PRZETARGI I MIENIE PUBLICZNE
@@ -413,12 +441,19 @@ sources:
     scraper: kowr
     kind: przetarg
     category: instytucje
-    base_url: https://www.kowr.gov.pl
-    enabled: true
+    base_url: https://www.nieruchomoscikowr.gov.pl
+    enabled: false
     interval_minutes: 360
     coverage: regionalny
-    verify: true
-    notes: Grunty i zabudowania z Zasobu Własności Rolnej Skarbu Państwa.
+    sprawdzono: 2026-09-19
+    notes: >
+      Grunty i zabudowania z Zasobu Własności Rolnej Skarbu Państwa. KOWR ma
+      własny portal (nieruchomoscikowr.gov.pl/nieruchomosci/oferty), ale lista
+      ofert ładuje się skryptem — wymaga silnika JS.
+    config:
+      requires_js: true
+      urls:
+        - https://www.nieruchomoscikowr.gov.pl/nieruchomosci/oferty
 
   - key: amw
     name: Agencja Mienia Wojskowego
@@ -429,18 +464,34 @@ sources:
     enabled: true
     interval_minutes: 360
     coverage: krajowy
-    verify: true
+    sprawdzono: 2026-09-19
+    notes: >
+      Mieszkania, lokale i grunty po wojsku. Właściwa lista jest pod
+      /pl/nieruchomosci/przetargi-nieruchomosci — selektory do dostrojenia
+      po pierwszym przebiegu.
+    config:
+      urls:
+        - https://amw.com.pl/pl/nieruchomosci/przetargi-nieruchomosci
+        - https://amw.com.pl/pl/nieruchomosci/nieruchomosci-amw
 
   - key: zus
     name: ZUS — sprzedaż i najem nieruchomości
     scraper: zus
     kind: wykaz
     category: instytucje
-    base_url: https://bip.zus.pl
+    base_url: https://www.zus.pl
     enabled: true
     interval_minutes: 720
     coverage: krajowy
-    verify: true
+    sprawdzono: 2026-09-19
+    notes: >
+      Ogłoszenia ZUS o sprzedaży i wynajmie nieruchomości oraz o mieniu zbędnym.
+      Właściwy adres to zus.pl/o-zus/inne-ogloszenia/... (bip.zus.pl nie
+      prowadzi do listy).
+    config:
+      urls:
+        - https://www.zus.pl/o-zus/inne-ogloszenia/sprzedaz-i-wynajem-nieruchomosci
+        - https://www.zus.pl/o-zus/inne-ogloszenia/mienie-zbedne
 
   - key: pkp_nieruchomosci
     name: PKP S.A. — nieruchomości
@@ -450,10 +501,11 @@ sources:
     base_url: https://nieruchomosci.pkp.pl
     enabled: false
     verify: true
-    notes: Dworce, budynki i grunty kolejowe — w Opolskiem sporo obiektów.
+    sprawdzono: 2026-09-19
+    notes: >
+      Dworce, budynki i grunty kolejowe. Domena nieruchomosci.pkp.pl nie
+      rozwiązuje się — przed włączeniem trzeba znaleźć aktualny adres.
     config:
-      urls:
-        - https://nieruchomosci.pkp.pl/przetargi?wojewodztwo=opolskie&page={page}
       list_selector: "article, tr, div.offer"
       detail: true
 
@@ -473,7 +525,8 @@ sources:
     category: instytucje
     base_url: https://kzn.gov.pl
     enabled: false
-    verify: true
+    sprawdzono: 2026-09-19
+    notes: Serwer nie odpowiada (timeout) — do ponownego sprawdzenia.
 
   - key: poczta_polska
     name: Poczta Polska — sprzedaż nieruchomości
@@ -525,7 +578,8 @@ sources:
     scraper: generic_html
     kind: wykaz
     category: bip
-    base_url: https://www.bip.nysa.pl
+    base_url: https://bip.nysa.pl
+    sprawdzono: 2026-09-19
     coverage: lokalny
     enabled: false
     verify: true
@@ -555,7 +609,8 @@ sources:
     scraper: generic_html
     kind: wykaz
     category: bip
-    base_url: https://www.bip.kluczbork.pl
+    base_url: https://bip.kluczbork.pl
+    sprawdzono: 2026-09-19
     coverage: lokalny
     enabled: false
     verify: true
@@ -615,7 +670,8 @@ sources:
     scraper: generic_html
     kind: wykaz
     category: bip
-    base_url: https://olesno.biuletyn.info.pl
+    base_url: https://bip.olesno.pl
+    sprawdzono: 2026-09-19   # certyfikat z niepełnym łańcuchem
     coverage: lokalny
     enabled: false
     verify: true
@@ -638,4 +694,7 @@ sources:
     base_url: https://www.ouw.pl
     coverage: regionalny
     enabled: false
-    verify: true
+    sprawdzono: 2026-09-19
+    notes: >
+      Strona główna zwraca 404, a certyfikat ma niepełny łańcuch — przed
+      włączeniem trzeba wskazać konkretną podstronę z wykazami.

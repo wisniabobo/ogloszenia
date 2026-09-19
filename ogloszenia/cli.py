@@ -66,11 +66,16 @@ def cmd_sources(
         for column in ("klucz", "nazwa", "kategoria", "rodzaj", "co ile", "oferty", "stan"):
             table.add_column(column)
         for source in sources:
-            state = (
-                "[dim]wyłączone[/]" if not source.enabled
-                else ("[red]błąd[/]" if source.last_error
-                      else ("[green]ok[/]" if source.last_ok_at else "[yellow]nieuruchomione[/]"))
-            )
+            if (source.config or {}).get("requires_js"):
+                state = "[magenta]wymaga JS[/]"
+            elif not source.enabled:
+                state = "[dim]wyłączone[/]"
+            elif source.last_error:
+                state = "[red]błąd[/]"
+            elif source.last_ok_at:
+                state = "[green]ok[/]"
+            else:
+                state = "[yellow]nieuruchomione[/]"
             table.add_row(
                 source.key, source.name[:38], source.category, source.kind.value,
                 f"{source.interval_minutes}m", str(source.total_listings), state,

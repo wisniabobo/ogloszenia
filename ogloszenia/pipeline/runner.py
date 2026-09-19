@@ -192,7 +192,17 @@ def upsert_listing(
 # --------------------------------------------------------------------------- #
 # Przebieg jednego źródła
 # --------------------------------------------------------------------------- #
+#: komunikat dla źródeł, których wyniki powstają dopiero w przeglądarce
+JS_REQUIRED_MESSAGE = (
+    "źródło renderuje wyniki po stronie klienta — potrzebny silnik JS "
+    "(patrz README: Źródła wymagające przeglądarki)"
+)
+
+
 async def _collect(source: Source, client: HttpClient, ctx: ScrapeContext) -> tuple[list[RawListing], str]:
+    if (source.config or {}).get("requires_js"):
+        # lepiej powiedzieć wprost, że się nie da, niż zwrócić ciche zero
+        return [], JS_REQUIRED_MESSAGE
     scraper = _build_scraper(source, client)
     items: list[RawListing] = []
     error = ""
