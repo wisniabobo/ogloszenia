@@ -50,16 +50,39 @@ make install
 | ⏱️ **Ile oferta stoi** | licznik dni od publikacji; oferta wisząca pół roku to inna sytuacja negocjacyjna niż wczorajsza |
 | 📉 **Historia ceny** | każda obniżka zapisana z datą i procentem |
 | ⚖️ **Licytacje** | komornicze (cena wywoławcza, suma oszacowania, rękojmia, termin), skarbowe, syndyczne — łącznie z etapem **przed licytacją** |
-| 🏢 **Rejestr biur** | budowany z danych, nie przepisany z listy — kto ile ofert wystawia |
+| 🏢 **Rejestr biur** | z katalogu, w którym pośrednicy sami się rejestrują: nazwa, adres, telefon i **ile ofert deklarują** |
+| 📊 **Pokrycie** | ile ofert danego biura faktycznie mamy wobec liczby, którą samo podaje — widać, czy zbieranie jest kompletne |
 | 📞 **Wyszukiwanie po telefonie** | czy ta „prywatna" oferta to nie kolejne ogłoszenie tego samego biura |
 | 🔔 **Alerty** | zapisane filtry → Telegram / e-mail / webhook, raz na ofertę |
 | 🔌 **Otwarte API** | bez kluczy, bez limitów, CORS dla wszystkich — buduj na tym własne rzeczy |
+
+### Skala
+
+Kontrolny przebieg `ogl scan --deep` na woj. opolskim:
+
+```
+pobrane 21 693  ·  nowe oferty 5 903  ·  kopie wykryte 1 139  ·  błędy 0
+```
+
+W bazie: **5 888 aktywnych ofert**, w tym 923 rozpoznane kopie, **101 licytacji**
+i **505 biur** w rejestrze.
+
+### Dwa tempa zbierania
+
+| | kiedy | co robi |
+|---|---|---|
+| `ogl scan` | co 10–15 minut | najnowsze strony każdej sekcji — nowa oferta trafia do bazy w kilka minut |
+| `ogl scan --deep` | raz na dobę | przechodzi wyniki **do końca**, aż strony przestaną wnosić nowe pozycje |
+
+Bycie pierwszym i posiadanie kompletu to dwa różne zadania i mają różne koszty —
+dlatego są to dwa tryby, a nie jeden kompromis.
 
 ---
 
 ## Skąd bierze dane
 
-**55 źródeł** w rejestrze, **27 zweryfikowanych realnym zapytaniem** (19.09.2026).
+**57 źródeł** w rejestrze, **29 zweryfikowanych realnym zapytaniem** (19.09.2026),
+plus dowolnie wiele stron biur dokładanych komendą `ogl add-site`.
 Nic tu nie jest wpisane „z pamięci" — każdy adres i każde API zostało odpytane,
 a wyniki (łącznie z porażkami) zapisane w `config/sources.yaml`.
 
@@ -77,6 +100,8 @@ a wyniki (łącznie z porażkami) zapisane w `config/sources.yaml`.
 | **Monitor Sądowy i Gospodarczy** | sprzedaż z mas upadłości | publiczne API wyszukiwarki MSiG |
 | **e-Zamówienia / BZP** | przetargi publiczne | publiczne API, filtr CPV 45/70/71, województwo `PL16` |
 | **PKP S.A.** | dworce, grunty kolejowe | `pkp.pl/pl/sprzedaz` |
+| **Katalog biur** | 505 pośredników z telefonami i liczbą ofert | `__NEXT_DATA__` katalogu Otodom |
+| **Strony biur** | oferty, które nie trafiają na portale | sitemap + dane strukturalne |
 
 ### Wymagają przeglądarki
 
@@ -212,12 +237,16 @@ Oryginałem zostaje oferta **najwcześniejsza**; przy remisie prywatna przed biu
 
 ## Rejestr biur nieruchomości
 
-Pytanie „z których biur ściągasz oferty" ma jedną uczciwą odpowiedź: **z tych,
-które faktycznie wystawiają oferty** — a to widać dopiero po skanie.
+Lista pochodzi z dwóch źródeł, które się uzupełniają:
 
-1. każda oferta oznaczona jako pośrednik dokłada nazwę, miasto i telefon,
-2. warianty zapisu tej samej firmy są scalane porównaniem rozmytym,
-3. miasto biura ustalane jest z najczęstszej lokalizacji jego ofert.
+1. **katalog biur**, w którym pośrednicy sami się rejestrują — stamtąd mamy nazwę,
+   adres z kodem pocztowym, telefon i **liczbę aktywnych ofert, którą biuro deklaruje**,
+2. **treść ogłoszeń** — biura, których w katalogu nie ma, rozpoznajemy po nazwie
+   oferenta; warianty zapisu tej samej firmy scala porównanie rozmyte.
+
+Z pierwszego punktu bierze się rzecz, której płatne narzędzia nie pokazują:
+**metryka pokrycia**. Skoro biuro deklaruje 182 oferty, a my mamy 40, to znaczy,
+że zbieranie jest niekompletne — i widać to czarno na białym, zamiast zgadywać.
 
 ```bash
 ogl agencies --min-offers 3
@@ -226,6 +255,37 @@ ogl agencies --export config/agencies_opolskie.yaml
 
 W repozytorium nie ma wymyślonych nazw ani numerów — biura powstają i znikają,
 a lista przepisana z pamięci byłaby fikcją.
+
+---
+
+## Skąd się bierze „300 portali"
+
+Krótko: to w przeważającej części **strony własne biur nieruchomości**, a nie
+serwisy ogłoszeniowe. Serwisów z prawdziwego zdarzenia jest w Polsce kilkanaście;
+biur z własną stroną — tysiące.
+
+Utrzymywanie selektorów dla tysiąca witryn jest niewykonalne. Ale te strony mają
+dwie wspólne cechy, które wystarczą:
+
+1. **`sitemap.xml`** — generuje ją niemal każdy CMS,
+2. **dane strukturalne** — JSON-LD `schema.org`, microdata albo OpenGraph,
+   wstawiane automatycznie przez wtyczki SEO, więc siedzą tam nawet na stronach,
+   których nikt świadomie pod to nie przygotował.
+
+Dlatego jeden scraper obsługuje dowolną liczbę witryn bez kodu per strona:
+
+```bash
+ogl add-site investdom.pl
+#  adresów wyglądających na oferty: 676
+#  ┌─────────┬───────┬────────┬────────────┬────────────┬──────────────────────────┐
+#  │ 295 000 │ 220.0 │ 5      │ dom        │ sprzedaz   │ Dom na sprzedaż Walidrogi│
+#  └─────────┴───────┴────────┴────────────┴────────────┴──────────────────────────┘
+#  Dodano investdom_pl do config/sources.yaml
+```
+
+Komenda najpierw **sprawdza**, czy ze strony da się cokolwiek wyciągnąć, pokazuje
+próbkę i dopiero wtedy dopisuje wpis. Jeśli nie da rady — mówi to wprost i nic
+nie zapisuje, zamiast dokładać martwe źródło do rejestru.
 
 ---
 
