@@ -355,3 +355,32 @@ class TestPrzeliczanieWspolrzednych:
         }
         assert "h-ulica" in do_przeliczenia      # zapytanie zawierało ulicę
         assert "h-miasto" not in do_przeliczenia  # sama miejscowość — nie ma co poprawiać
+
+
+class TestGeokodowanieDzielnic:
+    """Dzielnica jest dokładniejsza niż środek miasta, ale bywa pułapką.
+
+    Nazwy dzielnic powtarzają się w całej Polsce: „Śródmieście" istnieje
+    w każdym większym mieście, a „Gosławice" to też wieś na Dolnym Śląsku.
+    Dlatego wynik z OpenStreetMap przyjmujemy tylko wtedy, gdy leży blisko
+    środka swojej miejscowości.
+    """
+
+    def test_prawdziwa_dzielnica_przechodzi(self):
+        from ogloszenia.pipeline.geocode import MAX_DISTRICT_KM, _distance_km
+
+        # Zaodrze wobec centrum Opola
+        assert _distance_km(50.6751, 17.9213, 50.66430, 17.89755) <= MAX_DISTRICT_KM
+
+    def test_ta_sama_nazwa_w_innym_wojewodztwie_odpada(self):
+        from ogloszenia.pipeline.geocode import MAX_DISTRICT_KM, _distance_km
+
+        # Gosławice na Dolnym Śląsku i Śródmieście w Lublinie
+        assert _distance_km(50.6751, 17.9213, 51.2280, 16.8307) > MAX_DISTRICT_KM
+        assert _distance_km(50.6751, 17.9213, 51.2483, 22.5558) > MAX_DISTRICT_KM
+
+    def test_odleglosc_liczona_poprawnie(self):
+        from ogloszenia.pipeline.geocode import _distance_km
+
+        # Opole - Wrocław to ok. 80 km w linii prostej
+        assert 75 < _distance_km(50.6751, 17.9213, 51.1079, 17.0385) < 90

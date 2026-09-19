@@ -48,6 +48,20 @@ BBOX: dict[str, tuple[float, float, float, float]] = {
 }
 
 
+#: Dzielnica musi leżeć w tym promieniu od środka swojej miejscowości.
+#: Bez tego sprawdzenia „Gosławice" z OpenStreetMap wylądowałyby na Dolnym
+#: Śląsku, a „Śródmieście" w Lublinie — takich samych nazw jest w Polsce wiele.
+MAX_DISTRICT_KM = 15.0
+
+
+def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    from math import asin, cos, radians, sin, sqrt
+
+    dlat, dlon = radians(lat2 - lat1), radians(lon2 - lon1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+    return 2 * 6371.0 * asin(sqrt(a))
+
+
 def _within_region(lat: float, lon: float, voivodeship: str) -> bool:
     box = BBOX.get(voivodeship)
     if not box:
@@ -211,6 +225,31 @@ async def geocode_pending(
                     city=city, street=street or None, district=district or None,
                     teryt_prefix=teryt_prefix,
                 )
+
+                # Rejestr GUGiK nie zna dzielnic miast — na „Śródmieście"
+                # odpowiada wsią pod Lublinem. OpenStreetMap zna je dobrze,
+                # więc dla ofert bez ulicy, ale z dzielnicą, pytamy właśnie
+                # jego. Wynik przyjmujemy tylko wtedy, gdy leży blisko środka
+                # swojej miejscowości.
+                needs_district = (
+                    district
+                    and not street
+                    and (result is None or result.precision in ("city", "district"))
+                )
+                if needs_district:
+                    place = await nominatim.search(f"{district}, {city}, Polska")
+                    if place is not None and _within_region(place.lat, place.lon, voivodeship):
+                        anchor = result
+                        near_enough = anchor is None or _distance_km(
+                            anchor.lat, anchor.lon, place.lat, place.lon
+                        ) <= MAX_DISTRICT_KM
+                        if near_enough:
+                            result = GeocodeResult(
+                                lat=place.lat, lon=place.lon, city=city, street=None,
+                                teryt=anchor.teryt if anchor else None,
+                                precision="district", source="osm-dzielnica",
+                            )
+
                 if result is None:
                     place = await nominatim.search(f"{query}, {voivodeship}, Polska")
                     if place is not None and _within_region(place.lat, place.lon, voivodeship):
