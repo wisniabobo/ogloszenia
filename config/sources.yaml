@@ -1,790 +1,726 @@
-# =============================================================================
-# REJESTR ŹRÓDEŁ
-# =============================================================================
-# Każdy wpis: key (unikalny), name, scraper (klasa z ogloszenia/scrapers albo
-# `generic_html`), kind, category, enabled, interval_minutes, config.
-#
-# Pola pomocnicze:
-#   verify: true        -> adres/selektory niepotwierdzone na żywym serwisie;
-#                          uruchom `ogl check-sources` przed włączeniem
-#   sprawdzono: DATA    -> data ostatniej weryfikacji na żywym serwisie
-#   config.requires_js  -> wyniki powstają dopiero w przeglądarce; bez silnika JS
-#                          źródło nic nie zwróci i skan mówi o tym wprost
-#
-# Portale zmieniają HTML — dlatego selektory są w konfiguracji, a nie w kodzie.
-# =============================================================================
-
 defaults:
   interval_minutes: 15
-  # zwykły przebieg: najnowsze strony, żeby nowość trafiła do bazy w kilka minut
   max_pages: 5
   max_items: 400
-  # `ogl scan --deep`: przejście wyników do końca, raz na dobę
   deep_max_pages: 60
   deep_max_items: 20000
-
 sources:
+- key: olx
+  name: OLX.pl
+  scraper: olx
+  kind: nieruchomosc
+  category: portal_krajowy
+  base_url: https://www.olx.pl
+  enabled: true
+  interval_minutes: 8
+  coverage: krajowy
+  sprawdzono: 2026-09-19
+  notes: 'Najszybsze źródło ofert prywatnych — tu najczęściej pojawiają się okazje, zanim trafią do biur.
+    Korzystamy wyłącznie z /api/v1/offers/, czyli jedynej ścieżki API, którą OLX sam dopuszcza w robots.txt
+    (Disallow: /api/ + Allow: /api/v1/offers/). Pełne numery telefonów wymagają tokenu konta OLX — bez
+    niego numery bierzemy z treści ogłoszenia.
 
-  # ---------------------------------------------------------------------------
-  # 1. PORTALE OGÓLNOPOLSKIE — NIERUCHOMOŚCI
-  # ---------------------------------------------------------------------------
-  - key: olx
-    name: OLX.pl
-    scraper: olx
-    kind: nieruchomosc
-    category: portal_krajowy
-    base_url: https://www.olx.pl
-    enabled: true
-    interval_minutes: 8
-    coverage: krajowy
-    sprawdzono: 2026-09-19
-    notes: >
-      Najszybsze źródło ofert prywatnych — tu najczęściej pojawiają się okazje,
-      zanim trafią do biur. Korzystamy wyłącznie z /api/v1/offers/, czyli
-      jedynej ścieżki API, którą OLX sam dopuszcza w robots.txt
-      (Disallow: /api/ + Allow: /api/v1/offers/). Pełne numery telefonów
-      wymagają tokenu konta OLX — bez niego numery bierzemy z treści ogłoszenia.
-    config:
-      region_id: 12        # opolskie (zweryfikowane na żywym API)
+    '
+  config:
+    region_id: 12
+- key: otodom
+  name: Otodom.pl
+  scraper: otodom
+  kind: nieruchomosc
+  category: portal_krajowy
+  base_url: https://www.otodom.pl
+  enabled: true
+  interval_minutes: 10
+  coverage: krajowy
+  sprawdzono: 2026-09-19
+  notes: Największy portal ofert biur i deweloperów. Dane w __NEXT_DATA__.
+  config:
+    region_slug: opolskie
+- key: gratka
+  name: Gratka.pl
+  scraper: gratka
+  kind: nieruchomosc
+  category: portal_krajowy
+  base_url: https://gratka.pl
+  enabled: true
+  interval_minutes: 20
+  coverage: krajowy
+  sprawdzono: 2026-09-19
+  notes: 'robots.txt dopuszcza wyłącznie strony page=2 … page=10 i zabrania parametru sort= — scraper
+    trzyma się tych granic.
 
-  - key: otodom
-    name: Otodom.pl
-    scraper: otodom
-    kind: nieruchomosc
-    category: portal_krajowy
-    base_url: https://www.otodom.pl
-    enabled: true
-    interval_minutes: 10
-    coverage: krajowy
-    sprawdzono: 2026-09-19
-    notes: Największy portal ofert biur i deweloperów. Dane w __NEXT_DATA__.
-    config:
-      region_slug: opolskie
+    '
+- key: morizon
+  name: Morizon.pl
+  scraper: morizon
+  kind: nieruchomosc
+  category: portal_krajowy
+  base_url: https://www.morizon.pl
+  enabled: true
+  interval_minutes: 20
+  coverage: krajowy
+  sprawdzono: 2026-09-19
+  notes: 'Grupa Morizon-Gratka; duże pokrycie ofert biur. robots.txt zabrania parametrów ps[...], sort=
+    i limit=, więc paginujemy samym page= i bierzemy domyślne sortowanie.
 
-  - key: gratka
-    name: Gratka.pl
-    scraper: gratka
-    kind: nieruchomosc
-    category: portal_krajowy
-    base_url: https://gratka.pl
-    enabled: true
-    interval_minutes: 20
-    coverage: krajowy
-    sprawdzono: 2026-09-19
-    notes: >
-      robots.txt dopuszcza wyłącznie strony page=2 … page=10 i zabrania
-      parametru sort= — scraper trzyma się tych granic.
+    '
+- key: nieruchomosci_online
+  name: Nieruchomosci-online.pl
+  scraper: nieruchomosci_online
+  kind: nieruchomosc
+  category: portal_krajowy
+  base_url: https://www.nieruchomosci-online.pl
+  enabled: false
+  interval_minutes: 20
+  coverage: krajowy
+  sprawdzono: 2026-09-19
+  notes: 'Strona odpowiada, ale lista wyników powstaje dopiero w przeglądarce — w HTML-u nie ma ani jednego
+    linku do oferty. Wymaga silnika JS.
 
-  - key: morizon
-    name: Morizon.pl
-    scraper: morizon
-    kind: nieruchomosc
-    category: portal_krajowy
-    base_url: https://www.morizon.pl
-    enabled: true
-    interval_minutes: 20
-    coverage: krajowy
-    sprawdzono: 2026-09-19
-    notes: >
-      Grupa Morizon-Gratka; duże pokrycie ofert biur. robots.txt zabrania
-      parametrów ps[...], sort= i limit=, więc paginujemy samym page=
-      i bierzemy domyślne sortowanie.
+    '
+  config:
+    requires_js: true
+- key: domiporta
+  name: Domiporta.pl
+  scraper: domiporta
+  kind: nieruchomosc
+  category: portal_krajowy
+  base_url: https://www.domiporta.pl
+  enabled: true
+  interval_minutes: 30
+  coverage: krajowy
+  sprawdzono: 2026-09-19
+- key: adresowo
+  name: Adresowo.pl
+  scraper: adresowo
+  kind: nieruchomosc
+  category: portal_krajowy
+  base_url: https://adresowo.pl
+  enabled: false
+  interval_minutes: 30
+  coverage: krajowy
+  sprawdzono: 2026-09-19
+  notes: 'Agreguje też oferty bez pośredników, ale w HTML-u karty mają wyłącznie lokalizację — cena i
+    metraż dociągane są skryptem. Wymaga silnika JS.
 
-  - key: nieruchomosci_online
-    name: Nieruchomosci-online.pl
-    scraper: nieruchomosci_online
-    kind: nieruchomosc
-    category: portal_krajowy
-    base_url: https://www.nieruchomosci-online.pl
-    enabled: false
-    interval_minutes: 20
-    coverage: krajowy
-    sprawdzono: 2026-09-19
-    notes: >
-      Strona odpowiada, ale lista wyników powstaje dopiero w przeglądarce —
-      w HTML-u nie ma ani jednego linku do oferty. Wymaga silnika JS.
-    config:
-      requires_js: true
+    '
+  config:
+    requires_js: true
+- key: otoprzeprowadzki_oferty_net
+  name: Oferty.net
+  scraper: generic_html
+  kind: nieruchomosc
+  category: portal_krajowy
+  base_url: https://www.oferty.net
+  enabled: false
+  verify: true
+  config:
+    urls:
+    - https://www.oferty.net/mieszkania/opolskie/sprzedaz/?page={page}
+    - https://www.oferty.net/domy/opolskie/sprzedaz/?page={page}
+    list_selector: article, div.offer-item
+    link_selector: a
+    title_selector: h2, h3
+    price_selector: .price
+- key: szybko
+  name: Szybko.pl
+  scraper: generic_html
+  kind: nieruchomosc
+  category: portal_krajowy
+  base_url: https://www.szybko.pl
+  enabled: false
+  verify: true
+  config:
+    urls:
+    - https://www.szybko.pl/l/opolskie/mieszkania/sprzedaz?page={page}
+    - https://www.szybko.pl/l/opolskie/domy/sprzedaz?page={page}
+    list_selector: article, li.offer
+    link_selector: a
+    title_selector: h2, h3
+- key: gethome
+  name: GetHome.pl
+  scraper: generic_html
+  kind: nieruchomosc
+  category: portal_krajowy
+  base_url: https://gethome.pl
+  enabled: false
+  verify: true
+  notes: Rynek pierwotny i wtórny; dużo ofert deweloperskich.
+  config:
+    urls:
+    - https://gethome.pl/mieszkania/na-sprzedaz/opolskie/?page={page}
+    - https://gethome.pl/domy/na-sprzedaz/opolskie/?page={page}
+- key: rynekpierwotny
+  name: RynekPierwotny.pl
+  scraper: generic_html
+  kind: nieruchomosc
+  category: portal_krajowy
+  base_url: https://rynekpierwotny.pl
+  enabled: false
+  verify: true
+  notes: Wyłącznie rynek pierwotny (deweloperzy) — w Opolu kilkanaście inwestycji.
+  config:
+    urls:
+    - https://rynekpierwotny.pl/s/opolskie/?page={page}
+- key: tabelaofert
+  name: TabelaOfert.pl
+  scraper: generic_html
+  kind: nieruchomosc
+  category: portal_krajowy
+  base_url: https://tabelaofert.pl
+  enabled: false
+  sprawdzono: 2026-09-19
+  notes: Serwis odrzuca automaty (HTTP 403).
+- key: krn
+  name: KRN.pl
+  scraper: generic_html
+  kind: nieruchomosc
+  category: portal_krajowy
+  base_url: https://www.krn.pl
+  enabled: false
+  verify: true
+  config:
+    urls:
+    - https://www.krn.pl/nieruchomosci/mieszkania/opolskie/sprzedaz
+  sprawdzono: 2026-09-19
+- key: domy_pl
+  name: Domy.pl
+  scraper: generic_html
+  kind: nieruchomosc
+  category: portal_krajowy
+  base_url: https://domy.pl
+  enabled: false
+  verify: true
+  config:
+    urls:
+    - https://domy.pl/mieszkania-sprzedaz-opolskie?page={page}
+- key: nportal
+  name: Nportal.pl
+  scraper: generic_html
+  kind: nieruchomosc
+  category: portal_krajowy
+  base_url: https://nportal.pl
+  enabled: false
+  verify: true
+- key: facebook_marketplace
+  name: Facebook Marketplace
+  scraper: generic_html
+  kind: nieruchomosc
+  category: portal_krajowy
+  base_url: https://www.facebook.com/marketplace
+  enabled: false
+  requires_credentials: true
+  notes: 'WYŁĄCZONE ŚWIADOMIE. Marketplace wymaga zalogowanego konta, a regulamin Meta zakazuje automatycznego
+    pobierania treści. Obsługa możliwa wyłącznie przez oficjalne API partnerskie albo ręczny import —
+    nie przez bota.
 
-  - key: domiporta
-    name: Domiporta.pl
-    scraper: domiporta
-    kind: nieruchomosc
-    category: portal_krajowy
-    base_url: https://www.domiporta.pl
-    enabled: true
-    interval_minutes: 30
-    coverage: krajowy
-    sprawdzono: 2026-09-19
+    '
+- key: gumtree
+  name: Gumtree.pl
+  scraper: generic_html
+  kind: nieruchomosc
+  category: portal_krajowy
+  base_url: https://www.gumtree.pl
+  enabled: false
+  notes: Serwis zamknięty w Polsce — wpis historyczny, do ewentualnych archiwów.
+- key: katalog_biur
+  name: Katalog biur nieruchomości (Otodom)
+  scraper: katalog_biur
+  kind: inne
+  category: katalogi
+  base_url: https://www.otodom.pl/pl/firmy/biura-nieruchomosci
+  enabled: true
+  interval_minutes: 1440
+  coverage: krajowy
+  sprawdzono: 2026-09-19
+  notes: 'Najlepsze źródło listy pośredników, jakie istnieje: biura same się tam rejestrują. Oddaje pełny
+    numer telefonu, adres z kodem pocztowym i liczbę aktywnych ofert — po tej ostatniej widać, czy nasz
+    skan zebrał u danego biura wszystko. Dla woj. opolskiego: 160 biur, ~2 tys. ofert. To źródło nie tworzy
+    ogłoszeń, tylko zasila rejestr biur.
 
-  - key: adresowo
-    name: Adresowo.pl
-    scraper: adresowo
-    kind: nieruchomosc
-    category: portal_krajowy
-    base_url: https://adresowo.pl
-    enabled: false
-    interval_minutes: 30
-    coverage: krajowy
-    sprawdzono: 2026-09-19
-    notes: >
-      Agreguje też oferty bez pośredników, ale w HTML-u karty mają wyłącznie
-      lokalizację — cena i metraż dociągane są skryptem. Wymaga silnika JS.
-    config:
-      requires_js: true
+    '
+  config:
+    region_slug: opolskie
+    max_pages: 40
+- key: nto_ogloszenia
+  name: NTO — Nowa Trybuna Opolska (ogłoszenia)
+  scraper: generic_html
+  kind: nieruchomosc
+  category: portal_lokalny
+  base_url: https://nto.pl
+  coverage: regionalny
+  enabled: false
+  sprawdzono: 2026-09-19
+  notes: 'Subdomena ogloszenia.nto.pl nie odpowiada, a nto.pl odrzuca automaty (HTTP 403). Wpis zostaje
+    na wypadek powrotu serwisu.
 
-  - key: otoprzeprowadzki_oferty_net
-    name: Oferty.net
-    scraper: generic_html
-    kind: nieruchomosc
-    category: portal_krajowy
-    base_url: https://www.oferty.net
-    enabled: false
-    verify: true
-    config:
-      urls:
-        - https://www.oferty.net/mieszkania/opolskie/sprzedaz/?page={page}
-        - https://www.oferty.net/domy/opolskie/sprzedaz/?page={page}
-      list_selector: "article, div.offer-item"
-      link_selector: "a"
-      title_selector: "h2, h3"
-      price_selector: ".price"
+    '
+- key: opole_naszemiasto
+  name: Opole — NaszeMiasto
+  scraper: generic_html
+  kind: nieruchomosc
+  category: portal_lokalny
+  base_url: https://opole.naszemiasto.pl
+  coverage: regionalny
+  enabled: false
+  verify: true
+- key: kedzierzynkozle_info
+  name: KedzierzynKozle.info — ogłoszenia
+  scraper: generic_html
+  kind: nieruchomosc
+  category: portal_lokalny
+  base_url: https://kedzierzynkozle.info
+  coverage: lokalny
+  enabled: false
+  sprawdzono: 2026-09-19
+  notes: Domena nie rozwiązuje się — do sprawdzenia, czy serwis zmienił adres.
+- key: nysa_info
+  name: Nysa.info / Nyskie.info — ogłoszenia
+  scraper: generic_html
+  kind: nieruchomosc
+  category: portal_lokalny
+  base_url: https://nysa.info
+  coverage: lokalny
+  enabled: false
+  verify: true
+- key: brzeg24
+  name: Brzeg24.pl — ogłoszenia
+  scraper: generic_html
+  kind: nieruchomosc
+  category: portal_lokalny
+  base_url: https://brzeg24.pl
+  coverage: lokalny
+  enabled: false
+  verify: true
+- key: strzelceopolskie_info
+  name: Strzelceopolskie.pl — ogłoszenia
+  scraper: generic_html
+  kind: nieruchomosc
+  category: portal_lokalny
+  base_url: https://strzelceopolskie.pl
+  coverage: lokalny
+  enabled: false
+  verify: true
+- key: licytacje_komornik
+  name: Licytacje komornicze (Krajowa Rada Komornicza)
+  scraper: licytacje_komornik
+  kind: licytacja
+  category: licytacje
+  base_url: https://licytacje.komornik.pl
+  enabled: true
+  interval_minutes: 60
+  coverage: krajowy
+  sprawdzono: 2026-09-19
+  notes: 'Najważniejsze źródło okazji cenowych. Cena wywoławcza w I terminie to 3/4 sumy oszacowania,
+    w II — 2/3; rękojmia to 1/10 oszacowania (liczymy ją sami, bo karta wyników jej nie podaje). Serwis
+    został przebudowany: stary /Notice/Search jest dziś w robots.txt zabroniony, korzystamy z /wyszukiwarka-licytacji.
+    Szczegóły obwieszczenia (sygnatura, kancelaria) dociągane są skryptem, więc bierzemy to, co jest na
+    karcie wyników.
 
-  - key: szybko
-    name: Szybko.pl
-    scraper: generic_html
-    kind: nieruchomosc
-    category: portal_krajowy
-    base_url: https://www.szybko.pl
-    enabled: false
-    verify: true
-    config:
-      urls:
-        - https://www.szybko.pl/l/opolskie/mieszkania/sprzedaz?page={page}
-        - https://www.szybko.pl/l/opolskie/domy/sprzedaz?page={page}
-      list_selector: "article, li.offer"
-      link_selector: "a"
-      title_selector: "h2, h3"
+    '
+  config:
+    province: opolskie
+    main_categories:
+    - REAL_ESTATE
+- key: elicytacje
+  name: e-Licytacje komornicze
+  scraper: elicytacje
+  kind: licytacja
+  category: licytacje
+  base_url: https://elicytacje.komornik.pl
+  enabled: true
+  interval_minutes: 45
+  coverage: krajowy
+  sprawdzono: 2026-09-19
+  notes: 'Osobny serwis elicytacje.komornik.pl został wygaszony i przekierowuje na licytacje.komornik.pl.
+    To źródło filtruje ten sam serwis po trybie elektronicznym — bywa puste, gdy akurat nie ma e-licytacji
+    w regionie.
 
-  - key: gethome
-    name: GetHome.pl
-    scraper: generic_html
-    kind: nieruchomosc
-    category: portal_krajowy
-    base_url: https://gethome.pl
-    enabled: false
-    verify: true
-    notes: Rynek pierwotny i wtórny; dużo ofert deweloperskich.
-    config:
-      urls:
-        - https://gethome.pl/mieszkania/na-sprzedaz/opolskie/?page={page}
-        - https://gethome.pl/domy/na-sprzedaz/opolskie/?page={page}
+    '
+  config:
+    province: opolskie
+- key: elicytacje_kas
+  name: eLicytacje KAS (urzędy skarbowe)
+  scraper: elicytacje_kas
+  kind: licytacja
+  category: licytacje
+  base_url: https://elicytacje.mf.gov.pl
+  enabled: true
+  interval_minutes: 90
+  coverage: krajowy
+  sprawdzono: 2026-09-19
+  notes: 'Portal KAS działa od 1 lipca 2026 i zebrał w jednym miejscu licytacje, przetargi ofert i sprzedaż
+    z wolnej ręki majątku zajętego w egzekucji skarbowej. Publiczne API bez konta; filtra po województwie
+    nie ma, więc pobieramy całą sekcję "Nieruchomości" i odsiewamy słownikiem regionu.
 
-  - key: rynekpierwotny
-    name: RynekPierwotny.pl
-    scraper: generic_html
-    kind: nieruchomosc
-    category: portal_krajowy
-    base_url: https://rynekpierwotny.pl
-    enabled: false
-    verify: true
-    notes: Wyłącznie rynek pierwotny (deweloperzy) — w Opolu kilkanaście inwestycji.
-    config:
-      urls:
-        - https://rynekpierwotny.pl/s/opolskie/?page={page}
+    '
+  config:
+    section_id: 8777b999-fbac-4696-a11e-5323a52760f1
+- key: msig
+  name: Monitor Sądowy i Gospodarczy (syndycy)
+  scraper: msig
+  kind: licytacja
+  category: licytacje
+  base_url: https://wyszukiwarka-msig.ms.gov.pl
+  enabled: true
+  interval_minutes: 720
+  coverage: krajowy
+  sprawdzono: 2026-09-19
+  notes: 'Obwieszczenia syndyków o sprzedaży majątku z masy upadłości. API zwraca metadane pozycji; pełna
+    treść jest w numerze Monitora (PDF), więc zapisujemy podmiot, sygnaturę i link.
 
-  - key: tabelaofert
-    name: TabelaOfert.pl
-    scraper: generic_html
-    kind: nieruchomosc
-    category: portal_krajowy
-    base_url: https://tabelaofert.pl
-    enabled: false
-    sprawdzono: 2026-09-19
-    notes: Serwis odrzuca automaty (HTTP 403).
+    '
+  config:
+    days_back: 120
+- key: krz
+  name: Krajowy Rejestr Zadłużonych — obwieszczenia syndyków
+  scraper: krz
+  kind: licytacja
+  category: licytacje
+  base_url: https://krz.ms.gov.pl
+  enabled: true
+  interval_minutes: 120
+  coverage: krajowy
+  verify: true
+  notes: 'Sprzedaż z masy upadłości (syndycy). Często nieruchomości znacząco poniżej wartości rynkowej,
+    sprzedawane w trybie konkursu ofert.
 
-  - key: krn
-    name: KRN.pl
-    scraper: generic_html
-    kind: nieruchomosc
-    category: portal_krajowy
-    base_url: https://www.krn.pl
-    enabled: false
-    verify: true
-    config:
-      urls:
-        - https://www.krn.pl/nieruchomosci/mieszkania/opolskie/sprzedaz
-    sprawdzono: 2026-09-19   # strona główna odpowiada, ścieżka do poprawienia
+    '
+  config:
+    voivodeship: OPOLSKIE
+- key: msig_imsig
+  name: Monitor Sądowy i Gospodarczy (iMSiG)
+  scraper: generic_html
+  kind: licytacja
+  category: licytacje
+  base_url: https://www.imsig.pl
+  enabled: false
+  verify: true
+  notes: Obwieszczenia upadłościowe i o sprzedaży — uzupełnienie KRZ.
+- key: kas_licytacje
+  name: KAS — licytacje egzekucyjne urzędów skarbowych
+  scraper: generic_html
+  kind: licytacja
+  category: licytacje
+  base_url: https://www.podatki.gov.pl
+  enabled: false
+  verify: true
+  notes: Licytacje ruchomości i nieruchomości zajętych przez urzędy skarbowe.
+- key: licytacje_syndyk
+  name: Portale aukcyjne syndyków
+  scraper: generic_html
+  kind: licytacja
+  category: licytacje
+  base_url: https://syndyk.pl
+  enabled: false
+  sprawdzono: 2026-09-19
+  notes: Serwer nie odpowiada (timeout) — do ponownego sprawdzenia.
+- key: ezamowienia
+  name: Platforma e-Zamówienia
+  scraper: ezamowienia
+  kind: przetarg
+  category: przetargi
+  base_url: https://ezamowienia.gov.pl
+  enabled: true
+  interval_minutes: 180
+  coverage: krajowy
+  verify: true
+  notes: Filtrowane po CPV 45/70/71 (roboty budowlane, nieruchomości, projektowanie).
+  config:
+    voivodeship: OPOLSKIE
+    cpv_prefixes:
+    - '70'
+    - '45'
+    - '71'
+- key: bzp
+  name: Biuletyn Zamówień Publicznych (UZP)
+  scraper: generic_html
+  kind: przetarg
+  category: przetargi
+  base_url: https://ezamowienia.gov.pl/mp-client/search/list
+  enabled: false
+  verify: true
+- key: kowr
+  name: KOWR — nieruchomości rolne (OT Opole)
+  scraper: kowr
+  kind: przetarg
+  category: instytucje
+  base_url: https://www.nieruchomoscikowr.gov.pl
+  enabled: false
+  interval_minutes: 360
+  coverage: regionalny
+  sprawdzono: 2026-09-19
+  notes: 'Grunty i zabudowania z Zasobu Własności Rolnej Skarbu Państwa. KOWR ma własny portal (nieruchomoscikowr.gov.pl/nieruchomosci/oferty),
+    ale lista ofert ładuje się skryptem — wymaga silnika JS.
 
-  - key: domy_pl
-    name: Domy.pl
-    scraper: generic_html
-    kind: nieruchomosc
-    category: portal_krajowy
-    base_url: https://domy.pl
-    enabled: false
-    verify: true
-    config:
-      urls:
-        - https://domy.pl/mieszkania-sprzedaz-opolskie?page={page}
+    '
+  config:
+    requires_js: true
+    urls:
+    - https://www.nieruchomoscikowr.gov.pl/nieruchomosci/oferty
+- key: amw
+  name: Agencja Mienia Wojskowego
+  scraper: amw
+  kind: przetarg
+  category: instytucje
+  base_url: https://amw.com.pl
+  enabled: true
+  interval_minutes: 360
+  coverage: krajowy
+  sprawdzono: 2026-09-19
+  notes: 'Mieszkania, lokale i grunty po wojsku. Właściwa lista jest pod /pl/nieruchomosci/przetargi-nieruchomosci
+    — selektory do dostrojenia po pierwszym przebiegu.
 
-  - key: nportal
-    name: Nportal.pl
-    scraper: generic_html
-    kind: nieruchomosc
-    category: portal_krajowy
-    base_url: https://nportal.pl
-    enabled: false
-    verify: true
+    '
+  config:
+    urls:
+    - https://amw.com.pl/pl/nieruchomosci/przetargi-nieruchomosci
+    - https://amw.com.pl/pl/nieruchomosci/nieruchomosci-amw
+- key: zus
+  name: ZUS — sprzedaż i najem nieruchomości
+  scraper: zus
+  kind: wykaz
+  category: instytucje
+  base_url: https://www.zus.pl
+  enabled: true
+  interval_minutes: 720
+  coverage: krajowy
+  sprawdzono: 2026-09-19
+  notes: 'Ogłoszenia ZUS o sprzedaży i wynajmie nieruchomości oraz o mieniu zbędnym. Właściwy adres to
+    zus.pl/o-zus/inne-ogloszenia/... (bip.zus.pl nie prowadzi do listy).
 
-  - key: facebook_marketplace
-    name: Facebook Marketplace
-    scraper: generic_html
-    kind: nieruchomosc
-    category: portal_krajowy
-    base_url: https://www.facebook.com/marketplace
-    enabled: false
-    requires_credentials: true
-    notes: >
-      WYŁĄCZONE ŚWIADOMIE. Marketplace wymaga zalogowanego konta, a regulamin
-      Meta zakazuje automatycznego pobierania treści. Obsługa możliwa wyłącznie
-      przez oficjalne API partnerskie albo ręczny import — nie przez bota.
+    '
+  config:
+    urls:
+    - https://www.zus.pl/o-zus/inne-ogloszenia/sprzedaz-i-wynajem-nieruchomosci
+    - https://www.zus.pl/o-zus/inne-ogloszenia/mienie-zbedne
+- key: pkp
+  name: PKP S.A. — sprzedaż nieruchomości
+  scraper: pkp
+  kind: przetarg
+  category: instytucje
+  base_url: https://www.pkp.pl
+  enabled: true
+  interval_minutes: 720
+  coverage: krajowy
+  sprawdzono: 2026-09-19
+  notes: 'Dworce, budynki przydworcowe, grunty kolejowe i mieszkania zakładowe. Właściwy adres to pkp.pl/pl/sprzedaz
+    — dawna domena nieruchomosci.pkp.pl nie rozwiązuje się w DNS.
 
-  - key: gumtree
-    name: Gumtree.pl
-    scraper: generic_html
-    kind: nieruchomosc
-    category: portal_krajowy
-    base_url: https://www.gumtree.pl
-    enabled: false
-    notes: Serwis zamknięty w Polsce — wpis historyczny, do ewentualnych archiwów.
+    '
+- key: pkp_nieruchomosci
+  name: PKP S.A. — nieruchomości (stary adres)
+  scraper: generic_html
+  kind: przetarg
+  category: instytucje
+  base_url: https://nieruchomosci.pkp.pl
+  enabled: false
+  verify: true
+  sprawdzono: 2026-09-19
+  notes: 'Dworce, budynki i grunty kolejowe. Domena nieruchomosci.pkp.pl nie rozwiązuje się — przed włączeniem
+    trzeba znaleźć aktualny adres.
 
-  - key: katalog_biur
-    name: Katalog biur nieruchomości (Otodom)
-    scraper: katalog_biur
-    kind: inne
-    category: katalogi
-    base_url: https://www.otodom.pl/pl/firmy/biura-nieruchomosci
-    enabled: true
-    interval_minutes: 1440
-    coverage: krajowy
-    sprawdzono: 2026-09-19
-    notes: >
-      Najlepsze źródło listy pośredników, jakie istnieje: biura same się tam
-      rejestrują. Oddaje pełny numer telefonu, adres z kodem pocztowym i liczbę
-      aktywnych ofert — po tej ostatniej widać, czy nasz skan zebrał u danego
-      biura wszystko. Dla woj. opolskiego: 160 biur, ~2 tys. ofert.
-      To źródło nie tworzy ogłoszeń, tylko zasila rejestr biur.
-    config:
-      region_slug: opolskie
-      max_pages: 40
+    '
+  config:
+    list_selector: article, tr, div.offer
+    detail: true
+- key: lasy_panstwowe
+  name: Lasy Państwowe — nieruchomości do sprzedaży
+  scraper: generic_html
+  kind: przetarg
+  category: instytucje
+  base_url: https://www.gov.pl/web/dglp/nieruchomosci-przeznaczone-do-sprzedazy
+  enabled: false
+  sprawdzono: 2026-09-19
+  notes: 'Dyrekcja Generalna Lasów Państwowych publikuje wykaz na gov.pl. Strona odpowiada; selektory
+    do dostrojenia po pierwszym przebiegu.
 
-  # ---------------------------------------------------------------------------
-  # 2. PORTALE LOKALNE / REGIONALNE — OPOLSKIE
-  # ---------------------------------------------------------------------------
-  - key: nto_ogloszenia
-    name: NTO — Nowa Trybuna Opolska (ogłoszenia)
-    scraper: generic_html
-    kind: nieruchomosc
-    category: portal_lokalny
-    base_url: https://nto.pl
-    coverage: regionalny
-    enabled: false
-    sprawdzono: 2026-09-19
-    notes: >
-      Subdomena ogloszenia.nto.pl nie odpowiada, a nto.pl odrzuca automaty
-      (HTTP 403). Wpis zostaje na wypadek powrotu serwisu.
+    '
+  config:
+    urls:
+    - https://www.gov.pl/web/dglp/nieruchomosci-przeznaczone-do-sprzedazy
+    list_selector: article, li, tr
+    link_selector: a
+    detail: true
+    seller_type: instytucja
+    authority: Lasy Państwowe
+- key: kzn
+  name: Krajowy Zasób Nieruchomości
+  scraper: generic_html
+  kind: przetarg
+  category: instytucje
+  base_url: https://kzn.bip.gov.pl
+  enabled: false
+  sprawdzono: 2026-09-19
+  notes: 'Domena kzn.gov.pl nie odpowiada, ale BIP pod kzn.bip.gov.pl działa — tam trafiają ogłoszenia
+    o gruntach pod budownictwo mieszkaniowe.
 
-  - key: opole_naszemiasto
-    name: Opole — NaszeMiasto
-    scraper: generic_html
-    kind: nieruchomosc
-    category: portal_lokalny
-    base_url: https://opole.naszemiasto.pl
-    coverage: regionalny
-    enabled: false
-    verify: true
+    '
+  config:
+    urls:
+    - https://kzn.bip.gov.pl/ogloszenia/
+    list_selector: article, li, tr
+    detail: true
+- key: poczta_polska
+  name: Poczta Polska — sprzedaż nieruchomości
+  scraper: generic_html
+  kind: przetarg
+  category: instytucje
+  base_url: https://www.poczta-polska.pl
+  enabled: false
+  verify: true
+- key: bip_opole_miasto
+  name: BIP Urzędu Miasta Opola — nieruchomości
+  scraper: generic_html
+  kind: wykaz
+  category: bip
+  base_url: https://www.bip.um.opole.pl
+  coverage: lokalny
+  enabled: false
+  verify: true
+  interval_minutes: 720
+  config:
+    urls:
+    - https://www.bip.um.opole.pl/?c=mdTresc-cmPokaz-1560
+    list_selector: table tr, ul li, article
+    link_selector: a
+    detail: true
+    seller_type: urzad
+    authority: Urząd Miasta Opola
+- key: bip_powiat_opolski
+  name: BIP Starostwa Powiatowego w Opolu
+  scraper: generic_html
+  kind: wykaz
+  category: bip
+  base_url: https://bip.powiatopolski.pl
+  coverage: lokalny
+  enabled: false
+  verify: true
+- key: bip_nysa
+  name: BIP Gminy Nysa — nieruchomości
+  scraper: generic_html
+  kind: wykaz
+  category: bip
+  base_url: https://bip.nysa.pl
+  sprawdzono: 2026-09-19
+  coverage: lokalny
+  enabled: false
+  verify: true
+- key: bip_kedzierzyn_kozle
+  name: BIP Kędzierzyn-Koźle — nieruchomości
+  scraper: generic_html
+  kind: wykaz
+  category: bip
+  base_url: https://bip.kedzierzynkozle.pl
+  coverage: lokalny
+  enabled: false
+  verify: true
+- key: bip_brzeg
+  name: BIP Gminy Brzeg — nieruchomości
+  scraper: generic_html
+  kind: wykaz
+  category: bip
+  base_url: https://bip.brzeg.pl
+  coverage: lokalny
+  enabled: false
+  verify: true
+- key: bip_kluczbork
+  name: BIP Gminy Kluczbork — nieruchomości
+  scraper: generic_html
+  kind: wykaz
+  category: bip
+  base_url: https://bip.kluczbork.pl
+  sprawdzono: 2026-09-19
+  coverage: lokalny
+  enabled: false
+  verify: true
+- key: bip_prudnik
+  name: BIP Gminy Prudnik — nieruchomości
+  scraper: generic_html
+  kind: wykaz
+  category: bip
+  base_url: https://bip.prudnik.pl
+  coverage: lokalny
+  enabled: false
+  verify: true
+- key: bip_strzelce_opolskie
+  name: BIP Gminy Strzelce Opolskie — nieruchomości
+  scraper: generic_html
+  kind: wykaz
+  category: bip
+  base_url: https://bip.strzelceopolskie.pl
+  coverage: lokalny
+  enabled: false
+  verify: true
+- key: bip_krapkowice
+  name: BIP Gminy Krapkowice — nieruchomości
+  scraper: generic_html
+  kind: wykaz
+  category: bip
+  base_url: https://bip.krapkowice.pl
+  coverage: lokalny
+  enabled: false
+  verify: true
+- key: bip_namyslow
+  name: BIP Gminy Namysłów — nieruchomości
+  scraper: generic_html
+  kind: wykaz
+  category: bip
+  base_url: https://bip.namyslow.eu
+  coverage: lokalny
+  enabled: false
+  verify: true
+- key: bip_glubczyce
+  name: BIP Gminy Głubczyce — nieruchomości
+  scraper: generic_html
+  kind: wykaz
+  category: bip
+  base_url: https://bip.glubczyce.pl
+  coverage: lokalny
+  enabled: false
+  verify: true
+- key: bip_olesno
+  name: BIP Gminy Olesno — nieruchomości
+  scraper: generic_html
+  kind: wykaz
+  category: bip
+  base_url: https://bip.olesno.pl
+  sprawdzono: 2026-09-19
+  coverage: lokalny
+  enabled: false
+  verify: true
+- key: bip_opolskie_urzad_marszalkowski
+  name: BIP Urzędu Marszałkowskiego Woj. Opolskiego
+  scraper: generic_html
+  kind: wykaz
+  category: bip
+  base_url: https://bip.opolskie.pl
+  coverage: regionalny
+  enabled: false
+  verify: true
+- key: bip_ouw
+  name: BIP Opolskiego Urzędu Wojewódzkiego
+  scraper: generic_html
+  kind: wykaz
+  category: bip
+  base_url: https://www.ouw.pl
+  coverage: regionalny
+  enabled: false
+  sprawdzono: 2026-09-19
+  notes: 'Strona główna zwraca 404, a certyfikat ma niepełny łańcuch — przed włączeniem trzeba wskazać
+    konkretną podstronę z wykazami.
 
-  - key: kedzierzynkozle_info
-    name: KedzierzynKozle.info — ogłoszenia
-    scraper: generic_html
-    kind: nieruchomosc
-    category: portal_lokalny
-    base_url: https://kedzierzynkozle.info
-    coverage: lokalny
-    enabled: false
-    sprawdzono: 2026-09-19
-    notes: Domena nie rozwiązuje się — do sprawdzenia, czy serwis zmienił adres.
-
-  - key: nysa_info
-    name: Nysa.info / Nyskie.info — ogłoszenia
-    scraper: generic_html
-    kind: nieruchomosc
-    category: portal_lokalny
-    base_url: https://nysa.info
-    coverage: lokalny
-    enabled: false
-    verify: true
-
-  - key: brzeg24
-    name: Brzeg24.pl — ogłoszenia
-    scraper: generic_html
-    kind: nieruchomosc
-    category: portal_lokalny
-    base_url: https://brzeg24.pl
-    coverage: lokalny
-    enabled: false
-    verify: true
-
-  - key: strzelceopolskie_info
-    name: Strzelceopolskie.pl — ogłoszenia
-    scraper: generic_html
-    kind: nieruchomosc
-    category: portal_lokalny
-    base_url: https://strzelceopolskie.pl
-    coverage: lokalny
-    enabled: false
-    verify: true
-
-  # ---------------------------------------------------------------------------
-  # 3. LICYTACJE — KOMORNICZE, SYNDYCZNE, SKARBOWE
-  # ---------------------------------------------------------------------------
-  - key: licytacje_komornik
-    name: Licytacje komornicze (Krajowa Rada Komornicza)
-    scraper: licytacje_komornik
-    kind: licytacja
-    category: licytacje
-    base_url: https://licytacje.komornik.pl
-    enabled: true
-    interval_minutes: 60
-    coverage: krajowy
-    sprawdzono: 2026-09-19
-    notes: >
-      Najważniejsze źródło okazji cenowych. Cena wywoławcza w I terminie to
-      3/4 sumy oszacowania, w II — 2/3; rękojmia to 1/10 oszacowania (liczymy
-      ją sami, bo karta wyników jej nie podaje). Serwis został przebudowany:
-      stary /Notice/Search jest dziś w robots.txt zabroniony, korzystamy
-      z /wyszukiwarka-licytacji. Szczegóły obwieszczenia (sygnatura, kancelaria)
-      dociągane są skryptem, więc bierzemy to, co jest na karcie wyników.
-    config:
-      province: opolskie
-      main_categories: ["REAL_ESTATE"]   # dodaj "MOVABLE" dla ruchomości
-
-  - key: elicytacje
-    name: e-Licytacje komornicze
-    scraper: elicytacje
-    kind: licytacja
-    category: licytacje
-    base_url: https://elicytacje.komornik.pl
-    enabled: true
-    interval_minutes: 45
-    coverage: krajowy
-    sprawdzono: 2026-09-19
-    notes: >
-      Osobny serwis elicytacje.komornik.pl został wygaszony i przekierowuje na
-      licytacje.komornik.pl. To źródło filtruje ten sam serwis po trybie
-      elektronicznym — bywa puste, gdy akurat nie ma e-licytacji w regionie.
-    config:
-      province: opolskie
-
-  - key: elicytacje_kas
-    name: eLicytacje KAS (urzędy skarbowe)
-    scraper: elicytacje_kas
-    kind: licytacja
-    category: licytacje
-    base_url: https://elicytacje.mf.gov.pl
-    enabled: true
-    interval_minutes: 90
-    coverage: krajowy
-    sprawdzono: 2026-09-19
-    notes: >
-      Portal KAS działa od 1 lipca 2026 i zebrał w jednym miejscu licytacje,
-      przetargi ofert i sprzedaż z wolnej ręki majątku zajętego w egzekucji
-      skarbowej. Publiczne API bez konta; filtra po województwie nie ma, więc
-      pobieramy całą sekcję "Nieruchomości" i odsiewamy słownikiem regionu.
-    config:
-      section_id: 8777b999-fbac-4696-a11e-5323a52760f1
-
-  - key: msig
-    name: Monitor Sądowy i Gospodarczy (syndycy)
-    scraper: msig
-    kind: licytacja
-    category: licytacje
-    base_url: https://wyszukiwarka-msig.ms.gov.pl
-    enabled: true
-    interval_minutes: 720
-    coverage: krajowy
-    sprawdzono: 2026-09-19
-    notes: >
-      Obwieszczenia syndyków o sprzedaży majątku z masy upadłości. API zwraca
-      metadane pozycji; pełna treść jest w numerze Monitora (PDF), więc
-      zapisujemy podmiot, sygnaturę i link.
-    config:
-      days_back: 120
-
-  - key: krz
-    name: Krajowy Rejestr Zadłużonych — obwieszczenia syndyków
-    scraper: krz
-    kind: licytacja
-    category: licytacje
-    base_url: https://krz.ms.gov.pl
-    enabled: true
-    interval_minutes: 120
-    coverage: krajowy
-    verify: true
-    notes: >
-      Sprzedaż z masy upadłości (syndycy). Często nieruchomości znacząco
-      poniżej wartości rynkowej, sprzedawane w trybie konkursu ofert.
-    config:
-      voivodeship: OPOLSKIE
-
-  - key: msig_imsig
-    name: Monitor Sądowy i Gospodarczy (iMSiG)
-    scraper: generic_html
-    kind: licytacja
-    category: licytacje
-    base_url: https://www.imsig.pl
-    enabled: false
-    verify: true
-    notes: Obwieszczenia upadłościowe i o sprzedaży — uzupełnienie KRZ.
-
-  - key: kas_licytacje
-    name: KAS — licytacje egzekucyjne urzędów skarbowych
-    scraper: generic_html
-    kind: licytacja
-    category: licytacje
-    base_url: https://www.podatki.gov.pl
-    enabled: false
-    verify: true
-    notes: Licytacje ruchomości i nieruchomości zajętych przez urzędy skarbowe.
-
-  - key: licytacje_syndyk
-    name: Portale aukcyjne syndyków
-    scraper: generic_html
-    kind: licytacja
-    category: licytacje
-    base_url: https://syndyk.pl
-    enabled: false
-    sprawdzono: 2026-09-19
-    notes: Serwer nie odpowiada (timeout) — do ponownego sprawdzenia.
-
-  # ---------------------------------------------------------------------------
-  # 4. PRZETARGI I MIENIE PUBLICZNE
-  # ---------------------------------------------------------------------------
-  - key: ezamowienia
-    name: Platforma e-Zamówienia
-    scraper: ezamowienia
-    kind: przetarg
-    category: przetargi
-    base_url: https://ezamowienia.gov.pl
-    enabled: true
-    interval_minutes: 180
-    coverage: krajowy
-    verify: true
-    notes: Filtrowane po CPV 45/70/71 (roboty budowlane, nieruchomości, projektowanie).
-    config:
-      voivodeship: OPOLSKIE
-      cpv_prefixes: ["70", "45", "71"]
-
-  - key: bzp
-    name: Biuletyn Zamówień Publicznych (UZP)
-    scraper: generic_html
-    kind: przetarg
-    category: przetargi
-    base_url: https://ezamowienia.gov.pl/mp-client/search/list
-    enabled: false
-    verify: true
-
-  - key: kowr
-    name: KOWR — nieruchomości rolne (OT Opole)
-    scraper: kowr
-    kind: przetarg
-    category: instytucje
-    base_url: https://www.nieruchomoscikowr.gov.pl
-    enabled: false
-    interval_minutes: 360
-    coverage: regionalny
-    sprawdzono: 2026-09-19
-    notes: >
-      Grunty i zabudowania z Zasobu Własności Rolnej Skarbu Państwa. KOWR ma
-      własny portal (nieruchomoscikowr.gov.pl/nieruchomosci/oferty), ale lista
-      ofert ładuje się skryptem — wymaga silnika JS.
-    config:
-      requires_js: true
-      urls:
-        - https://www.nieruchomoscikowr.gov.pl/nieruchomosci/oferty
-
-  - key: amw
-    name: Agencja Mienia Wojskowego
-    scraper: amw
-    kind: przetarg
-    category: instytucje
-    base_url: https://amw.com.pl
-    enabled: true
-    interval_minutes: 360
-    coverage: krajowy
-    sprawdzono: 2026-09-19
-    notes: >
-      Mieszkania, lokale i grunty po wojsku. Właściwa lista jest pod
-      /pl/nieruchomosci/przetargi-nieruchomosci — selektory do dostrojenia
-      po pierwszym przebiegu.
-    config:
-      urls:
-        - https://amw.com.pl/pl/nieruchomosci/przetargi-nieruchomosci
-        - https://amw.com.pl/pl/nieruchomosci/nieruchomosci-amw
-
-  - key: zus
-    name: ZUS — sprzedaż i najem nieruchomości
-    scraper: zus
-    kind: wykaz
-    category: instytucje
-    base_url: https://www.zus.pl
-    enabled: true
-    interval_minutes: 720
-    coverage: krajowy
-    sprawdzono: 2026-09-19
-    notes: >
-      Ogłoszenia ZUS o sprzedaży i wynajmie nieruchomości oraz o mieniu zbędnym.
-      Właściwy adres to zus.pl/o-zus/inne-ogloszenia/... (bip.zus.pl nie
-      prowadzi do listy).
-    config:
-      urls:
-        - https://www.zus.pl/o-zus/inne-ogloszenia/sprzedaz-i-wynajem-nieruchomosci
-        - https://www.zus.pl/o-zus/inne-ogloszenia/mienie-zbedne
-
-  - key: pkp
-    name: PKP S.A. — sprzedaż nieruchomości
-    scraper: pkp
-    kind: przetarg
-    category: instytucje
-    base_url: https://www.pkp.pl
-    enabled: true
-    interval_minutes: 720
-    coverage: krajowy
-    sprawdzono: 2026-09-19
-    notes: >
-      Dworce, budynki przydworcowe, grunty kolejowe i mieszkania zakładowe.
-      Właściwy adres to pkp.pl/pl/sprzedaz — dawna domena nieruchomosci.pkp.pl
-      nie rozwiązuje się w DNS.
-
-  - key: pkp_nieruchomosci
-    name: PKP S.A. — nieruchomości (stary adres)
-    scraper: generic_html
-    kind: przetarg
-    category: instytucje
-    base_url: https://nieruchomosci.pkp.pl
-    enabled: false
-    verify: true
-    sprawdzono: 2026-09-19
-    notes: >
-      Dworce, budynki i grunty kolejowe. Domena nieruchomosci.pkp.pl nie
-      rozwiązuje się — przed włączeniem trzeba znaleźć aktualny adres.
-    config:
-      list_selector: "article, tr, div.offer"
-      detail: true
-
-  - key: lasy_panstwowe
-    name: Lasy Państwowe — nieruchomości do sprzedaży
-    scraper: generic_html
-    kind: przetarg
-    category: instytucje
-    base_url: https://www.gov.pl/web/dglp/nieruchomosci-przeznaczone-do-sprzedazy
-    enabled: false
-    sprawdzono: 2026-09-19
-    notes: >
-      Dyrekcja Generalna Lasów Państwowych publikuje wykaz na gov.pl. Strona
-      odpowiada; selektory do dostrojenia po pierwszym przebiegu.
-    config:
-      urls: ["https://www.gov.pl/web/dglp/nieruchomosci-przeznaczone-do-sprzedazy"]
-      list_selector: "article, li, tr"
-      link_selector: "a"
-      detail: true
-      seller_type: instytucja
-      authority: Lasy Państwowe
-
-  - key: kzn
-    name: Krajowy Zasób Nieruchomości
-    scraper: generic_html
-    kind: przetarg
-    category: instytucje
-    base_url: https://kzn.bip.gov.pl
-    enabled: false
-    sprawdzono: 2026-09-19
-    notes: >
-      Domena kzn.gov.pl nie odpowiada, ale BIP pod kzn.bip.gov.pl działa —
-      tam trafiają ogłoszenia o gruntach pod budownictwo mieszkaniowe.
-    config:
-      urls: ["https://kzn.bip.gov.pl/ogloszenia/"]
-      list_selector: "article, li, tr"
-      detail: true
-
-  - key: poczta_polska
-    name: Poczta Polska — sprzedaż nieruchomości
-    scraper: generic_html
-    kind: przetarg
-    category: instytucje
-    base_url: https://www.poczta-polska.pl
-    enabled: false
-    verify: true
-
-  # ---------------------------------------------------------------------------
-  # 5. BIP — WYKAZY NIERUCHOMOŚCI GMIN I POWIATÓW WOJ. OPOLSKIEGO
-  # ---------------------------------------------------------------------------
-  # Gminy mają ustawowy obowiązek publikować wykazy nieruchomości przeznaczonych
-  # do sprzedaży/dzierżawy (art. 35 ustawy o gospodarce nieruchomościami) — to
-  # ogłoszenia, których nie ma na żadnym portalu. Adresy BIP-ów bywają
-  # niestandardowe, dlatego wszystkie mają `verify: true`; `ogl check-sources`
-  # sprawdzi, które odpowiadają, zanim je włączysz.
-  - key: bip_opole_miasto
-    name: BIP Urzędu Miasta Opola — nieruchomości
-    scraper: generic_html
-    kind: wykaz
-    category: bip
-    base_url: https://www.bip.um.opole.pl
-    coverage: lokalny
-    enabled: false
-    verify: true
-    interval_minutes: 720
-    config:
-      urls: ["https://www.bip.um.opole.pl/?c=mdTresc-cmPokaz-1560"]
-      list_selector: "table tr, ul li, article"
-      link_selector: "a"
-      detail: true
-      seller_type: urzad
-      authority: Urząd Miasta Opola
-
-  - key: bip_powiat_opolski
-    name: BIP Starostwa Powiatowego w Opolu
-    scraper: generic_html
-    kind: wykaz
-    category: bip
-    base_url: https://bip.powiatopolski.pl
-    coverage: lokalny
-    enabled: false
-    verify: true
-
-  - key: bip_nysa
-    name: BIP Gminy Nysa — nieruchomości
-    scraper: generic_html
-    kind: wykaz
-    category: bip
-    base_url: https://bip.nysa.pl
-    sprawdzono: 2026-09-19
-    coverage: lokalny
-    enabled: false
-    verify: true
-
-  - key: bip_kedzierzyn_kozle
-    name: BIP Kędzierzyn-Koźle — nieruchomości
-    scraper: generic_html
-    kind: wykaz
-    category: bip
-    base_url: https://bip.kedzierzynkozle.pl
-    coverage: lokalny
-    enabled: false
-    verify: true
-
-  - key: bip_brzeg
-    name: BIP Gminy Brzeg — nieruchomości
-    scraper: generic_html
-    kind: wykaz
-    category: bip
-    base_url: https://bip.brzeg.pl
-    coverage: lokalny
-    enabled: false
-    verify: true
-
-  - key: bip_kluczbork
-    name: BIP Gminy Kluczbork — nieruchomości
-    scraper: generic_html
-    kind: wykaz
-    category: bip
-    base_url: https://bip.kluczbork.pl
-    sprawdzono: 2026-09-19
-    coverage: lokalny
-    enabled: false
-    verify: true
-
-  - key: bip_prudnik
-    name: BIP Gminy Prudnik — nieruchomości
-    scraper: generic_html
-    kind: wykaz
-    category: bip
-    base_url: https://bip.prudnik.pl
-    coverage: lokalny
-    enabled: false
-    verify: true
-
-  - key: bip_strzelce_opolskie
-    name: BIP Gminy Strzelce Opolskie — nieruchomości
-    scraper: generic_html
-    kind: wykaz
-    category: bip
-    base_url: https://bip.strzelceopolskie.pl
-    coverage: lokalny
-    enabled: false
-    verify: true
-
-  - key: bip_krapkowice
-    name: BIP Gminy Krapkowice — nieruchomości
-    scraper: generic_html
-    kind: wykaz
-    category: bip
-    base_url: https://bip.krapkowice.pl
-    coverage: lokalny
-    enabled: false
-    verify: true
-
-  - key: bip_namyslow
-    name: BIP Gminy Namysłów — nieruchomości
-    scraper: generic_html
-    kind: wykaz
-    category: bip
-    base_url: https://bip.namyslow.eu
-    coverage: lokalny
-    enabled: false
-    verify: true
-
-  - key: bip_glubczyce
-    name: BIP Gminy Głubczyce — nieruchomości
-    scraper: generic_html
-    kind: wykaz
-    category: bip
-    base_url: https://bip.glubczyce.pl
-    coverage: lokalny
-    enabled: false
-    verify: true
-
-  - key: bip_olesno
-    name: BIP Gminy Olesno — nieruchomości
-    scraper: generic_html
-    kind: wykaz
-    category: bip
-    base_url: https://bip.olesno.pl
-    sprawdzono: 2026-09-19   # certyfikat z niepełnym łańcuchem
-    coverage: lokalny
-    enabled: false
-    verify: true
-
-  - key: bip_opolskie_urzad_marszalkowski
-    name: BIP Urzędu Marszałkowskiego Woj. Opolskiego
-    scraper: generic_html
-    kind: wykaz
-    category: bip
-    base_url: https://bip.opolskie.pl
-    coverage: regionalny
-    enabled: false
-    verify: true
-
-  - key: bip_ouw
-    name: BIP Opolskiego Urzędu Wojewódzkiego
-    scraper: generic_html
-    kind: wykaz
-    category: bip
-    base_url: https://www.ouw.pl
-    coverage: regionalny
-    enabled: false
-    sprawdzono: 2026-09-19
-    notes: >
-      Strona główna zwraca 404, a certyfikat ma niepełny łańcuch — przed
-      włączeniem trzeba wskazać konkretną podstronę z wykazami.
+    '
+- key: investdom_pl
+  name: investdom.pl
+  scraper: sitemap
+  kind: nieruchomosc
+  category: strony_biur
+  base_url: https://investdom.pl
+  enabled: true
+  interval_minutes: 360
+  coverage: lokalny
+  sprawdzono: '2026-09-19'
+  config:
+    base_url: https://investdom.pl
+    max_offers: 300

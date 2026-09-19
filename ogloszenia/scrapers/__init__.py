@@ -25,6 +25,7 @@ from .nieruchomosci_online import NieruchomosciOnlineScraper
 from .olx import OLXScraper
 from .otodom import OtodomScraper
 from .pkp import PKPScraper
+from .sitemap import SitemapScraper
 from .zus import ZUSScraper
 
 SCRAPERS: dict[str, type[BaseScraper]] = {
@@ -49,6 +50,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         AMWScraper,
         ZUSScraper,
         GenericHtmlScraper,
+        SitemapScraper,
     )
 }
 

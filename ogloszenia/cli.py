@@ -244,6 +244,106 @@ def cmd_geocode(
         console.print(f"Na mapie: {located}/{total} ofert")
 
 
+@app.command("add-site")
+def cmd_add_site(
+    url: str = typer.Argument(..., help="Adres strony biura lub małego portalu"),
+    name: str = typer.Option(None, help="Nazwa źródła (domyślnie z domeny)"),
+    key: str = typer.Option(None, help="Klucz źródła (domyślnie z domeny)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Tylko sprawdź, nie zapisuj"),
+    max_offers: int = typer.Option(300, help="Limit ofert pobieranych z tej strony"),
+) -> None:
+    """Sprawdza stronę i dopisuje ją do rejestru źródeł.
+
+    Tak rośnie pokrycie: większość „portali" w tej branży to w rzeczywistości
+    strony pojedynczych biur. Uniwersalny scraper czyta je po mapie strony
+    i danych strukturalnych, więc dołożenie kolejnej witryny to jedna komenda,
+    a nie nowy kawałek kodu.
+    """
+    import yaml
+
+    from .scrapers import ScrapeContext
+    from .scrapers.sitemap import SitemapScraper
+    from .settings import CONFIG_DIR
+    from .utils.http import HttpClient
+    from .utils.text import slugify
+
+    base = url if url.startswith("http") else f"https://{url}"
+    host = base.split("://", 1)[-1].split("/")[0]
+    source_key = key or slugify(host.replace("www.", "")).replace("-pl", "_pl").replace("-", "_")
+    source_name = name or host.replace("www.", "")
+
+    async def probe() -> tuple[int, list]:
+        async with HttpClient(concurrency=3) as client:
+            scraper = SitemapScraper(
+                client, {"base_url": base, "max_offers": max_offers}, source_key=source_key
+            )
+            ctx = ScrapeContext(max_pages=1, max_items=5)
+            found = await scraper.discover_offers(base, ctx)
+            samples = [item async for item in scraper.run(ctx)]
+            return len(found), samples
+
+    console.print(f"[bold]Sprawdzam[/] {base} …")
+    try:
+        candidates, samples = asyncio.run(probe())
+    except Exception as exc:
+        console.print(f"[red]Nie udało się:[/] {type(exc).__name__}: {exc}")
+        raise typer.Exit(1) from exc
+
+    console.print(f"adresów wyglądających na oferty: [bold]{candidates}[/]")
+    if not samples:
+        console.print(
+            "[yellow]Nie udało się sparsować żadnej oferty.[/] "
+            "Strona może renderować treść skryptem albo mieć nietypowe adresy — "
+            "spróbuj podać wzorzec przez `config.offer_pattern` w sources.yaml."
+        )
+        raise typer.Exit(1)
+
+    table = Table(title=f"Próbka z {source_name}")
+    for column in ("cena", "m²", "pokoje", "typ", "transakcja", "tytuł"):
+        table.add_column(column, overflow="ellipsis")
+    for item in samples:
+        table.add_row(
+            _money(item.price), str(item.area or "—"), str(item.rooms or "—"),
+            item.property_type.value, item.transaction.value, item.title[:46],
+        )
+    console.print(table)
+
+    entry = {
+        "key": source_key,
+        "name": source_name,
+        "scraper": "sitemap",
+        "kind": "nieruchomosc",
+        "category": "strony_biur",
+        "base_url": base,
+        "enabled": True,
+        "interval_minutes": 360,
+        "coverage": "lokalny",
+        "sprawdzono": str(__import__("datetime").date.today()),
+        "config": {"base_url": base, "max_offers": max_offers},
+    }
+
+    if dry_run:
+        console.print("[dim]--dry-run: nic nie zapisuję. Wpis wyglądałby tak:[/]")
+        console.print(yaml.safe_dump([entry], allow_unicode=True, sort_keys=False))
+        return
+
+    path = CONFIG_DIR / "sources.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    existing = {s.get("key") for s in data.get("sources", [])}
+    if source_key in existing:
+        console.print(f"[yellow]Źródło {source_key} już jest w rejestrze.[/]")
+        return
+    data.setdefault("sources", []).append(entry)
+    path.write_text(
+        yaml.safe_dump(data, allow_unicode=True, sort_keys=False, width=100), encoding="utf-8"
+    )
+    console.print(
+        f"[green]Dodano[/] {source_key} do config/sources.yaml "
+        f"({len(data['sources'])} źródeł łącznie)"
+    )
+    console.print(f"Zbierz oferty: [bold]ogl scan -s {source_key} --deep[/]")
+
+
 @app.command("apify-actors")
 def cmd_apify_actors(
     query: str = typer.Argument("nieruchomosci", help="Czego szukać w katalogu Apify"),
