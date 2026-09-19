@@ -95,9 +95,15 @@ for _ in $(seq 1 30); do
 done
 
 # --------------------------------------------------------------------------- #
-if command -v nginx >/dev/null 2>&1; then
+if command -v nginx >/dev/null 2>&1 && [[ -d /etc/nginx/sites-available ]]; then
 	log "Wykryto nginx — dokładam vhosta dla $DOMAIN"
 	VHOST="/etc/nginx/sites-available/$DOMAIN"
+
+	# Zanim cokolwiek ruszymy: zapamiętaj, że konfiguracja BYŁA poprawna.
+	# Jeśli była zepsuta wcześniej, nie chcemy brać na siebie cudzego problemu.
+	NGINX_WAS_OK=0
+	nginx -t >/dev/null 2>&1 && NGINX_WAS_OK=1
+	[[ $NGINX_WAS_OK -eq 1 ]] || warn "nginx miał błędy w konfiguracji JESZCZE PRZED zmianą"
 
 	if [[ -e "$VHOST" ]]; then
 		cp -a "$VHOST" "$VHOST.bak.$(date +%s)"
@@ -112,9 +118,14 @@ if command -v nginx >/dev/null 2>&1; then
 		systemctl reload nginx
 		echo "nginx przeładowany, pozostałe domeny bez zmian"
 	else
-		warn "konfiguracja nginxa nie przechodzi testu — cofam zmianę"
+		warn "konfiguracja nginxa nie przechodzi testu — WYCOFUJĘ swoją zmianę"
 		rm -f "/etc/nginx/sites-enabled/$DOMAIN"
-		nginx -t && systemctl reload nginx || true
+		if [[ $NGINX_WAS_OK -eq 1 ]]; then
+			nginx -t >/dev/null 2>&1 && systemctl reload nginx \
+				&& echo "wrócono do stanu sprzed zmiany" \
+				|| warn "nie udało się przeładować — sprawdź: nginx -t"
+		fi
+		warn "vhost został wyłączony; aplikacja i tak działa na 127.0.0.1:8000"
 	fi
 
 	if [[ -n "$ACME_EMAIL" ]]; then
@@ -131,9 +142,10 @@ if command -v nginx >/dev/null 2>&1; then
 		warn "uruchom potem: certbot --nginx -d $DOMAIN"
 	fi
 else
-	warn "nginx nie znaleziony."
-	warn "Albo zainstaluj nginxa i użyj deploy/nginx-vhost.conf,"
-	warn "albo uruchom wbudowane Caddy: docker compose --profile caddy up -d"
+	warn "Nie znaleziono nginxa (albo ma nietypowy układ katalogów)."
+	warn "Aplikacja działa na 127.0.0.1:8000 — zostaje skierować do niej ruch:"
+	warn "  · masz nginxa: użyj deploy/nginx-vhost.conf"
+	warn "  · czysty serwer: docker compose --profile caddy up -d"
 fi
 
 # --------------------------------------------------------------------------- #

@@ -175,6 +175,64 @@ def enrich_listing(session: Session, data: dict, phones: list[PhoneNumber]) -> d
     return data
 
 
+def upsert_agency_record(session: Session, raw) -> bool:
+    """Zapisuje biuro z katalogu portalu. Zwraca True, gdy wpis jest nowy.
+
+    Dane z katalogu są **pewniejsze** niż zgadywane z ogłoszeń: biuro samo je
+    wpisało. Dlatego nadpisują to, co wcześniej wywnioskowaliśmy, i oznaczają
+    wpis jako zweryfikowany.
+    """
+    from ..models import utcnow
+    from ..settings import get_settings
+    from ..utils.phones import parse_phone
+
+    name = clean(raw.seller_name or raw.title)
+    if not name:
+        return False
+    extra = raw.extra or {}
+    slug = slugify(name)
+
+    agency = session.scalar(select(Agency).where(Agency.slug == slug))
+    if agency is None:
+        known = list(session.scalars(select(Agency)))
+        if known:
+            choices = {a.slug: norm_key(a.name) for a in known}
+            best = process.extractOne(
+                norm_key(name), choices, scorer=fuzz.token_set_ratio,
+                score_cutoff=AGENCY_MATCH_THRESHOLD,
+            )
+            if best:
+                agency = next(a for a in known if a.slug == best[2])
+
+    is_new = agency is None
+    if agency is None:
+        agency = Agency(slug=slug, name=name[:300])
+        session.add(agency)
+        session.flush()
+
+    settings = get_settings()
+    hide = settings.mask_phones or settings.store_phone_hash_only
+    phones = []
+    for value in raw.phones_raw or []:
+        parsed = parse_phone(value, origin="katalog")
+        if parsed:
+            phones.append(parsed.masked if hide else parsed.e164)
+
+    agency.name = name[:300]
+    agency.city = raw.city or agency.city
+    agency.address = extra.get("adres") or agency.address
+    agency.postal_code = extra.get("kod_pocztowy") or agency.postal_code
+    agency.profile_url = raw.url or agency.profile_url
+    agency.listings_expected = int(extra.get("oferty_razem") or 0)
+    agency.source_hint = f"katalog: {raw.source_key}"
+    agency.verified = True          # biuro samo się zarejestrowało w katalogu
+    agency.discovered = False
+    agency.last_seen_at = utcnow()
+    if phones:
+        agency.phones = sorted(set((agency.phones or []) + phones))[:10]
+    return is_new
+
+
 def recount_agencies(session: Session) -> int:
     """Przelicza liczniki ofert i ustala miasto biura (po skanie).
 

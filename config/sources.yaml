@@ -16,8 +16,12 @@
 
 defaults:
   interval_minutes: 15
+  # zwykły przebieg: najnowsze strony, żeby nowość trafiła do bazy w kilka minut
   max_pages: 5
   max_items: 400
+  # `ogl scan --deep`: przejście wyników do końca, raz na dobę
+  deep_max_pages: 60
+  deep_max_items: 20000
 
 sources:
 
@@ -254,6 +258,26 @@ sources:
     base_url: https://www.gumtree.pl
     enabled: false
     notes: Serwis zamknięty w Polsce — wpis historyczny, do ewentualnych archiwów.
+
+  - key: katalog_biur
+    name: Katalog biur nieruchomości (Otodom)
+    scraper: katalog_biur
+    kind: inne
+    category: katalogi
+    base_url: https://www.otodom.pl/pl/firmy/biura-nieruchomosci
+    enabled: true
+    interval_minutes: 1440
+    coverage: krajowy
+    sprawdzono: 2026-09-19
+    notes: >
+      Najlepsze źródło listy pośredników, jakie istnieje: biura same się tam
+      rejestrują. Oddaje pełny numer telefonu, adres z kodem pocztowym i liczbę
+      aktywnych ofert — po tej ostatniej widać, czy nasz skan zebrał u danego
+      biura wszystko. Dla woj. opolskiego: 160 biur, ~2 tys. ofert.
+      To źródło nie tworzy ogłoszeń, tylko zasila rejestr biur.
+    config:
+      region_slug: opolskie
+      max_pages: 40
 
   # ---------------------------------------------------------------------------
   # 2. PORTALE LOKALNE / REGIONALNE — OPOLSKIE

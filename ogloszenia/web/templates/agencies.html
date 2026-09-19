@@ -4,9 +4,11 @@
 {% block content %}
 
 <div class="notice info">
-  Lista powstaje <strong>z danych</strong>: każda oferta oznaczona jako pośrednik dokłada nazwę,
-  miasto i telefon, a warianty zapisu tej samej firmy są scalane. Eksport do pliku:
-  <code>ogl agencies --export config/agencies_opolskie.yaml</code>
+  Lista pochodzi z <strong>katalogu biur</strong>, w którym pośrednicy sami się rejestrują,
+  i jest uzupełniana o biura wykryte w treści ogłoszeń. Kolumna <strong>pokrycie</strong>
+  pokazuje, jaką część ofert deklarowanych przez biuro faktycznie mamy —
+  niskie wartości znaczą, że warto uruchomić <code>ogl scan --deep</code>.
+  Eksport: <code>ogl agencies --export config/agencies_opolskie.yaml</code>
 </div>
 
 <form class="filters" method="get">
@@ -17,14 +19,21 @@
 </form>
 
 <table class="grid" style="margin-top:14px">
-  <tr><th>Biuro</th><th>Miasto</th><th class="right">Oferty</th><th>Telefony</th><th>WWW</th><th>Status</th></tr>
+  <tr><th>Biuro</th><th>Miasto</th><th class="right">Zebrane</th><th class="right">Deklarowane</th>
+      <th>Pokrycie</th><th>Telefony</th><th>Status</th></tr>
   {% for agency in agencies %}
   <tr>
     <td><a href="/nieruchomosci?agency_id={{ agency.id }}&only_original=0">{{ agency.name }}</a></td>
     <td>{{ agency.city or '—' }}</td>
     <td class="right">{{ agency.listings_count }}</td>
+    <td class="right muted">{{ agency.listings_expected or '—' }}</td>
+    <td>
+      {% if agency.listings_expected %}
+        {% set ratio = (100 * agency.listings_count / agency.listings_expected) | round(0) | int %}
+        <span class="badge {{ 'original' if ratio >= 80 else ('drop' if ratio < 40 else 'age') }}">{{ ratio }}%</span>
+      {% else %}<span class="muted">—</span>{% endif %}
+    </td>
     <td class="muted">{{ (agency.phones or [])|join(', ') or '—' }}</td>
-    <td>{% if agency.website %}<a href="{{ agency.website }}" target="_blank" rel="noopener noreferrer">link</a>{% else %}—{% endif %}</td>
     <td>{% if agency.verified %}<span class="dot-ok"></span>zweryfikowane
         {% elif agency.discovered %}<span class="dot-warn"></span>wykryte z ofert
         {% else %}<span class="dot-off"></span>ziarno{% endif %}</td>

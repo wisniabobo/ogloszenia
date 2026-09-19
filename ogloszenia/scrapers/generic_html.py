@@ -114,20 +114,30 @@ class GenericHtmlScraper(BaseScraper):
                 urls.append(template)
         return urls
 
+    #: po tylu z rzędu stronach bez nowych ofert uznajemy sekcję za wyczerpaną
+    EMPTY_PAGES_BEFORE_STOP = 2
+
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
         seen: set[str] = set()
         produced = 0
+        empty_streak = 0
         for url in self.build_urls(ctx):
             if produced >= ctx.max_items:
+                return
+            if empty_streak >= self.EMPTY_PAGES_BEFORE_STOP:
+                # dalsze strony tej sekcji nic nie wnoszą — nie ma po co pukać
                 return
             try:
                 tree = await self.html(url)
             except Exception:  # pojedyncza strona nie może wywrócić całego przebiegu
+                empty_streak += 1
                 continue
+            fresh_on_page = 0
             for item in self.parse_list(tree, url):
                 if item.external_id in seen:
                     continue
                 seen.add(item.external_id)
+                fresh_on_page += 1
                 if self.config.get("detail") and ctx.fetch_details:
                     try:
                         await self.enrich_detail(item)
@@ -137,6 +147,7 @@ class GenericHtmlScraper(BaseScraper):
                 produced += 1
                 if produced >= ctx.max_items:
                     return
+            empty_streak = 0 if fresh_on_page else empty_streak + 1
 
     # ------------------------------------------------------------------ #
     def parse_list(self, tree: HTMLParser, page_url: str) -> list[RawListing]:

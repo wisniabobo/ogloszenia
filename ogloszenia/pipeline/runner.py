@@ -28,7 +28,7 @@ from ..settings import get_settings, sources_config
 from ..utils.http import HttpClient
 from ..utils.phones import PhoneNumber
 from .dedup import compute_fingerprints, link_duplicates
-from .enrich import enrich_listing, recount_agencies
+from .enrich import enrich_listing, recount_agencies, upsert_agency_record
 from .normalize import normalize
 
 log = logging.getLogger("ogloszenia.runner")
@@ -232,6 +232,27 @@ def _persist(source_key: str, items: list[RawListing], error: str,
         session.add(run)
         session.flush()
 
+        # Katalog biur nie produkuje ogłoszeń — zasila rejestr pośredników.
+        if items and (items[0].extra or {}).get("katalog"):
+            for raw in items:
+                try:
+                    if upsert_agency_record(session, raw):
+                        result.new += 1
+                    else:
+                        result.updated += 1
+                except Exception:
+                    session.rollback()
+                    result.errors += 1
+            source.last_run_at = utcnow()
+            source.last_ok_at = utcnow()
+            source.last_error = None
+            run.finished_at = utcnow()
+            run.fetched, run.new, run.updated, run.errors = (
+                result.fetched, result.new, result.updated, result.errors
+            )
+            run.ok = result.ok
+            return result, []
+
         for raw in items:
             try:
                 normalized = normalize(raw, voivodeship=voivodeship, require_region=require_region)
@@ -326,8 +347,14 @@ async def run_scan(
     require_region: bool = True,
     fetch_details: bool = True,
     include_disabled: bool = False,
+    deep: bool = False,
 ) -> ScanResult:
-    """Uruchamia skan wybranych źródeł równolegle."""
+    """Uruchamia skan wybranych źródeł równolegle.
+
+    `deep=True` przechodzi wyniki do końca zamiast brać tylko pierwsze strony.
+    Zwykły przebieg ma łapać nowości w kilka minut; głęboki — zebrać komplet,
+    i dlatego puszcza się go raz na dobę, a nie co kwadrans.
+    """
     settings = get_settings()
     voivodeship = voivodeship or settings.default_voivodeship
 
@@ -348,11 +375,13 @@ async def run_scan(
     if not sources:
         return ScanResult()
 
+    defaults = sources_config().get("defaults", {})
     ctx = ScrapeContext(
         voivodeship=voivodeship,
-        max_pages=max_pages or int(sources_config().get("defaults", {}).get("max_pages", 5)),
-        max_items=max_items or int(sources_config().get("defaults", {}).get("max_items", 400)),
+        max_pages=max_pages or int(defaults.get("deep_max_pages" if deep else "max_pages", 60 if deep else 5)),
+        max_items=max_items or int(defaults.get("deep_max_items" if deep else "max_items", 20000 if deep else 400)),
         fetch_details=fetch_details,
+        deep=deep,
     )
 
     result = ScanResult()

@@ -136,6 +136,12 @@ class Agency(Base):
     phones: Mapped[list] = mapped_column(JSON, default=list)
     license_no: Mapped[str | None] = mapped_column(String(64))
     source_hint: Mapped[str | None] = mapped_column(String(200))
+    address: Mapped[str | None] = mapped_column(String(300))
+    postal_code: Mapped[str | None] = mapped_column(String(8))
+    profile_url: Mapped[str | None] = mapped_column(String(500))
+    #: ile ofert biuro deklaruje w katalogu portalu — pozwala sprawdzić,
+    #: czy nasz skan faktycznie zebrał wszystko
+    listings_expected: Mapped[int] = mapped_column(Integer, default=0)
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     discovered: Mapped[bool] = mapped_column(Boolean, default=False)  # wykryte automatycznie
     first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

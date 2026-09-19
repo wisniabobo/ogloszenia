@@ -133,9 +133,17 @@ def cmd_scan(
     limit: int = typer.Option(None, help="Maks. ofert na źródło"),
     details: bool = typer.Option(True, help="Dociągać karty ofert (wolniej, więcej danych)"),
     all_sources: bool = typer.Option(False, "--all", help="Także źródła wyłączone w YAML-u"),
+    deep: bool = typer.Option(
+        False, "--deep", help="Przejdź wyniki do końca zamiast pierwszych stron"
+    ),
     notify: bool = typer.Option(False, help="Wyślij powiadomienia o nowych ofertach"),
 ) -> None:
-    """Uruchamia jednorazowy skan."""
+    """Uruchamia jednorazowy skan.
+
+    Domyślnie bierze najnowsze strony każdej sekcji — chodzi o to, żeby nowa
+    oferta trafiła do bazy w kilka minut. `--deep` przechodzi wyniki do końca
+    i zbiera komplet; to robota na raz na dobę, nie co kwadrans.
+    """
     from .alerts import dispatch_alerts
     from .pipeline.runner import run_scan
 
@@ -150,6 +158,7 @@ def cmd_scan(
             voivodeship=region,
             fetch_details=details,
             include_disabled=all_sources,
+            deep=deep,
         )
     )
 
@@ -333,14 +342,31 @@ def cmd_agencies(
             )
         )
         table = Table(title=f"Biura nieruchomości ({len(agencies)})")
-        for column in ("id", "nazwa", "miasto", "oferty", "telefony", "www"):
+        for column in ("id", "nazwa", "miasto", "zebrane", "deklarowane", "pokrycie", "telefony"):
             table.add_column(column, overflow="ellipsis")
         for agency in agencies:
+            expected = agency.listings_expected or 0
+            if expected:
+                ratio = 100 * agency.listings_count / expected
+                colour = "green" if ratio >= 80 else ("yellow" if ratio >= 40 else "red")
+                coverage = f"[{colour}]{ratio:.0f}%[/]"
+            else:
+                coverage = "—"
             table.add_row(
-                str(agency.id), agency.name[:44], agency.city or "—", str(agency.listings_count),
-                ", ".join(agency.phones or [])[:32] or "—", (agency.website or "—")[:34],
+                str(agency.id), agency.name[:38], agency.city or "—",
+                str(agency.listings_count), str(expected or "—"), coverage,
+                ", ".join(agency.phones or [])[:26] or "—",
             )
         console.print(table)
+
+        missing = sum(
+            max(0, (a.listings_expected or 0) - a.listings_count) for a in agencies
+        )
+        if missing:
+            console.print(
+                f"[dim]Do zebrania: {missing} ofert, których biura deklarują więcej niż mamy. "
+                f"Uruchom `ogl scan --deep`, żeby przejść wyniki do końca.[/]"
+            )
 
         if export:
             payload = {

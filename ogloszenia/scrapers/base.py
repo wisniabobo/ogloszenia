@@ -33,6 +33,9 @@ class ScrapeContext:
     since: datetime | None = None
     fetch_details: bool = True
     categories: list[str] = field(default_factory=list)
+    #: tryb głęboki — przechodzimy wyniki do końca, a nie tylko pierwsze strony.
+    #: Zwykły skan ma łapać nowości szybko; ten ma zebrać *wszystko*.
+    deep: bool = False
 
 
 @dataclass

@@ -8,6 +8,7 @@ uniwersalny `generic_html` sterowany selektorami z konfiguracji.
 from __future__ import annotations
 
 from .adresowo import AdresowoScraper
+from .agency_directory import AgencyDirectoryScraper
 from .amw import AMWScraper
 from .base import BaseScraper, RawListing, ScrapeContext
 from .domiporta import DomiportaScraper
@@ -29,6 +30,7 @@ from .zus import ZUSScraper
 SCRAPERS: dict[str, type[BaseScraper]] = {
     cls.key: cls
     for cls in (
+        AgencyDirectoryScraper,
         OLXScraper,
         OtodomScraper,
         GratkaScraper,
