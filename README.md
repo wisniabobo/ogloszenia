@@ -9,7 +9,7 @@
 Za darmo, bez konta, bez limitów zapytań.
 
 [![testy](https://github.com/wisniabobo/ogloszenia/actions/workflows/ci.yml/badge.svg)](https://github.com/wisniabobo/ogloszenia/actions/workflows/ci.yml)
-![python](https://img.shields.io/badge/python-3.11%2B-3776ab)
+![python](https://img.shields.io/badge/python-3.10%2B-3776ab)
 ![licencja](https://img.shields.io/badge/licencja-MIT-green)
 ![region](https://img.shields.io/badge/start-woj.%20opolskie-0a84c4)
 

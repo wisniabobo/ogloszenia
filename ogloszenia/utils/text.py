@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from dateutil import parser as dateparser
 
@@ -122,7 +122,7 @@ def parse_datetime(value: str | datetime | None) -> datetime | None:
     if not s:
         return None
 
-    now = datetime.now(UTC).replace(tzinfo=None)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     time_m = re.search(r"(\d{1,2}):(\d{2})", s)
     hh, mm = (int(time_m.group(1)), int(time_m.group(2))) if time_m else (0, 0)
 

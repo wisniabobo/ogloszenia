@@ -9,7 +9,7 @@ a reszta trafia do JSON-owego `extra`.
 from __future__ import annotations
 
 import enum
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     JSON,
@@ -28,7 +28,9 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 def utcnow() -> datetime:
-    return datetime.now(UTC).replace(tzinfo=None)
+    # `timezone.utc`, a nie `datetime.UTC` — to drugie istnieje dopiero od
+    # Pythona 3.11, a projekt ma działać też na Ubuntu 22.04 LTS (3.10).
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class Base(DeclarativeBase):

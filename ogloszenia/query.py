@@ -176,8 +176,17 @@ def apply_filters(stmt: Select, filters: dict[str, Any] | Filters) -> Select:
 
 
 def apply_sort(stmt: Select, sort: str = "najnowsze") -> Select:
+    """Sortowanie z pustymi wartościami zawsze na końcu.
+
+    SQLite domyślnie stawia NULL-e na początku przy sortowaniu rosnącym, więc
+    „najtańsze najpierw" pokazywało stronę ofert *bez podanej ceny*. Oferta bez
+    ceny nie jest najtańsza — jest nieznana, a więc jej miejsce jest na końcu.
+    """
+    from sqlalchemy import nullslast
+
     column, descending = SORTS.get(sort, SORTS["najnowsze"])
-    return stmt.order_by(desc(column) if descending else column.asc(), desc(Listing.id))
+    order = desc(column) if descending else column.asc()
+    return stmt.order_by(nullslast(order), desc(Listing.id))
 
 
 def search_listings(session, filters: Filters) -> tuple[list[Listing], int]:
