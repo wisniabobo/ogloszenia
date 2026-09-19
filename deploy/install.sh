@@ -58,11 +58,15 @@ fi
 # --------------------------------------------------------------------------- #
 log "Kod źródłowy w $APP_DIR"
 if [[ -d "$APP_DIR/.git" ]]; then
-	git -C "$APP_DIR" fetch --all --prune -q
-	git -C "$APP_DIR" reset --hard "origin/$BRANCH" -q
-	echo "zaktualizowany do $(git -C "$APP_DIR" rev-parse --short HEAD)"
+	# git odmawia pracy, gdy katalog należy do kogoś innego niż wywołujący —
+	# dlatego wszystkie operacje robimy konsekwentnie jako $APP_USER
+	sudo -u "$APP_USER" git -C "$APP_DIR" fetch --all --prune -q
+	sudo -u "$APP_USER" git -C "$APP_DIR" reset --hard "origin/$BRANCH" -q
+	echo "zaktualizowany do $(sudo -u "$APP_USER" git -C "$APP_DIR" rev-parse --short HEAD)"
 else
-	git clone -q --branch "$BRANCH" "$REPO" "$APP_DIR"
+	mkdir -p "$APP_DIR"
+	chown "$APP_USER:$APP_USER" "$APP_DIR"
+	sudo -u "$APP_USER" git clone -q --branch "$BRANCH" "$REPO" "$APP_DIR"
 	echo "sklonowany"
 fi
 mkdir -p "$APP_DIR/data"
