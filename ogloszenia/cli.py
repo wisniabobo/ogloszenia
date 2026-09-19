@@ -344,6 +344,82 @@ def cmd_add_site(
     console.print(f"Zbierz oferty: [bold]ogl scan -s {source_key} --deep[/]")
 
 
+@app.command("regeocode")
+def cmd_regeocode(
+    imprecise: bool = typer.Option(
+        True, "--imprecise/--all",
+        help="Tylko oferty z ulicą, które wylądowały na środku miejscowości",
+    ),
+    run_now: bool = typer.Option(True, "--run/--no-run", help="Od razu przelicz od nowa"),
+    limit: int = typer.Option(3000, help="Ile ofert przeliczyć w tym przebiegu"),
+) -> None:
+    """Unieważnia współrzędne i liczy je od nowa.
+
+    Potrzebne, gdy poprawka w geokoderze sprawia, że dawne wyniki są gorsze,
+    niż mogłyby być. Cache trzyma bowiem także **nieudane** dopasowania —
+    bez wyczyszczenia go poprawka nie miałaby żadnego skutku dla danych,
+    które już zebraliśmy.
+    """
+    from sqlalchemy import delete, update
+
+    from .models import GeocodeCache
+    from .pipeline.geocode import geocode_pending
+
+    init_db()
+    with session_scope() as session:
+        if imprecise:
+            # Oferty, które MAJĄ ulicę, a mimo to wylądowały na środku miasta —
+            # dokładnie te, które poprawka geokodera potrafi teraz ustawić lepiej.
+            target = select(Listing.id).where(
+                Listing.street.is_not(None),
+                Listing.geo_precision.in_(["city", "district"]),
+            )
+            keys = {
+                row[0]
+                for row in session.execute(
+                    select(GeocodeCache.query_hash).where(
+                        GeocodeCache.precision.in_(["city", "district"]),
+                        GeocodeCache.street.is_not(None),
+                    )
+                )
+            }
+        else:
+            target = select(Listing.id).where(Listing.lat.is_not(None))
+            keys = {row[0] for row in session.execute(select(GeocodeCache.query_hash))}
+
+        ids = [row[0] for row in session.execute(target)]
+        if keys:
+            session.execute(delete(GeocodeCache).where(GeocodeCache.query_hash.in_(keys)))
+        if ids:
+            session.execute(
+                update(Listing).where(Listing.id.in_(ids)).values(
+                    lat=None, lon=None, geo_precision=None, geo_source=None
+                )
+            )
+    console.print(
+        f"[yellow]Unieważniono[/] współrzędne {len(ids)} ofert i {len(keys)} wpisów cache'u"
+    )
+
+    if run_now and ids:
+        stats = asyncio.run(geocode_pending(limit=limit))
+        console.print(f"[green]Przeliczono:[/] {stats}")
+        with session_scope() as session:
+            from sqlalchemy import func as sql_func
+
+            rows = session.execute(
+                select(Listing.geo_precision, sql_func.count(Listing.id))
+                .where(Listing.lat.is_not(None))
+                .group_by(Listing.geo_precision)
+            ).all()
+        table = Table(title="Dokładność położenia po przeliczeniu")
+        table.add_column("poziom")
+        table.add_column("ofert", justify="right")
+        labels = {"address": "dokładny adres", "street": "ulica", "city": "środek miejscowości"}
+        for precision, count in sorted(rows, key=lambda r: -r[1]):
+            table.add_row(labels.get(precision, str(precision)), str(count))
+        console.print(table)
+
+
 @app.command("apify-actors")
 def cmd_apify_actors(
     query: str = typer.Argument("nieruchomosci", help="Czego szukać w katalogu Apify"),
