@@ -12,7 +12,7 @@ import functools
 import re
 
 from rapidfuzz import fuzz, process
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..models import Agency, Listing, OfferKind, SellerType
@@ -97,6 +97,48 @@ def _network_for(name: str) -> dict | None:
     return None
 
 
+#: Ile biur najwyżej porównujemy rozmyto przy jednym dopasowaniu.
+FUZZY_CANDIDATES = 300
+
+
+def _fuzzy_candidates(session: Session, name: str, city: str | None) -> list[Agency]:
+    """Biura, które w ogóle mogą być tym samym co `name`.
+
+    Porównywanie rozmyte z **całym** rejestrem było do przyjęcia przy pięciuset
+    biurami z jednego województwa. Krajowy katalog ma ich 13 tysięcy, a ofert
+    są setki tysięcy — wczytywanie całej tabeli przy każdym ogłoszeniu robiło
+    z zapisu operację kwadratową i zatykało skan.
+
+    Zawężamy więc kandydatów do tych, którzy mają szansę pasować: to samo
+    miasto albo ten sam początek nazwy. Warianty zapisu tej samej firmy
+    („ABC Nieruchomości" / „ABC Nieruchomosci Sp. z o.o.") zawsze spełniają
+    przynajmniej jeden z tych warunków.
+    """
+    head = clean(name)[:4]
+    filters = [Agency.name.ilike(f"{head}%")] if len(head) >= 3 else []
+    if city:
+        filters.append(Agency.city == city)
+    if not filters:
+        return []
+    return list(
+        session.scalars(
+            select(Agency).where(or_(*filters)).limit(FUZZY_CANDIDATES)
+        )
+    )
+
+
+def _best_match(session: Session, name: str, city: str | None) -> Agency | None:
+    candidates = _fuzzy_candidates(session, name, city)
+    if not candidates:
+        return None
+    choices = {a.slug: norm_key(a.name) for a in candidates}
+    best = process.extractOne(
+        norm_key(name), choices, scorer=fuzz.token_set_ratio,
+        score_cutoff=AGENCY_MATCH_THRESHOLD,
+    )
+    return next((a for a in candidates if a.slug == best[2]), None) if best else None
+
+
 def match_agency(
     session: Session, name: str | None, *, city: str | None = None,
     phones: list[PhoneNumber] | None = None, website: str | None = None,
@@ -113,15 +155,7 @@ def match_agency(
     agency = session.scalar(select(Agency).where(Agency.slug == slug))
     if agency is None:
         # dopasowanie rozmyte do już znanych biur (literówki, dopiski)
-        known = list(session.scalars(select(Agency)))
-        if known:
-            choices = {a.slug: norm_key(a.name) for a in known}
-            best = process.extractOne(
-                norm_key(canonical), choices, scorer=fuzz.token_set_ratio,
-                score_cutoff=AGENCY_MATCH_THRESHOLD,
-            )
-            if best:
-                agency = next(a for a in known if a.slug == best[2])
+        agency = _best_match(session, canonical, city)
 
     if agency is None:
         agency = Agency(
@@ -194,15 +228,7 @@ def upsert_agency_record(session: Session, raw) -> bool:
 
     agency = session.scalar(select(Agency).where(Agency.slug == slug))
     if agency is None:
-        known = list(session.scalars(select(Agency)))
-        if known:
-            choices = {a.slug: norm_key(a.name) for a in known}
-            best = process.extractOne(
-                norm_key(name), choices, scorer=fuzz.token_set_ratio,
-                score_cutoff=AGENCY_MATCH_THRESHOLD,
-            )
-            if best:
-                agency = next(a for a in known if a.slug == best[2])
+        agency = _best_match(session, name, raw.city)
 
     is_new = agency is None
     if agency is None:
@@ -220,6 +246,7 @@ def upsert_agency_record(session: Session, raw) -> bool:
 
     agency.name = name[:300]
     agency.city = raw.city or agency.city
+    agency.voivodeship = raw.voivodeship or agency.voivodeship
     agency.address = extra.get("adres") or agency.address
     agency.postal_code = extra.get("kod_pocztowy") or agency.postal_code
     agency.profile_url = raw.url or agency.profile_url

@@ -107,15 +107,55 @@ class GenericHtmlScraper(BaseScraper):
 
     # ------------------------------------------------------------------ #
     def build_urls(self, ctx: ScrapeContext) -> list[str]:
-        templates = self.config.get("urls") or ([self.config["url"]] if self.config.get("url") else [])
+        """Rozwija szablony adresów w konkretne strony do pobrania.
+
+        Obsługiwane wzorce:
+
+        ``{page}``    kolejne strony wyników,
+        ``{region}``  nazwa województwa w adresie (``opolskie``,
+                      ``kujawsko-pomorskie``) — jeden wpis w konfiguracji
+                      obsługuje wtedy wszystkie szesnaście, zamiast szesnastu
+                      niemal identycznych wierszy YAML-a.
+
+        Dzięki ``{region}`` pokrycie kraju jest własnością konfiguracji,
+        a nie rzeczą do przepisania ręcznie dla każdego portalu.
+        """
         urls: list[str] = []
-        for template in templates:
-            if "{page}" in template:
-                start = int(self.dig(self.config, "pagination", "start", default=1))
-                urls += [template.format(page=start + i) for i in range(ctx.max_pages)]
-            else:
-                urls.append(template)
+        for section in self.build_sections(ctx):
+            urls += section
         return urls
+
+    def build_sections(self, ctx: ScrapeContext) -> list[list[str]]:
+        """To samo co `build_urls`, ale z podziałem na niezależne sekcje.
+
+        Sekcja to jeden szablon dla jednego województwa. Podział ma znaczenie
+        przy zatrzymywaniu: wyczerpane wyniki w jednym województwie nie mogą
+        przerwać zbierania w następnym, a tak działo się, dopóki wszystkie
+        adresy leciały jednym ciągiem.
+        """
+        templates = self.config.get("urls") or (
+            [self.config["url"]] if self.config.get("url") else []
+        )
+        start = int(self.dig(self.config, "pagination", "start", default=1))
+        regions = [
+            str(entry.get(self.config.get("region_field") or "klucz") or entry.get("klucz"))
+            for entry in ctx.regions
+        ]
+        sections: list[list[str]] = []
+        for template in templates:
+            variants = (
+                [template.replace("{region}", region) for region in regions]
+                if "{region}" in template
+                else [template]
+            )
+            for variant in variants:
+                if "{page}" in variant:
+                    sections.append(
+                        [variant.format(page=start + i) for i in range(ctx.max_pages)]
+                    )
+                else:
+                    sections.append([variant])
+        return sections
 
     #: po tylu z rzędu stronach bez nowych ofert uznajemy sekcję za wyczerpaną
     EMPTY_PAGES_BEFORE_STOP = 2
@@ -123,34 +163,34 @@ class GenericHtmlScraper(BaseScraper):
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
         seen: set[str] = set()
         produced = 0
-        empty_streak = 0
-        for url in self.build_urls(ctx):
-            if produced >= ctx.max_items:
-                return
-            if empty_streak >= self.EMPTY_PAGES_BEFORE_STOP:
-                # dalsze strony tej sekcji nic nie wnoszą — nie ma po co pukać
-                return
-            try:
-                tree = await self.html(url)
-            except Exception:  # pojedyncza strona nie może wywrócić całego przebiegu
-                empty_streak += 1
-                continue
-            fresh_on_page = 0
-            for item in self.parse_list(tree, url):
-                if item.external_id in seen:
-                    continue
-                seen.add(item.external_id)
-                fresh_on_page += 1
-                if self.config.get("detail") and ctx.fetch_details:
-                    try:
-                        await self.enrich_detail(item)
-                    except Exception:
-                        pass
-                yield item
-                produced += 1
+        for section in self.build_sections(ctx):
+            empty_streak = 0
+            for url in section:
                 if produced >= ctx.max_items:
                     return
-            empty_streak = 0 if fresh_on_page else empty_streak + 1
+                if empty_streak >= self.EMPTY_PAGES_BEFORE_STOP:
+                    break   # ta sekcja się wyczerpała; następna zaczyna od zera
+                try:
+                    tree = await self.html(url)
+                except Exception:  # pojedyncza strona nie może wywrócić przebiegu
+                    empty_streak += 1
+                    continue
+                fresh_on_page = 0
+                for item in self.parse_list(tree, url):
+                    if item.external_id in seen:
+                        continue
+                    seen.add(item.external_id)
+                    fresh_on_page += 1
+                    if self.config.get("detail") and ctx.fetch_details:
+                        try:
+                            await self.enrich_detail(item)
+                        except Exception:
+                            pass
+                    yield item
+                    produced += 1
+                    if produced >= ctx.max_items:
+                        return
+                empty_streak = 0 if fresh_on_page else empty_streak + 1
 
     # ------------------------------------------------------------------ #
     def parse_list(self, tree: HTMLParser, page_url: str) -> list[RawListing]:

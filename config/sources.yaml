@@ -21,8 +21,7 @@ sources:
     niego numery bierzemy z treści ogłoszenia.
 
     '
-  config:
-    region_id: 12
+  config: {}
 - key: otodom
   name: Otodom.pl
   scraper: otodom
@@ -34,8 +33,7 @@ sources:
   coverage: krajowy
   sprawdzono: 2026-09-19
   notes: Największy portal ofert biur i deweloperów. Dane w __NEXT_DATA__.
-  config:
-    region_slug: opolskie
+  config: {}
 - key: gratka
   name: Gratka.pl
   scraper: gratka
@@ -116,8 +114,8 @@ sources:
   verify: true
   config:
     urls:
-    - https://www.oferty.net/mieszkania/opolskie/sprzedaz/?page={page}
-    - https://www.oferty.net/domy/opolskie/sprzedaz/?page={page}
+    - https://www.oferty.net/mieszkania/{region}/sprzedaz/?page={page}
+    - https://www.oferty.net/domy/{region}/sprzedaz/?page={page}
     list_selector: article, div.offer-item
     link_selector: a
     title_selector: h2, h3
@@ -132,8 +130,8 @@ sources:
   verify: true
   config:
     urls:
-    - https://www.szybko.pl/l/opolskie/mieszkania/sprzedaz?page={page}
-    - https://www.szybko.pl/l/opolskie/domy/sprzedaz?page={page}
+    - https://www.szybko.pl/l/{region}/mieszkania/sprzedaz?page={page}
+    - https://www.szybko.pl/l/{region}/domy/sprzedaz?page={page}
     list_selector: article, li.offer
     link_selector: a
     title_selector: h2, h3
@@ -150,17 +148,17 @@ sources:
   notes: "Lista renderowana po stronie serwera, więc czytelna bez przeglądarki. Nazwy klas CSS portal generuje losowo przy każdym wdrożeniu, dlatego parser trzyma się znacznika address i układu tekstu karty, a nie selektorów."
   config:
     sections:
-    - path: /mieszkania/na-sprzedaz/opolskie/
+    - path: /mieszkania/na-sprzedaz/{region}/
       transaction: sprzedaz
-    - path: /domy/na-sprzedaz/opolskie/
+    - path: /domy/na-sprzedaz/{region}/
       transaction: sprzedaz
-    - path: /dzialki/na-sprzedaz/opolskie/
+    - path: /dzialki/na-sprzedaz/{region}/
       transaction: sprzedaz
-    - path: /lokale-uzytkowe/na-sprzedaz/opolskie/
+    - path: /lokale-uzytkowe/na-sprzedaz/{region}/
       transaction: sprzedaz
-    - path: /mieszkania/do-wynajecia/opolskie/
+    - path: /mieszkania/do-wynajecia/{region}/
       transaction: wynajem
-    - path: /domy/do-wynajecia/opolskie/
+    - path: /domy/do-wynajecia/{region}/
       transaction: wynajem
 - key: rynekpierwotny
   name: RynekPierwotny.pl
@@ -173,7 +171,7 @@ sources:
   notes: Wyłącznie rynek pierwotny (deweloperzy) — w Opolu kilkanaście inwestycji.
   config:
     urls:
-    - https://rynekpierwotny.pl/s/opolskie/?page={page}
+    - https://rynekpierwotny.pl/s/{region}/?page={page}
 - key: tabelaofert
   name: TabelaOfert.pl
   scraper: generic_html
@@ -193,7 +191,7 @@ sources:
   verify: true
   config:
     urls:
-    - https://www.krn.pl/nieruchomosci/mieszkania/opolskie/sprzedaz
+    - https://www.krn.pl/nieruchomosci/mieszkania/{region}/sprzedaz
   sprawdzono: 2026-09-19
 - key: domy_pl
   name: Domy.pl
@@ -205,7 +203,7 @@ sources:
   verify: true
   config:
     urls:
-    - https://domy.pl/mieszkania-sprzedaz-opolskie?page={page}
+    - https://domy.pl/mieszkania-sprzedaz-{region}?page={page}
 - key: nportal
   name: Nportal.pl
   scraper: generic_html
@@ -246,19 +244,14 @@ sources:
   coverage: krajowy
   sprawdzono: 2026-09-19
   notes: 'Najlepsze źródło listy pośredników, jakie istnieje: biura same się tam rejestrują. Oddaje pełny
-    numer telefonu, adres z kodem pocztowym i liczbę aktywnych ofert — po tej ostatniej widać, czy nasz
-    skan zebrał u danego biura wszystko. Dla woj. opolskiego: 160 biur, ~2 tys. ofert. To źródło nie tworzy
-    ogłoszeń, tylko zasila rejestr biur.
+    numer telefonu, adres z kodem pocztowym, województwo i liczbę aktywnych ofert — po tej ostatniej
+    widać, czy nasz skan zebrał u danego biura wszystko. Bez zawężania regionem katalog zwraca 13 047
+    biur i deweloperów z całej Polski (sprawdzone 20.09.2026). To źródło nie tworzy ogłoszeń, tylko
+    zasila rejestr biur.
 
     '
   config:
-    region_slugs:
-    - opolskie
-    - dolnoslaskie
-    - slaskie
-    - wielkopolskie
-    - lodzkie
-    max_pages: 40
+    max_pages: 800
 - key: nto_ogloszenia
   name: NTO — Nowa Trybuna Opolska (ogłoszenia)
   scraper: generic_html
@@ -336,7 +329,7 @@ sources:
 
     '
   config:
-    province: opolskie
+    province: ''
     main_categories:
     - REAL_ESTATE
 - key: elicytacje
@@ -355,7 +348,7 @@ sources:
 
     '
   config:
-    province: opolskie
+    province: ''
 - key: elicytacje_kas
   name: eLicytacje KAS (urzędy skarbowe)
   scraper: elicytacje_kas
