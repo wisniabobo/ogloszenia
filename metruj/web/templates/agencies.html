@@ -1,47 +1,83 @@
 {% extends "base.html" %}
-{% block title %}Biura nieruchomości w woj. opolskim{% endblock %}
+{% from "_macros.html" import plural %}
+{% block title %}Biura nieruchomości w Polsce — pełna lista | Metruj{% endblock %}
 {% block heading %}Biura nieruchomości{% endblock %}
-{% block subhead %}<span class="page__count">{{ agencies|length }} biur</span>{% endblock %}
+{% block subhead %}
+<p class="lede">Pośrednicy i deweloperzy z całego kraju — z telefonem, miastem
+  i liczbą ofert, którą biuro samo deklaruje w katalogu.</p>
+{% endblock %}
 {% block content %}
 
 <div class="note">
-  Tu są biura, których ogłoszenia mamy w bazie. Nazwy i telefony pochodzą
-  z katalogu, w którym pośrednicy <strong>sami się rejestrują</strong>,
-  uzupełnionego o biura rozpoznane w treści ogłoszeń.
-  Kolumna <strong>pokrycie</strong> mówi, jaką część ofert deklarowanych przez
-  biuro faktycznie u nas znajdziesz — po niej widać, czy czegoś nie brakuje.
+  W rejestrze jest <strong>{{ '{:,}'.format(registry_total).replace(',', ' ') }}</strong>
+  firm. Nazwy, adresy i telefony pochodzą z katalogu, w którym pośrednicy
+  <strong>sami się rejestrują</strong>, uzupełnionego o biura rozpoznane
+  w treści ogłoszeń.
+  Przy <strong>{{ '{:,}'.format(with_offers).replace(',', ' ') }}</strong> z nich mamy
+  już konkretne oferty; kolumna <strong>pokrycie</strong> mówi, jaką część ofert
+  deklarowanych przez biuro faktycznie u nas znajdziesz — po niej widać, czy
+  zbieranie jest kompletne.
   <br>
-  W rejestrze trzymamy {{ '{:,}'.format(registry_total).replace(',', ' ') }} biur
-  z Opolszczyzny i województw ościennych. Te spoza tej listy nie mają u nas
-  ofert — ich numery przydają się tylko wtedy, gdy pośrednik spoza regionu
-  wystawi coś w Opolskiem.
+  Telefon do biura przydaje się także wtedy, gdy jego ofert jeszcze nie mamy:
+  gdy portal chowa kontakt przy ogłoszeniu, podstawiamy centralę firmy,
+  która je wystawiła.
 </div>
 
 <form class="filters" method="get">
   <div class="filters__grid">
     <div class="field"><label for="ag-q">Nazwa biura</label>
-      <input id="ag-q" name="q" value="{{ q }}" placeholder="np. Investdom"></div>
+      <input id="ag-q" name="q" value="{{ q }}" placeholder="np. Freedom, Metrohouse"></div>
+    <div class="field"><label for="ag-city">Miasto</label>
+      <input id="ag-city" name="city" value="{{ city }}" placeholder="np. Kraków"></div>
+    <div class="field"><label for="ag-voiv">Województwo</label>
+      <select id="ag-voiv" name="voivodeship"><option value="">cała Polska</option>
+        {% for v in voivodeships %}<option value="{{ v }}" {{ 'selected' if voivodeship == v }}>{{ v }}</option>{% endfor %}
+      </select>
+    </div>
   </div>
   <div class="filters__actions">
+    <label class="toggle {{ 'is-on' if only_with_offers }}">
+      <input type="hidden" name="only_with_offers" value="0">
+      <input type="checkbox" name="only_with_offers" value="1" {{ 'checked' if only_with_offers }} hidden>
+      tylko z ofertami u nas
+    </label>
     <div style="flex:1"></div>
     <button class="btn" type="submit">Szukaj</button>
     <a class="btn btn--quiet" href="/biura">Wyczyść</a>
   </div>
 </form>
 
-<table class="table" style="margin-top:16px">
+<div class="resultbar">
+  <div class="resultbar__count">
+    {{ '{:,}'.format(total).replace(',', ' ') }}
+    <span>{{ plural(total, 'firma', 'firmy', 'firm') }}</span>
+  </div>
+</div>
+
+<table class="table">
   <thead><tr>
-    <th>Biuro</th><th>Miasto</th><th class="num">Mamy</th><th class="num">Deklaruje</th>
+    <th>Biuro</th><th>Gdzie</th><th class="num">Mamy</th><th class="num">Deklaruje</th>
     <th>Pokrycie</th><th>Telefon</th>
   </tr></thead>
   <tbody>
   {% for agency in agencies %}
   <tr>
     <td>
-      <a href="/nieruchomosci?agency_id={{ agency.id }}&only_original=0&transaction=wszystkie">{{ agency.name }}</a>
+      {% if agency.listings_count %}
+        <a href="/nieruchomosci?agency_id={{ agency.id }}&only_original=0&transaction=wszystkie">{{ agency.name }}</a>
+      {% else %}
+        {{ agency.name }}
+      {% endif %}
+      {% if agency.profile_url %}
+        <a class="offer__out" href="{{ agency.profile_url }}" target="_blank" rel="noopener noreferrer"
+           title="Profil w katalogu">↗</a>
+      {% endif %}
       {% if agency.address %}<div class="muted" style="font-size:12.5px">{{ agency.address }}</div>{% endif %}
     </td>
-    <td>{{ agency.city or '—' }}</td>
+    <td>
+      {{ agency.city or '—' }}
+      {% if agency.voivodeship %}<div class="muted" style="font-size:12.5px">{{ agency.voivodeship }}</div>{% endif %}
+    </td>
     <td class="num">{{ agency.listings_count }}</td>
     <td class="num muted">{{ agency.listings_expected or '—' }}</td>
     <td>
@@ -53,8 +89,18 @@
     <td class="muted nowrap">{{ (agency.phones or [])|join(', ') or '—' }}</td>
   </tr>
   {% else %}
-  <tr><td colspan="6" class="empty"><strong>Rejestr jest pusty.</strong> Biura dopiszą się przy pierwszym zbieraniu.</td></tr>
+  <tr><td colspan="6" class="empty"><strong>Nic nie pasuje do tych filtrów.</strong>
+      Rejestr uzupełnia się przy każdym zbieraniu.</td></tr>
   {% endfor %}
   </tbody>
 </table>
+
+{% if pages > 1 %}
+{% set qs = query_string | replace_param('page', '') %}
+<nav class="pager" aria-label="Strony rejestru">
+  {% if page > 1 %}<a href="?{{ qs }}&page={{ page - 1 }}">‹ poprzednia</a>{% endif %}
+  <span class="is-current">{{ page }} z {{ pages }}</span>
+  {% if page < pages %}<a href="?{{ qs }}&page={{ page + 1 }}">następna ›</a>{% endif %}
+</nav>
+{% endif %}
 {% endblock %}

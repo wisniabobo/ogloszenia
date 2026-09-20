@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import offer_card, pager %}
 {% set is_auction = active == 'licytacje' %}
-{% block title %}{{ 'Licytacje komornicze i skarbowe' if is_auction else 'Przetargi i wykazy' }} — woj. opolskie{% endblock %}
+{% block title %}{{ 'Licytacje komornicze i skarbowe' if is_auction else 'Przetargi i wykazy nieruchomości' }} z całej Polski — Metruj{% endblock %}
 {% block heading %}{{ 'Licytacje' if is_auction else 'Przetargi i wykazy' }}{% endblock %}
 {% block subhead %}<span class="page__count">{{ total }} pozycji</span>{% endblock %}
 {% block content %}

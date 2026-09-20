@@ -654,26 +654,68 @@ def view_map(request: Request, db: DB):
 
 @app.get("/biura", response_class=HTMLResponse)
 def view_agencies(request: Request, db: DB):
-    q = request.query_params.get("q")
-    # Rejestr biur zasilamy też katalogami sąsiednich województw — wyłącznie po
-    # to, by mieć numer telefonu do pośrednika, który wystawia oferty
-    # w Opolskiem, a siedzibę ma za granicą województwa. Na liście pokazujemy
-    # jednak tylko biura, których ogłoszenia faktycznie mamy; inaczej strona
-    # obiecywałaby dwa i pół tysiąca biur, z których większość nic tu nie ma.
-    stmt = (
-        select(Agency)
-        .where(Agency.listings_count > 0)
-        .order_by(desc(Agency.listings_count), Agency.name)
+    """Rejestr biur nieruchomości i deweloperów z całego kraju.
+
+    Domyślnie pokazujemy **wszystkie** zarejestrowane firmy, a nie tylko te,
+    których ogłoszenia zdążyliśmy zebrać: lista pośredników jest sama w sobie
+    czymś, czego nigdzie indziej za darmo nie ma, a telefon do biura przydaje
+    się także wtedy, gdy jego ofert jeszcze u nas nie ma.
+    """
+    from .geo import voivodeships
+
+    params = request.query_params
+    query = params.get("q") or ""
+    city = params.get("city") or ""
+    voivodeship = params.get("voivodeship") or ""
+    only_with_offers = params.get("only_with_offers") in ("1", "true")
+    page = max(1, int(params.get("page") or 1))
+    per_page = 100
+
+    stmt = select(Agency)
+    if query:
+        stmt = stmt.where(Agency.name.ilike(f"%{query}%"))
+    if city:
+        stmt = stmt.where(Agency.city.ilike(f"%{city}%"))
+    if voivodeship:
+        stmt = stmt.where(Agency.voivodeship == voivodeship)
+    if only_with_offers:
+        stmt = stmt.where(Agency.listings_count > 0)
+
+    total = int(db.scalar(
+        select(func.count()).select_from(stmt.subquery())
+    ) or 0)
+    agencies = list(
+        db.scalars(
+            stmt.order_by(
+                desc(Agency.listings_count), desc(Agency.listings_expected), Agency.name
+            )
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+        )
     )
-    if q:
-        stmt = stmt.where(Agency.name.ilike(f"%{q}%"))
-    agencies = list(db.scalars(stmt.limit(500)))
     registry_total = db.scalar(select(func.count(Agency.id))) or 0
+    with_offers = db.scalar(
+        select(func.count(Agency.id)).where(Agency.listings_count > 0)
+    ) or 0
+
     return templates.TemplateResponse(
         request,
         "agencies.html",
-        {"agencies": agencies, "q": q or "", "registry_total": registry_total,
-         "active": "biura"},
+        {
+            "agencies": agencies,
+            "total": total,
+            "q": query,
+            "city": city,
+            "voivodeship": voivodeship,
+            "voivodeships": voivodeships(),
+            "only_with_offers": only_with_offers,
+            "registry_total": registry_total,
+            "with_offers": with_offers,
+            "page": page,
+            "pages": max(1, math.ceil(total / per_page)),
+            "query_string": str(request.query_params),
+            "active": "biura",
+        },
     )
 
 
