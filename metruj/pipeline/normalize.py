@@ -38,6 +38,19 @@ NOISE = re.compile(
     re.I,
 )
 
+#: Tytuły, które nie opisują żadnej nieruchomości, tylko element strony.
+#: Scraper AMW wciągał w ten sposób blok „Polecane nieruchomości" i zapisywał
+#: go jako ofertę — jedenaście razy, za każdym razem z lokalizacją zgadniętą
+#: z przypadkowego słowa w menu. Takie pozycje odrzucamy niezależnie od tego,
+#: który scraper je przyniósł: żaden nie powinien ich produkować, ale lepiej
+#: mieć jedno miejsce, które tego pilnuje.
+NAVIGATION_TITLE = re.compile(
+    r"^\s*(?:polecane|wyr[oó]żnione|podobne|ostatnio ogl[ąa]dane|najnowsze|"
+    r"wyniki wyszukiwania|lista ofert|oferty|nieruchomo[śs]ci|zobacz|więcej|"
+    r"strona \d+|wszystkie)\b[^,:]{0,40}$",
+    re.I,
+)
+
 #: Wiarygodny metraż dla danego typu (m²). Portal potrafi podać bzdurę —
 #: mieszkanie „127,43 m2" z tytułu trafiało do bazy jako 12 743 m², co psuło
 #: cenę za metr i statystyki całego rynku.
@@ -141,6 +154,8 @@ def normalize(
     haystack = f"{title} {description} {raw.location_text or ''}"
 
     if raw.kind == OfferKind.NIERUCHOMOSC and NOISE.search(title):
+        return None
+    if NAVIGATION_TITLE.match(title):
         return None
 
     # --- lokalizacja ---

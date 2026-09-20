@@ -239,6 +239,7 @@ def cmd_repair(
     console.print(
         f"[green]Naprawa:[/] ceny {stats.prices}, cena za m² {stats.price_per_m2}, "
         f"powierzchnia gruntu {stats.land_area}, regiony {stats.regions}, "
+        f"poprawione lokalizacje {stats.relocated}, wygaszone śmieci {stats.navigation}, "
         f"do przeliczenia na mapie {stats.regeocode}"
     )
     console.print(f"[green]Odniesienie rynkowe:[/] {market}")
