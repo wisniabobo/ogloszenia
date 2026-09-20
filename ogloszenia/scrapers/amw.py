@@ -38,25 +38,22 @@ OFFER_HREF = re.compile(r"/przetargi-nieruchomosci/([a-z0-9][a-z0-9-]*-\d+)$", r
 #: „Powierzchnia1161,00 m2" albo „Powierzchnia0,5981 ha"
 AREA = re.compile(r"([\d\s.,]+)\s*(ha|m)", re.I)
 
-#: przeznaczenie z karty -> nasz typ nieruchomości
-CATEGORY_MAP = {
-    "dom": PropertyType.DOM,
-    "działka": PropertyType.DZIALKA,
-    "dzialka": PropertyType.DZIALKA,
-    "grunt": PropertyType.DZIALKA,
-    "mieszkanie": PropertyType.MIESZKANIE,
-    "lokal mieszkalny": PropertyType.MIESZKANIE,
-    "garaż": PropertyType.GARAZ,
-    "garaz": PropertyType.GARAZ,
-    "biurowe": PropertyType.LOKAL,
-    "usługowo - handlowe": PropertyType.LOKAL,
-    "usługowe": PropertyType.LOKAL,
-    "handlowe": PropertyType.LOKAL,
-    "magazynowe": PropertyType.HALA,
-    "produkcyjne": PropertyType.HALA,
-    "przemysłowe": PropertyType.HALA,
-    "rolne": PropertyType.GOSPODARSTWO,
-}
+#: AMW opisuje nieruchomości przeznaczeniem z planu, nie rodzajem obiektu.
+#: „mieszkaniowe" oznacza zarówno działkę pod zabudowę mieszkaniową, jak
+#: i mieszkanie — reguły niżej rozstrzygają to metrażem.
+CATEGORY_RULES = (
+    (("garaż", "garaz", "miejsca postojowe"), PropertyType.GARAZ),
+    (("magazynowe", "produkcyjne", "przemysłowe"), PropertyType.HALA),
+    (("lokale użytkowe", "biurowe", "usługowo", "uslugowo", "handlowe"), PropertyType.LOKAL),
+    (("rolne", "gospodarstwo"), PropertyType.GOSPODARSTWO),
+    (("działka", "dzialka", "grunt", "rekreacyjno"), PropertyType.DZIALKA),
+    (("dom", "zabudowa jednorodzinna"), PropertyType.DOM),
+)
+
+#: Powyżej tylu metrów „mieszkaniowe" to na pewno grunt, nie mieszkanie.
+#: Największe wojskowe mieszkania mają ok. 100 m², najmniejsze działki AMW
+#: liczy się w setkach i tysiącach metrów.
+MIESZKANIE_MAX_M2 = 150.0
 
 
 def _field(text: str, label: str) -> str:
@@ -156,11 +153,18 @@ class AMWScraper(BaseScraper):
             for p in card.css(".col-category p")
             if clean(p.text()) and not clean(p.text()).lower().startswith("kategoria")
         ]
+        joined = " ".join(categories)
         property_type = PropertyType.INNE
-        for category in categories:
-            if category in CATEGORY_MAP:
-                property_type = CATEGORY_MAP[category]
+        for needles, kind in CATEGORY_RULES:
+            if any(n in joined for n in needles):
+                property_type = kind
                 break
+        if property_type is PropertyType.INNE and "mieszkaniow" in joined:
+            property_type = (
+                PropertyType.MIESZKANIE
+                if area is not None and area <= MIESZKANIE_MAX_M2
+                else PropertyType.DZIALKA
+            )
 
         images = [
             img.attributes["src"]

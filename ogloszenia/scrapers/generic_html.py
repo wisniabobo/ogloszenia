@@ -43,7 +43,10 @@ PROPERTY_HINTS: list[tuple[re.Pattern[str], PropertyType]] = [
     (re.compile(r"\bbiur[oa]\b", re.I), PropertyType.BIURO),
     (re.compile(r"\bkamienic", re.I), PropertyType.KAMIENICA),
     (re.compile(r"\bgospodarstw|\brolne\b|\bsiedlisk", re.I), PropertyType.GOSPODARSTWO),
-    (re.compile(r"\blokal użytkow|\bhandlow|\busługow", re.I), PropertyType.LOKAL),
+    # Obiekty usługowe z licytacji komorniczych opisuje się przez funkcję
+    # („budynek użytkowy jako hotel"), a nie słowem „lokal".
+    (re.compile(r"\blokal użytkow|\bhandlow|\busługow|\bbudynek użytkow|\bhotel|"
+                r"\bpensjonat|\brestauracyjn|\bgastronomiczn", re.I), PropertyType.LOKAL),
     (re.compile(r"\bpokój do wynaj|\bpokoju do wynaj|\bstancj", re.I), PropertyType.POKOJ),
 ]
 

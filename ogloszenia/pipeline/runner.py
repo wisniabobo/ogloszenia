@@ -104,11 +104,12 @@ def sync_sources(session: Session) -> int:
         )
         source.notes = entry.get("notes")
         source.config = entry.get("config", {}) or {}
-        if source.enabled is None:
-            source.enabled = bool(entry.get("enabled", False))
-        elif "enabled" in entry and source.last_run_at is None:
-            # dopóki źródło nie było uruchomione, YAML jest źródłem prawdy
-            source.enabled = bool(entry["enabled"])
+        # config/sources.yaml rozstrzyga, czy źródło jest włączone. Wcześniej
+        # ustawienie z pliku obowiązywało tylko do pierwszego uruchomienia
+        # źródła — miało to chronić ręczne przełączenia w bazie, ale poza tą
+        # funkcją nikt tego pola nie zapisuje. Efekt był taki, że raz
+        # uruchomionego źródła nie dało się już wyłączyć przez plik.
+        source.enabled = bool(entry.get("enabled", False))
     return count
 
 

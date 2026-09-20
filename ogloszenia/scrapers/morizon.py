@@ -1,50 +1,38 @@
-"""Morizon.pl — klasyczny HTML + JSON-LD na kartach ofert."""
+"""Morizon.pl — portal ogłoszeniowy grupy Ringier.
+
+Ten sam szablon kart co Gratka, więc i ten sam parser (`ringier.py`).
+Różni się adresami sekcji i tym, że odnośnik do oferty prowadzi przez
+„/oferta/".
+"""
 
 from __future__ import annotations
 
-from ..models import OfferKind
-from .base import ScrapeContext
-from .generic_html import GenericHtmlScraper
+import re
+
+from .ringier import RingierScraper
 
 BASE = "https://www.morizon.pl"
 
+OFFER_HREF = re.compile(r"/oferta/")
+
+#: Sprawdzone 20.09.2026. „/nieruchomosci/opolskie/" to zbiorcza lista
+#: wszystkich typów — trzymamy ją jako siatkę bezpieczeństwa, gdyby serwis
+#: przemianował którąś z sekcji szczegółowych.
 SECTIONS = [
-    "mieszkania/opolskie",
-    "domy/opolskie",
-    "dzialki/opolskie",
-    "lokale/opolskie",
-    "garaze/opolskie",
-    "do-wynajecia/mieszkania/opolskie",
-    "do-wynajecia/domy/opolskie",
+    {"path": "/mieszkania/opolskie/", "transaction": "sprzedaz"},
+    {"path": "/domy/opolskie/", "transaction": "sprzedaz"},
+    {"path": "/dzialki/opolskie/", "transaction": "sprzedaz"},
+    {"path": "/nieruchomosci/opolskie/", "transaction": "sprzedaz"},
+    {"path": "/do-wynajecia/mieszkania/opolskie/", "transaction": "wynajem"},
 ]
 
-DEFAULT_SELECTORS = {
-    "list_selector": "div[data-cy='listing__item'], section.single-result, div.card",
-    "link_selector": "a[href*='/oferta/'], a.property_link, a",
-    "title_selector": "h2, h3, .single-result__title",
-    "price_selector": ".single-result__price, [data-cy='listing__price'], .price",
-    "area_selector": ".single-result__info, .param_m, [data-cy='listing__area']",
-    "location_selector": ".single-result__category, [data-cy='listing__location'], .location",
-    "image_selector": "img",
-}
 
-
-class MorizonScraper(GenericHtmlScraper):
+class MorizonScraper(RingierScraper):
     key = "morizon"
     name = "Morizon.pl"
     base_url = BASE
-    kind = OfferKind.NIERUCHOMOSC
+    coverage = "krajowy"
+    offer_href = OFFER_HREF
 
     def __init__(self, client, config: dict | None = None, **kw) -> None:
-        super().__init__(client, DEFAULT_SELECTORS | (config or {}), source_key=self.key,
-                         kind=self.kind, name=self.name)
-
-    def build_urls(self, ctx: ScrapeContext) -> list[str]:
-        # robots.txt Morizona zabrania parametrów `ps[...]`, `sort=` i `limit=`,
-        # więc paginujemy wyłącznie przez `page=` i bierzemy domyślne sortowanie
-        sections = self.config.get("sections") or SECTIONS
-        return [
-            f"{BASE}/{section}/?page={page}" if page > 1 else f"{BASE}/{section}/"
-            for section in sections
-            for page in range(1, ctx.max_pages + 1)
-        ]
+        super().__init__(client, {"sections": SECTIONS} | (config or {}))

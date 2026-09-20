@@ -59,6 +59,9 @@ FORM = re.compile(
 #: Widżety list BIP-owych doklejają do tytułu „więcej »" i nawiasy.
 LIST_PREFIX = re.compile(r"^\s*(?:więcej|wiecej|czytaj więcej|zobacz)\s*[»>:]*\s*", re.I)
 
+#: Nazwa pliku ze skanera („SKMBT_C36026090212160", „DOC001") nie jest tytułem.
+SCANNER_NAME = re.compile(r"^(?:SKMBT|DOC|IMG|SKAN|SCAN|CCF|\d)[\w-]*$", re.I)
+
 #: Stopka redakcyjna BIP-u. Dwukropek bywa, ale nie musi — bez tego luzu
 #: gubiliśmy daty w Kluczborku i przez to trzymaliśmy ogłoszenia z 2020 roku.
 PUBLISHED = re.compile(
@@ -199,11 +202,29 @@ class BipScraper(BaseScraper):
                 tree = await self.html(section)
             except Exception:
                 continue
-            for title, href in self._offer_links(tree, section):
+            links = self._offer_links(tree, section)
+            # Część gmin (np. Głubczyce) nie zakłada stron ogłoszeń — wiesza
+            # same PDF-y na stronie działu. Wtedy ogłoszeniem jest plik.
+            pdf_only = len(links) < 3 and bool(self._pdf_links(tree, section))
+            for title, href in links:
                 if href in seen:
                     continue
                 seen.add(href)
                 item = await self._build(href, title, commune, authority, ctx)
+                if item is None:
+                    continue
+                yield item
+                produced += 1
+                if produced >= ctx.max_items:
+                    return
+
+            if not pdf_only:
+                continue
+            for title, href in self._pdf_links(tree, section):
+                if href in seen:
+                    continue
+                seen.add(href)
+                item = await self._build_from_pdf(href, title, commune, authority)
                 if item is None:
                     continue
                 yield item
@@ -232,6 +253,84 @@ class BipScraper(BaseScraper):
                 continue
             out.append((title, href))
         return out
+
+    def _pdf_links(self, tree: HTMLParser, section: str) -> list[tuple[str, str]]:
+        """Załączniki, które same są ogłoszeniem — tytuł bierzemy z nazwy pliku."""
+        node = _content(tree)
+        out: list[tuple[str, str]] = []
+        for a in node.css("a[href]"):
+            href = a.attributes.get("href") or ""
+            if not ATTACHMENT.search(href):
+                continue
+            title = clean(FILE_SUFFIX.sub("", re.sub(r"\s+", " ", a.text() or "")))
+            if not title or CHROME.search(title) or RESULT.search(title) or FORM.search(title):
+                continue
+            if not OFFER.search(title) and not SCANNER_NAME.match(title):
+                continue
+            full = urljoin(section, href)
+            if full not in dict(out).values():
+                out.append((title, full))
+        return out
+
+    async def _build_from_pdf(self, url: str, title: str, commune: str | None,
+                              authority: str) -> RawListing | None:
+        try:
+            blob = await self.client.get_bytes(url)
+        except Exception:
+            return None
+        text = _pdf_text(blob)
+        if not text:
+            return None  # skan bez warstwy tekstowej — nie zmyślamy treści
+
+        if SCANNER_NAME.match(title):
+            # Nazwa z ksero nic nie mówi; pierwszy sensowny wiersz PDF-u mówi.
+            for line in (clean(line) for line in text.splitlines()):
+                if len(line) > 25 and OFFER.search(line):
+                    title = line[:200]
+                    break
+            else:
+                return None
+
+        haystack = f"{title} {text}"
+        price_match = PRICE.search(haystack)
+        date_match = AUCTION_DATE.search(haystack)
+        published = None
+        loose = ANY_DATE.search(text[:600])
+        if loose:
+            published = parse_datetime(loose.group(1))
+        event_date = parse_datetime(date_match.group(1)) if date_match else None
+        newest = event_date or published
+        if newest is not None and (utcnow() - newest).days > self.max_age_days:
+            return None
+
+        property_type = PropertyType.INNE
+        for pattern, kind in TYPE_RULES:
+            if pattern.search(title):
+                property_type = kind
+                break
+        parcels = PARCEL.search(haystack)
+        return RawListing(
+            external_id=url,
+            url=url,
+            title=title,
+            source_key=self.key,
+            kind=self.kind,
+            transaction=TransactionType.SPRZEDAZ if SALE.search(haystack[:400])
+            else (TransactionType.WYNAJEM if RENT.search(title) else TransactionType.SPRZEDAZ),
+            property_type=property_type,
+            description=clean(text)[:4000],
+            price=parse_number(price_match.group(1)) if price_match else None,
+            opening_price=parse_number(price_match.group(1)) if price_match else None,
+            commune=commune,
+            location_text=commune,
+            seller_type=SellerType.INSTYTUCJA,
+            seller_name=authority,
+            authority=authority,
+            event_date=event_date,
+            published_at=published,
+            extra={"dzialki": clean(parcels.group(1))} if parcels else {},
+            region_assured=True,
+        )
 
     def _attachments(self, tree: HTMLParser, page_url: str) -> list[str]:
         node = _content(tree) if tree.css_first("#tresc") else tree
