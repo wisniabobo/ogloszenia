@@ -19,8 +19,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from datetime import timedelta
 
+from ..geo import detect_location
 from ..models import OfferKind, SellerType, TransactionType
-from ..utils.geo import detect_location
 from ..utils.text import clean, extract_case_number, parse_datetime
 from .base import BaseScraper, RawListing, ScrapeContext
 from .generic_html import guess_property_type
@@ -114,9 +114,10 @@ class MSiGScraper(BaseScraper):
             seller_type=SellerType.SYNDYK,
             authority="Syndyk / sąd upadłościowy",
             case_number=clean(row.get("signatureOfCase") or "") or extract_case_number(entity),
-            city=place.get("city"),
-            county=place.get("county"),
-            commune=place.get("commune"),
+            city=place.city,
+            county=place.county,
+            commune=place.commune,
+            voivodeship=place.voivodeship,
             location_text=entity,
             extra={
                 "monitor": monitor,

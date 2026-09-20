@@ -55,6 +55,11 @@ class GeocodeResult:
     teryt: str | None = None          # identyfikator gminy
     simc: str | None = None           # identyfikator miejscowości
     ulic: str | None = None           # identyfikator ulicy
+    #: Hierarchia administracyjna prosto z rejestru: „{Polska,małopolskie,
+    #: Kraków,Kraków}". Dzięki temu po geokodowaniu wiemy, w jakim
+    #: województwie i powiecie naprawdę leży adres — a to jedyne pewne
+    #: źródło tej wiedzy, jakie mamy za darmo.
+    jednostka: str | None = None
     precision: str = "city"           # address | street | city
     source: str = "gugik"
 
@@ -167,6 +172,7 @@ class GugikClient:
                     teryt=row.get("teryt"),
                     simc=row.get("simc"),
                     ulic=row.get("ulic"),
+                    jednostka=row.get("jednostka"),
                     precision=str(payload.get("type") or precision),
                     source="gugik",
                 )
@@ -200,6 +206,7 @@ class GugikClient:
             postal_code=first.get("code"),
             teryt=first.get("teryt"),
             simc=first.get("simc"),
+            jednostka=first.get("jednostka"),
             precision="address",
             source="gugik-reverse",
         )

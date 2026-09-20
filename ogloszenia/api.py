@@ -8,16 +8,16 @@ from __future__ import annotations
 
 import math
 from datetime import timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any
+from urllib.parse import parse_qsl, urlencode
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from functools import lru_cache
-from urllib.parse import parse_qsl, urlencode
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.cors import CORSMiddleware
@@ -25,6 +25,7 @@ from starlette.middleware.cors import CORSMiddleware
 from . import __version__
 from .contacts import contacts_for
 from .db import get_session_factory, init_db, session_scope
+from .geo import counties, town_names
 from .models import (
     Agency,
     DuplicateLink,
@@ -47,7 +48,6 @@ from .query import (
     search_listings,
 )
 from .settings import get_settings
-from .utils.geo import all_cities, counties
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "web" / "templates"))
@@ -149,6 +149,25 @@ app.mount(
     CachedStatics(directory=str(BASE_DIR / "web" / "static")),
     name="static",
 )
+
+
+def suggest_cities(db: Session, limit: int = 400) -> list[str]:
+    """Miejscowości do podpowiedzi w wyszukiwarce.
+
+    Najpierw te, które faktycznie mają oferty — posortowane od najliczniejszych,
+    bo o nie ludzie pytają najczęściej. Przy pustej bazie (świeża instalacja)
+    zostaje krajowa lista miast z rejestru TERYT, żeby pole podpowiedzi nie
+    świeciło pustką.
+    """
+    rows = db.execute(
+        select(Listing.city, func.count(Listing.id).label("n"))
+        .where(Listing.city.is_not(None))
+        .group_by(Listing.city)
+        .order_by(desc("n"))
+        .limit(limit)
+    ).all()
+    found = [row[0] for row in rows if row[0]]
+    return found or town_names()[:limit]
 
 
 def get_db() -> Session:
@@ -326,7 +345,7 @@ def view_home(request: Request, db: DB):
     return templates.TemplateResponse(
         request,
         "home.html",
-        {"stats": stats, "newest": newest, "cities": all_cities(), "active": "start"},
+        {"stats": stats, "newest": newest, "cities": suggest_cities(db), "active": "start"},
     )
 
 
@@ -360,7 +379,7 @@ def view_listings(request: Request, db: DB):
             "filters": filters,
             "pages": max(1, math.ceil(total / filters.per_page)),
             "sources": sources,
-            "cities": all_cities(),
+            "cities": suggest_cities(db),
             "counties": counties(),
             "active": "nieruchomosci",
             "query_string": str(request.query_params),
@@ -430,7 +449,7 @@ def view_map(request: Request, db: DB):
         {
             "filters": filters,
             "sources": sources,
-            "cities": all_cities(),
+            "cities": suggest_cities(db),
             "counties": counties(),
             "active": "mapa",
             "query_string": str(request.query_params),

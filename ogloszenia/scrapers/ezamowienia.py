@@ -53,7 +53,7 @@ class EZamowieniaScraper(BaseScraper):
         from ..utils.text import deaccent
 
         wanted = PROVINCE_CODES.get(
-            deaccent(ctx.voivodeship or "opolskie").lower(), "PL16"
+            deaccent(ctx.voivodeship or "").lower(), ""
         )
         cpv = tuple(self.config.get("cpv_prefixes", CPV_PREFIXES))
         skip_types = set(self.config.get("skip_notice_types", SKIP_NOTICE_TYPES))

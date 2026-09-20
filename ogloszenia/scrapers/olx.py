@@ -51,14 +51,13 @@ CATEGORIES: dict[int, tuple[PropertyType, TransactionType]] = {
 #: kategoria nadrzędna „Nieruchomości" — awaryjne źródło, gdy id-ki się zmienią
 PARENT_CATEGORY = 3
 
-#: identyfikatory województw w OLX (ustalone na żywym serwisie)
-REGIONS = {
-    "dolnoslaskie": 3, "kujawsko-pomorskie": 15, "lubelskie": 8, "lubuskie": 10,
-    "lodzkie": 6, "malopolskie": 13, "mazowieckie": 7, "opolskie": 12,
-    "podkarpackie": 9, "podlaskie": 14, "pomorskie": 2, "slaskie": 4,
-    "swietokrzyskie": 16, "warminsko-mazurskie": 5, "wielkopolskie": 1,
-    "zachodniopomorskie": 11,
-}
+#: Ile ofert OLX oddaje na jedno zapytanie (maksimum przyjmowane przez API).
+PAGE_SIZE = 50
+
+#: Najdalszy offset, jaki API obsługuje dla jednego zapytania. Dalej odpowiada
+#: pustą listą, więc pełne pokrycie bierze się z podziału na województwa
+#: i kategorie, a nie z jednego głębokiego przejścia.
+MAX_OFFSET = 1000
 
 ROOMS_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "kawalerka": 1}
 FLOOR_WORDS = {"floor_cellar": -1, "floor_ground": 0, "parter": 0, "floor_garret": 99}
@@ -79,51 +78,62 @@ class OLXScraper(BaseScraper):
             int(cid): (PropertyType(v[0]), TransactionType(v[1])) for cid, v in configured.items()
         }
 
-    def _region_id(self, voivodeship: str) -> int | None:
+    def _regions(self, ctx: ScrapeContext) -> list[tuple[str, int]]:
+        """(nazwa województwa, identyfikator regionu OLX) dla tego przebiegu.
+
+        Pełne pokrycie kraju bierze się właśnie stąd: API oddaje najwyżej
+        tysiąc ofert na jedno zapytanie, więc zamiast jednego zapytania
+        „cała Polska" robimy szesnaście — po jednym na województwo — razy
+        dziesięć kategorii. To 160 zapytań, które razem obejmują cały zasób.
+        """
         if self.config.get("region_id"):
-            return int(self.config["region_id"])
-        return (self.config.get("regions") or REGIONS).get(
-            deaccent(voivodeship or "").strip().lower()
-        )
+            return [("", int(self.config["region_id"]))]
+        override = self.config.get("regions") or {}
+        out: list[tuple[str, int]] = []
+        for entry in ctx.regions:
+            name = str(entry.get("nazwa", ""))
+            region_id = override.get(deaccent(name).lower()) or entry.get("olx_region_id")
+            if region_id:
+                out.append((name, int(region_id)))
+        return out
 
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
-        region_id = self._region_id(ctx.voivodeship or "opolskie")
-        if region_id is None:
-            return
-
-        limit = min(50, max(ctx.max_items, 10))
         produced = 0
         seen: set[str] = set()
+        max_pages = ctx.max_pages if not ctx.deep else MAX_OFFSET // PAGE_SIZE
 
-        for category_id, (ptype, ttype) in self.categories.items():
-            for page in range(ctx.max_pages):
+        for voivodeship, region_id in self._regions(ctx):
+            for category_id, (ptype, ttype) in self.categories.items():
+                for page in range(max_pages):
+                    offset = page * PAGE_SIZE
+                    if produced >= ctx.max_items or offset >= MAX_OFFSET:
+                        break
+                    params = {
+                        "offset": offset,
+                        "limit": PAGE_SIZE,
+                        "region_id": region_id,
+                        "category_id": category_id,
+                        "sort_by": "created_at:desc",
+                    }
+                    try:
+                        payload = await self.client.get_json(f"{API}/offers/", params=params)
+                    except Exception:
+                        break
+                    rows = self.dig(payload, "data", default=[]) or []
+                    if not rows:
+                        break
+                    for row in rows:
+                        item = self._parse_offer(row, ptype, ttype)
+                        if item is None or item.external_id in seen:
+                            continue
+                        item.voivodeship = item.voivodeship or voivodeship or None
+                        seen.add(item.external_id)
+                        yield item
+                        produced += 1
+                    if len(rows) < PAGE_SIZE:
+                        break
                 if produced >= ctx.max_items:
                     return
-                params = {
-                    "offset": page * limit,
-                    "limit": limit,
-                    "region_id": region_id,
-                    "category_id": category_id,
-                    "sort_by": "created_at:desc",
-                }
-                try:
-                    payload = await self.client.get_json(f"{API}/offers/", params=params)
-                except Exception:
-                    break
-                rows = self.dig(payload, "data", default=[]) or []
-                if not rows:
-                    break
-                for row in rows:
-                    item = self._parse_offer(row, ptype, ttype)
-                    if item is None or item.external_id in seen:
-                        continue
-                    seen.add(item.external_id)
-                    yield item
-                    produced += 1
-                    if produced >= ctx.max_items:
-                        return
-                if len(rows) < limit:
-                    break
 
     # ------------------------------------------------------------------ #
     def _parse_offer(
@@ -217,6 +227,9 @@ class OLXScraper(BaseScraper):
             market=clean(str(value_of("market") or "")) or None,
             city=city or None,
             district=district,
+            # OLX podaje województwo w osobnym polu — to ono rozstrzyga, które
+            # z trzech polskich „Opoli" mamy na myśli.
+            voivodeship=region or None,
             location_text=", ".join(x for x in (city, district, region) if x) or None,
             lat=self.dig(location, "lat"),
             lon=self.dig(location, "lon"),

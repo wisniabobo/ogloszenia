@@ -165,7 +165,27 @@ ROOMS_RE = re.compile(r"(\d+)[\s-]*(?:pokoj|pokoi|pok\.|pokoje|pokój|pokojow)",
 FLOOR_RE = re.compile(r"(?:piętro|pietro)[:\s]*(\d+|parter\w*)", re.I)
 FLOOR_OF_RE = re.compile(r"(\d+|parter\w*)\s*piętro\s*z\s*(\d+)", re.I)
 YEAR_RE = re.compile(r"(?:rok budowy|wybudowan\w*|z roku)[:\s]*((?:1[89]|20)\d{2})", re.I)
-PLOT_RE = re.compile(r"(?:działk\w+|powierzchnia działki)[^\d]{0,20}(\d+[\s.,]?\d*)\s*(?:m2|m²|ar|ha)?", re.I)
+#: Powierzchnia działki bywa podana w arach i hektarach, a ogłoszeniodawcy
+#: mieszają jednostki w jednym zdaniu („dom 180 m², działka 12 arów").
+#: Bez przeliczenia na metry działka 0,45 ha wchodziła do bazy jako 0,45 m².
+AREA_UNITS: dict[str, float] = {
+    "m2": 1.0, "m²": 1.0, "mkw": 1.0, "m.kw": 1.0, "metrow": 1.0, "metry": 1.0,
+    "a": 100.0, "ar": 100.0, "ary": 100.0, "arow": 100.0, "arów": 100.0,
+    "ha": 10_000.0, "hektar": 10_000.0, "hektary": 10_000.0, "hektarow": 10_000.0,
+    "hektarów": 10_000.0,
+}
+
+_NUMBER = r"(\d{1,3}(?:[ \u00a0]\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)"
+#: „ar" odmienia się jak rzeczownik: 8,5 **ara**, 12 **arów**, 3 **ary**.
+_UNIT = r"(m2|m²|mkw|m\.kw|ha|hektar\w*|ar(?:ach|ami|owi|[oó]w|y|a|ze|em)?|a)\b"
+
+PLOT_RE = re.compile(
+    r"(?:powierzchni\w*\s+(?:dzia[łl]ki|gruntu|terenu|nieruchomo[śs]ci)|"
+    r"dzia[łl]k\w*|grunt\w*|teren\w*|parcel\w*|area[łl])"
+    r"[^\d\n]{0,28}?" + _NUMBER + r"\s*" + _UNIT,
+    re.I,
+)
+AREA_WITH_UNIT = re.compile(_NUMBER + r"\s*" + _UNIT, re.I)
 CASE_RE = re.compile(r"\b((?:K[Mm]|GKm|Kmp|Kms|GKM|KM)\s?\d+/\d+)\b")
 SIGN_RE = re.compile(r"\b([IVX]+\s?[A-Za-z]{1,4}\s?\d+/\d+)\b")
 
@@ -173,6 +193,30 @@ SIGN_RE = re.compile(r"\b([IVX]+\s?[A-Za-z]{1,4}\s?\d+/\d+)\b")
 def extract_area(text: str) -> float | None:
     m = AREA_RE.search(text or "")
     return parse_number(m.group(1)) if m else None
+
+
+def to_square_meters(value: float | None, unit: str | None) -> float | None:
+    """Przelicza powierzchnię na metry kwadratowe. „0,45 ha" -> 4500.0"""
+    if value is None:
+        return None
+    key = deaccent(clean(unit or "m2")).lower().rstrip(".")
+    factor = AREA_UNITS.get(key)
+    if factor is None:
+        factor = next((v for k, v in AREA_UNITS.items() if key.startswith(k)), 1.0)
+    return round(value * factor, 2)
+
+
+def extract_plot_area(text: str) -> float | None:
+    """Powierzchnia działki w metrach, z dowolnej jednostki użytej w ogłoszeniu.
+
+    „działka 12 arów" -> 1200.0 ; „grunt o pow. 0,45 ha" -> 4500.0.
+    Jednostka jest tu obowiązkowa: sama liczba po słowie „działka" równie
+    często oznacza numer ewidencyjny co powierzchnię.
+    """
+    m = PLOT_RE.search(text or "")
+    if not m:
+        return None
+    return to_square_meters(parse_number(m.group(1)), m.group(2))
 
 
 def extract_rooms(text: str) -> int | None:

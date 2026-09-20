@@ -79,7 +79,7 @@ class LicytacjeKomornikScraper(BaseScraper):
     coverage = "krajowy"
 
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
-        province = self.config.get("province", ctx.voivodeship or "opolskie")
+        province = self.config.get("province") or ctx.voivodeship or ""
         categories = self.config.get("main_categories", ["REAL_ESTATE"])
         produced = 0
         seen: set[str] = set()

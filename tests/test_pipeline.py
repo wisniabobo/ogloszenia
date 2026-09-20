@@ -41,13 +41,19 @@ class TestNormalizacja:
         assert [p.e164 for p in result.phones] == ["+48537123123"]
         assert result.phones[0].masked == "537 *** ***"
 
-    def test_odrzuca_oferte_spoza_regionu(self):
+    def test_przyjmuje_oferte_z_dowolnego_wojewodztwa(self):
+        """Serwis obejmuje całą Polskę — Gdańsk nie jest „spoza regionu"."""
         raw = make_raw(title="Mieszkanie w Gdańsku", description="Wrzeszcz, 50 m2")
-        assert normalize(raw) is None
+        result = normalize(raw)
+        assert result is not None
+        assert result.data["city"] == "Gdańsk"
+        assert result.data["voivodeship"] == "pomorskie"
 
-    def test_przepuszcza_spoza_regionu_gdy_wylaczony_filtr(self):
+    def test_zawezenie_do_wojewodztw_odsiewa_reszte(self):
+        """Instancja zawężona do wybranych województw pomija pozostałe."""
         raw = make_raw(title="Mieszkanie w Gdańsku", description="Wrzeszcz, 50 m2")
-        assert normalize(raw, require_region=False) is not None
+        assert normalize(raw, scope=["opolskie"]) is None
+        assert normalize(raw, scope=["pomorskie"]) is not None
 
     def test_odrzuca_ogloszenia_kupie(self):
         assert normalize(make_raw(title="Kupię mieszkanie w Opolu")) is None
@@ -433,19 +439,23 @@ class TestWygaszanieOfert:
         assert listing.removed_at is not None
 
 
-def test_nazwa_wojewodztwa_w_stopce_nie_wpuszcza_ofert_spoza_regionu():
-    """Portale ogólnopolskie wypisują w stopce wszystkie województwa.
+def test_stopka_z_lista_wojewodztw_nie_przestawia_lokalizacji():
+    """Portale ogólnopolskie wypisują w stopce wszystkie województwa naraz.
 
-    Działki z Leszna i Kalisza trafiały przez to na listę ofert z Opolskiego.
+    Działka z Leszna ma zostać w Wielkopolsce, a nie przejąć województwa
+    z pierwszej nazwy wymienionej w stopce.
     """
     stopka = "Województwa: dolnośląskie kujawsko-pomorskie lubelskie opolskie podkarpackie"
-    obca = make_raw(title="Leszno ul. Towarowa działki", description=stopka,
-                    kind=OfferKind.PRZETARG, price=None)
-    assert normalize(obca) is None
+    leszno = normalize(make_raw(title="Leszno ul. Towarowa działki", description=stopka,
+                                kind=OfferKind.PRZETARG, price=None))
+    assert leszno is not None
+    assert leszno.data["city"] == "Leszno"
+    assert leszno.data["voivodeship"] == "wielkopolskie"
 
-    swoja = make_raw(title="Nysa, ul. Kolejowa 8 — działka", description=stopka,
-                     kind=OfferKind.PRZETARG, price=None)
-    assert normalize(swoja) is not None
+    nysa = normalize(make_raw(title="Nysa, ul. Kolejowa 8 — działka", description=stopka,
+                              kind=OfferKind.PRZETARG, price=None))
+    assert nysa is not None
+    assert nysa.data["voivodeship"] == "opolskie"
 
 
 def test_zwrot_woj_opolskie_w_opisie_wystarczy():

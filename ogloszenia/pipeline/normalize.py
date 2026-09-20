@@ -1,8 +1,11 @@
 """Normalizacja surowych ofert do kształtu tabeli `listings`.
 
 Tu dzieje się cała brudna robota: uzupełnianie brakujących parametrów z opisu,
-rozpoznanie miejscowości i dzielnicy, przeliczenie ceny za m², wyrzucenie ofert
-spoza regionu oraz wyciągnięcie telefonów.
+ustalenie lokalizacji, przeliczenie ceny za m², odsianie śmieci i wyciągnięcie
+telefonów.
+
+Lokalizacja wyprowadziła się stąd do `pipeline/location.py` — była najczęstszym
+źródłem błędów w całym serwisie i zasługuje na osobny moduł z własnymi testami.
 """
 
 from __future__ import annotations
@@ -12,23 +15,18 @@ from dataclasses import dataclass, field
 
 from ..models import OfferKind, PropertyType, SellerType, TransactionType
 from ..scrapers.base import RawListing
-from ..utils.geo import (
-    detect_location,
-    detect_opole_district,
-    extract_street,
-    region_phrase,
-    resolve_place,
-)
 from ..utils.phones import PhoneNumber, extract_phones, parse_phone
 from ..utils.text import (
     clean,
     extract_area,
     extract_case_number,
     extract_floor,
+    extract_plot_area,
     extract_rooms,
     extract_year,
     strip_html,
 )
+from .location import resolve as resolve_location
 
 MARKET_PRIMARY = re.compile(r"rynek pierwotn|pierwotny|od dewelopera|nowa inwestycja", re.I)
 MARKET_SECONDARY = re.compile(r"rynek wtórn|wtorny|używan", re.I)
@@ -49,7 +47,17 @@ AREA_LIMITS: dict[PropertyType, tuple[float, float]] = {
     PropertyType.DOM: (20, 3000),
     PropertyType.GARAZ: (5, 200),
     PropertyType.KAMIENICA: (50, 10000),
+    PropertyType.BIURO: (5, 20000),
+    PropertyType.LOKAL: (5, 20000),
+    # Grunty mierzy się w hektarach — 300 ha to duże gospodarstwo, ale istnieje.
+    PropertyType.DZIALKA: (30, 5_000_000),
+    PropertyType.GOSPODARSTWO: (100, 20_000_000),
+    PropertyType.HALA: (20, 200_000),
+    PropertyType.MAGAZYN: (20, 200_000),
 }
+
+#: Typy, przy których „powierzchnia" oferty to powierzchnia gruntu, a nie budynku.
+LAND_TYPES = {PropertyType.DZIALKA, PropertyType.GOSPODARSTWO}
 
 #: Ogłoszenie „na sprzedaż" z ceną poniżej tej kwoty to niemal zawsze wynajem
 #: wrzucony do złej kategorii portalu (albo cena „do negocjacji" wpisana jako 1).
@@ -61,6 +69,16 @@ RENT_IN_TITLE = re.compile(
     r"\bdo wynaj|\bna wynaj|\bwynajm|\bwynajem\b|\bdo zamieszkania od zaraz za\b", re.I
 )
 LEASE_IN_TITLE = re.compile(r"\bdzierżaw|\bwydzierżaw|\boddam w dzierżaw", re.I)
+
+#: Numer działki ewidencyjnej: „działka nr 123/4", „dz. ew. 88". Przy gruntach
+#: i licytacjach to jedyny pewny identyfikator nieruchomości — po nim da się
+#: odpytać rejestr GUGiK o rzeczywisty kształt i powierzchnię.
+PARCEL_RE = re.compile(
+    r"(?:dzia[łl]k\w*|dz\.?\s*(?:ew\.?|ewid\w*)?)\s*(?:nr|numer|o\s+numerze)?\s*"
+    r"(\d{1,5}(?:/\d{1,5})?(?:\s*,\s*\d{1,5}(?:/\d{1,5})?){0,4})",
+    re.I,
+)
+REGISTER_UNIT_RE = re.compile(r"obr[ęe]b\w*\s*(?:ewidencyjny\w*)?\s*[:\-]?\s*([\w\s.-]{3,60})", re.I)
 
 
 def _plausible_area(area: float | None, property_type: PropertyType) -> bool:
@@ -94,13 +112,27 @@ def _pick(*values):
     return None
 
 
+def _parcel_numbers(text: str) -> list[str]:
+    match = PARCEL_RE.search(text)
+    if not match:
+        return []
+    return [clean(part) for part in match.group(1).split(",") if clean(part)][:5]
+
+
 def normalize(
     raw: RawListing,
     *,
-    voivodeship: str = "opolskie",
-    require_region: bool = True,
+    scope: list[str] | None = None,
+    voivodeship: str | None = None,
+    require_region: bool = False,
 ) -> NormalizedListing | None:
-    """Zwraca `NormalizedListing` albo `None`, jeśli oferta odpada."""
+    """Zwraca `NormalizedListing` albo `None`, jeśli oferta odpada.
+
+    `scope` to lista województw, do których zawężamy zbiór; pusta lista znaczy
+    **cała Polska** i tak jest domyślnie. Ofertę bez rozpoznanego województwa
+    zostawiamy — region dopisze jej geokoder, który pyta rejestr adresowy,
+    zamiast zgadywać z tytułu. Odrzucanie takich ofert gubiło dane.
+    """
     title = clean(raw.title)
     description = strip_html(raw.description)
     if not title or not raw.url:
@@ -112,59 +144,31 @@ def normalize(
         return None
 
     # --- lokalizacja ---
-    # Kolejność ma znaczenie: pole z portalu > tytuł > krótki opis lokalizacji >
-    # pełny opis. Opis potrafi wspominać sąsiednie miasta w zupełnie innym
-    # kontekście ("przy drodze krajowej Opole – Strzelce Opolskie", "15 minut
-    # od Nysy") i bez tej kolejności oferta z Walidróg lądowała w Strzelcach.
-    place = (
-        resolve_place(raw.city)
-        or detect_location(title)
-        or resolve_place(raw.location_text)
-        or detect_location(raw.location_text or "")
-        or detect_location(haystack)
-        or {}
-    )
-    city = _pick(place.get("city"), clean(raw.city))
-    commune = _pick(place.get("commune"), clean(raw.commune))
-    county = _pick(place.get("county"), clean(raw.county))
-    district = _pick(
-        clean(raw.district),
-        place.get("district"),
-        detect_opole_district(haystack) if (city or "").lower() == "opole" else None,
-    )
-    street = _pick(
-        clean(raw.street),
-        extract_street(title),
-        extract_street(raw.location_text or ""),
-        extract_street(description[:600]) if raw.street_from_body else None,
-    )
-    # Przedrostek „ul." przechowywany w bazie psuł geokodowanie (GUGiK zwraca
-    # wtedy zero wyników), a w interfejsie i tak dokłada go szablon. Inne typy
-    # — aleja, osiedle, plac — zostawiamy, bo zmieniają znaczenie adresu.
-    if street:
-        street = re.sub(r"^\s*(?:ul\.?|ulica)\s+", "", street, flags=re.I).strip(" .,") or None
-
-    # Samo słowo „opolskie" gdziekolwiek w treści to za słaba przesłanka.
-    # Strony ogólnopolskie (PKP, AMW) wypisują w stopce listę wszystkich
-    # województw, przez co do wyników wchodziły działki z Leszna, Kalisza
-    # i Lubania. Nazwy województwa szukamy więc tylko w polach opisujących
-    # adres, a w pełnym opisie — wyłącznie w zwrocie „woj. opolskie".
-    address_fields = f"{title} {raw.location_text or ''} {raw.city or ''}"
-    in_region = (
-        bool(place)
-        or voivodeship.lower() in address_fields.lower()
-        or bool(region_phrase(voivodeship).search(description))
-    )
-    if raw.region_assured:
-        # Źródło zostało odpytane pod adresem zawężonym do województwa —
-        # portal sam zagwarantował region, nawet jeśli w treści nie ma nazwy
-        # miejscowości, której znamy. Odrzucanie takich ofert gubiło dane.
-        in_region = True
-    if require_region and not in_region:
+    place = resolve_location(raw)
+    scope = scope if scope is not None else ([voivodeship] if voivodeship and require_region else [])
+    if scope and place.voivodeship and place.voivodeship not in scope:
         return None
 
     # --- parametry ---
+    property_type = raw.property_type
+    if property_type == PropertyType.INNE and raw.kind != OfferKind.PRZETARG:
+        from ..scrapers.generic_html import guess_property_type
+
+        property_type = guess_property_type(title, description[:800])
+
     area = _pick(raw.area, extract_area(title), extract_area(description[:1500]))
+    plot_area = _pick(
+        raw.plot_area,
+        extract_plot_area(title),
+        extract_plot_area(description[:2500]),
+    )
+    # Przy gruncie „powierzchnia" to powierzchnia działki. Portale podają ją raz
+    # w jednym, raz w drugim polu, a bez tego ujednolicenia filtr „działki od
+    # 1000 m²" omijał połowę zasobu.
+    if property_type in LAND_TYPES:
+        area = _pick(area, plot_area)
+        plot_area = _pick(plot_area, area)
+
     rooms = _pick(raw.rooms, extract_rooms(title), extract_rooms(description[:1500]))
     floor, floors_total = raw.floor, raw.floors_total
     if floor is None:
@@ -185,17 +189,13 @@ def normalize(
     elif market.upper() in {"PRIMARY", "SECONDARY"}:
         market = "pierwotny" if market.upper() == "PRIMARY" else "wtorny"
 
-    property_type = raw.property_type
-    if property_type == PropertyType.INNE and raw.kind != OfferKind.PRZETARG:
-        from ..scrapers.generic_html import guess_property_type
-
-        property_type = guess_property_type(title, description[:800])
-
     # Metraż spoza rozsądnych granic dla danego typu odrzucamy i próbujemy
     # odczytać go jeszcze raz z tytułu — tam człowiek pisze prawdziwą liczbę.
     if not _plausible_area(area, property_type):
         from_title = extract_area(title)
         area = from_title if _plausible_area(from_title, property_type) else None
+    if plot_area is not None and not 1 <= plot_area <= 20_000_000:
+        plot_area = None
 
     transaction = raw.transaction or TransactionType.SPRZEDAZ
     if raw.kind == OfferKind.NIERUCHOMOSC:
@@ -233,8 +233,18 @@ def normalize(
         else None
     )
     opening_price = raw.opening_price
-    if raw.kind == OfferKind.LICYTACJA and price is None:
+    if raw.kind in (OfferKind.LICYTACJA, OfferKind.PRZETARG, OfferKind.WYKAZ) and price is None:
         price = opening_price or raw.estimate_value
+
+    # --- działka ewidencyjna ---
+    extra = dict(raw.extra or {})
+    if property_type in LAND_TYPES or raw.kind in (OfferKind.LICYTACJA, OfferKind.PRZETARG):
+        parcels = _parcel_numbers(f"{title} {description[:3000]}")
+        if parcels:
+            extra["dzialki_ewidencyjne"] = parcels
+        register = REGISTER_UNIT_RE.search(f"{title} {description[:3000]}")
+        if register:
+            extra["obreb"] = clean(register.group(1))[:60]
 
     data = {
         "source_key": raw.source_key,
@@ -250,19 +260,20 @@ def normalize(
         "currency": raw.currency or "PLN",
         "price_per_m2": price_per_m2,
         "area": area,
-        "plot_area": raw.plot_area,
+        "plot_area": plot_area,
         "rooms": rooms,
         "floor": floor,
         "floors_total": floors_total,
         "year_built": year_built,
         "building_type": clean(raw.building_type or "") or None,
         "market": market,
-        "voivodeship": voivodeship if in_region else None,
-        "county": county,
-        "commune": commune,
-        "city": city,
-        "district": district,
-        "street": street,
+        "voivodeship": place.voivodeship,
+        "county": place.county,
+        "commune": place.commune,
+        "city": place.city,
+        "district": place.district,
+        "street": place.street,
+        "teryt": place.teryt,
         "lat": raw.lat,
         "lon": raw.lon,
         # Współrzędne prosto z portalu są dokładniejsze niż nasze geokodowanie
@@ -282,10 +293,10 @@ def normalize(
         "case_number": (case_number or "")[:120] or None,
         "authority": clean(raw.authority or "")[:300] or None,
         "share": clean(raw.share or "")[:32] or None,
-        "extra": raw.extra or {},
+        "extra": extra,
         "raw": raw.raw if isinstance(raw.raw, dict) else {},
     }
     # Źródło, które nie pozwala szukać ulicy w treści (bo treść zaczyna się od
     # adresu instytucji), zgłasza brak ulicy jako ustalenie, nie jako niewiedzę.
-    cleared = () if (street or raw.street_from_body) else ("street",)
+    cleared = () if (place.street or raw.street_from_body) else ("street",)
     return NormalizedListing(data=data, phones=phones, raw=raw, cleared=cleared)

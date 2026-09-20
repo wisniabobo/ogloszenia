@@ -50,7 +50,7 @@ class AgencyDirectoryScraper(BaseScraper):
 
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
         regions = self.config.get("region_slugs") or [
-            self.config.get("region_slug", ctx.voivodeship or "opolskie")
+            self.config.get("region_slug") or ctx.voivodeship or ""
         ]
         seen: set[str] = set()
         # katalog ma 20 pozycji na stronę; idziemy aż przestaną przybywać nowe

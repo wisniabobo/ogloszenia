@@ -20,8 +20,8 @@ from __future__ import annotations
 
 import io
 import re
-from datetime import datetime
 from collections.abc import AsyncIterator
+from datetime import datetime
 from urllib.parse import urljoin, urlparse
 
 from selectolax.parser import HTMLParser

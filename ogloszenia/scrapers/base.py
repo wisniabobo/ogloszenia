@@ -24,9 +24,15 @@ from ..utils.text import clean
 
 @dataclass
 class ScrapeContext:
-    """Parametry jednego przebiegu."""
+    """Parametry jednego przebiegu.
 
-    voivodeship: str = "opolskie"
+    Domyślnie skan obejmuje **całą Polskę**: `voivodeships` puste znaczy „bez
+    zawężania". Scrapery, które muszą odpytać portal region po regionie, biorą
+    listę z `regions()`; te, które potrafią odpytać kraj naraz (Otodom, BIP-y),
+    robią jedno zapytanie.
+    """
+
+    voivodeships: list[str] = field(default_factory=list)
     cities: list[str] = field(default_factory=list)
     max_pages: int = 5
     max_items: int = 400
@@ -36,6 +42,21 @@ class ScrapeContext:
     #: tryb głęboki — przechodzimy wyniki do końca, a nie tylko pierwsze strony.
     #: Zwykły skan ma łapać nowości szybko; ten ma zebrać *wszystko*.
     deep: bool = False
+
+    @property
+    def regions(self) -> list[dict]:
+        """Wpisy regionów z config/regions.yaml objęte tym przebiegiem."""
+        from ..settings import region, regions
+
+        if not self.voivodeships:
+            return regions()
+        found = [region(name) for name in self.voivodeships]
+        return [entry for entry in found if entry]
+
+    @property
+    def voivodeship(self) -> str:
+        """Zgodność wstecz: pierwsze województwo albo pusty łańcuch."""
+        return self.voivodeships[0] if self.voivodeships else ""
 
 
 @dataclass
@@ -66,6 +87,11 @@ class RawListing:
     street: str | None = None
     commune: str | None = None
     county: str | None = None
+    #: Województwo podane przez portal w osobnym polu (OLX: `location.region`,
+    #: Otodom: `location.address.province`). To najtańszy i najpewniejszy sposób
+    #: rozróżnienia dwóch miejscowości o tej samej nazwie — a takich w Polsce
+    #: są setki.
+    voivodeship: str | None = None
     lat: float | None = None
     lon: float | None = None
     seller_type: SellerType = SellerType.NIEZNANY

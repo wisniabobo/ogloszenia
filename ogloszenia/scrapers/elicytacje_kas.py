@@ -20,8 +20,8 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
+from ..geo import detect_location
 from ..models import OfferKind, PropertyType, SellerType, TransactionType
-from ..utils.geo import detect_location
 from ..utils.text import clean, extract_area, parse_datetime, parse_number
 from .base import BaseScraper, RawListing, ScrapeContext
 
@@ -111,9 +111,9 @@ class ELicytacjeKASScraper(BaseScraper):
             return None  # odwołana albo unieważniona
 
         location = clean(row.get("localization") or "")
-        # API nie filtruje po regionie — robimy to sami, tym samym słownikiem,
-        # co rozpoznawanie lokalizacji w zwykłych ogłoszeniach
-        place = detect_location(location) if location else {}
+        # API oddaje licytacje z całego kraju; lokalizację czytamy z pola
+        # `localization` tym samym mechanizmem, co w zwykłych ogłoszeniach
+        place = detect_location(location)
 
         codes = row.get("announcementTypeCodes") or []
         labels = [TYPE_LABELS.get(code, code) for code in codes]
@@ -136,9 +136,10 @@ class ELicytacjeKASScraper(BaseScraper):
             seller_type=SellerType.URZAD,
             authority="Krajowa Administracja Skarbowa",
             location_text=location or None,
-            city=place.get("city") or (location or None),
-            county=place.get("county"),
-            commune=place.get("commune"),
+            city=place.city or (location or None),
+            county=place.county,
+            commune=place.commune,
+            voivodeship=place.voivodeship,
             area=extract_area(title),
             images=(
                 [f"{API}/items/pictures/{row['pictureId']}/thumbnail"]

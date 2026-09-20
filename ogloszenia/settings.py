@@ -22,8 +22,13 @@ class Settings(BaseSettings):
     # --- baza ---
     database_url: str = f"sqlite:///{DATA_DIR / 'ogloszenia.db'}"
 
-    # --- region ---
-    default_voivodeship: str = "opolskie"
+    # --- zasięg ---
+    #: Domyślnie serwis zbiera oferty z **całej Polski**. Pojedyncze
+    #: województwo (albo ich lista po przecinku) zawęża skan — przydaje się
+    #: przy własnej, małej instancji, ale nie jest już założeniem projektu.
+    voivodeships: str = "wszystkie"
+    #: Zostawione dla zgodności ze starymi plikami .env i skryptami wdrożenia.
+    default_voivodeship: str = ""
 
     # --- sieć ---
     http_timeout: float = 25.0
@@ -69,6 +74,16 @@ class Settings(BaseSettings):
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         return DATA_DIR
 
+    @property
+    def scope(self) -> list[str]:
+        """Województwa objęte skanem — pusta lista znaczy „cała Polska"."""
+        raw = (self.voivodeships or "").strip().lower()
+        if self.default_voivodeship and raw in ("", "wszystkie"):
+            raw = self.default_voivodeship          # stary OGL_DEFAULT_VOIVODESHIP
+        if raw in ("", "wszystkie", "polska", "all", "*"):
+            return []
+        return [part.strip() for part in raw.split(",") if part.strip()]
+
 
 @functools.lru_cache(maxsize=1)
 def get_settings() -> Settings:
@@ -90,8 +105,41 @@ def sources_config() -> dict[str, Any]:
 
 
 def regions_config() -> dict[str, Any]:
-    return load_yaml("regions_opolskie.yaml")
+    """Parametry portali dla każdego z 16 województw (config/regions.yaml)."""
+    return load_yaml("regions.yaml")
 
 
 def agencies_config() -> dict[str, Any]:
-    return load_yaml("agencies_opolskie.yaml")
+    """Ziarno rejestru biur — rejestr i tak rośnie sam z katalogu Otodom."""
+    return load_yaml("agencies.yaml")
+
+
+@functools.lru_cache(maxsize=1)
+def regions() -> list[dict[str, Any]]:
+    return list(regions_config().get("wojewodztwa", []))
+
+
+@functools.lru_cache(maxsize=32)
+def region(name: str | None) -> dict[str, Any]:
+    """Wpis regionu po nazwie albo kluczu — „śląskie" i „slaskie" to to samo."""
+    if not name:
+        return {}
+    from .utils.text import deaccent
+
+    key = deaccent(name).strip().lower()
+    for entry in regions():
+        if deaccent(str(entry.get("nazwa", ""))).lower() == key or entry.get("klucz") == key:
+            return entry
+    return {}
+
+
+def region_names(scope: list[str] | None = None) -> list[str]:
+    """Nazwy województw do objęcia skanem (domyślnie wszystkie 16)."""
+    if not scope:
+        return [str(entry["nazwa"]) for entry in regions()]
+    out = []
+    for name in scope:
+        entry = region(name)
+        if entry:
+            out.append(str(entry["nazwa"]))
+    return out

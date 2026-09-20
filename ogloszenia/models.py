@@ -122,8 +122,11 @@ class Source(Base):
 # Biura nieruchomości / oferenci
 # --------------------------------------------------------------------------- #
 class Agency(Base):
-    """Biuro nieruchomości. Rekordy powstają z seeda (config/agencies_opolskie.yaml)
-    oraz są dopisywane automatycznie na podstawie zebranych ofert."""
+    """Biuro nieruchomości — rejestr obejmuje całą Polskę.
+
+    Rekordy powstają z katalogu biur Otodom (pełna lista z sitemapy portalu)
+    oraz są dopisywane automatycznie na podstawie nazw oferentów z ofert.
+    """
 
     __tablename__ = "agencies"
 
@@ -132,7 +135,7 @@ class Agency(Base):
     name: Mapped[str] = mapped_column(String(300))
     city: Mapped[str | None] = mapped_column(String(120), index=True)
     county: Mapped[str | None] = mapped_column(String(120))
-    voivodeship: Mapped[str] = mapped_column(String(64), default="opolskie")
+    voivodeship: Mapped[str | None] = mapped_column(String(64))
     website: Mapped[str | None] = mapped_column(String(400))
     email: Mapped[str | None] = mapped_column(String(200))
     phones: Mapped[list] = mapped_column(JSON, default=list)
@@ -399,7 +402,7 @@ class Region(Base):
     __tablename__ = "regions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    voivodeship: Mapped[str] = mapped_column(String(64), default="opolskie")
+    voivodeship: Mapped[str | None] = mapped_column(String(64))
     county: Mapped[str] = mapped_column(String(120), index=True)
     commune: Mapped[str | None] = mapped_column(String(120))
     city: Mapped[str] = mapped_column(String(160), index=True)
@@ -428,6 +431,10 @@ class GeocodeCache(Base):
     source: Mapped[str | None] = mapped_column(String(24))
     teryt: Mapped[str | None] = mapped_column(String(16))
     simc: Mapped[str | None] = mapped_column(String(16))
+    #: Hierarchia administracyjna z odpowiedzi GUGiK („{Polska,opolskie,nyski,
+    #: Nysa}"). Trzymamy ją w cache'u, bo to ona pozwala poprawić województwo
+    #: i powiat oferty bez ponownego odpytywania rejestru.
+    jednostka: Mapped[str | None] = mapped_column(String(200))
     postal_code: Mapped[str | None] = mapped_column(String(8))
     city: Mapped[str | None] = mapped_column(String(160))
     street: Mapped[str | None] = mapped_column(String(200))

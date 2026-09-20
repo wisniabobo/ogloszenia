@@ -242,7 +242,7 @@ async def _collect(source: Source, client: HttpClient, ctx: ScrapeContext) -> tu
 
 
 def _persist(source_key: str, items: list[RawListing], error: str,
-             voivodeship: str, require_region: bool,
+             scope: list[str] | None = None,
              complete_pass: bool = False) -> tuple[SourceResult, list[int]]:
     result = SourceResult(source_key=source_key, fetched=len(items), ok=not error, message=error)
     new_ids: list[int] = []
@@ -282,7 +282,7 @@ def _persist(source_key: str, items: list[RawListing], error: str,
 
         for raw in items:
             try:
-                normalized = normalize(raw, voivodeship=voivodeship, require_region=require_region)
+                normalized = normalize(raw, scope=scope)
             except Exception as exc:
                 log.debug("Normalizacja odrzuciła ofertę %s: %s", raw.url, exc)
                 result.errors += 1
@@ -377,20 +377,20 @@ async def run_scan(
     categories: list[str] | None = None,
     max_pages: int | None = None,
     max_items: int | None = None,
-    voivodeship: str | None = None,
-    require_region: bool = True,
+    scope: list[str] | None = None,
     fetch_details: bool = True,
     include_disabled: bool = False,
     deep: bool = False,
 ) -> ScanResult:
     """Uruchamia skan wybranych źródeł równolegle.
 
-    `deep=True` przechodzi wyniki do końca zamiast brać tylko pierwsze strony.
-    Zwykły przebieg ma łapać nowości w kilka minut; głęboki — zebrać komplet,
-    i dlatego puszcza się go raz na dobę, a nie co kwadrans.
+    `scope` zawęża skan do wybranych województw; pusta lista (domyślnie) znaczy
+    **cała Polska**. `deep=True` przechodzi wyniki do końca zamiast brać tylko
+    pierwsze strony: zwykły przebieg ma łapać nowości w kilka minut, głęboki —
+    zebrać komplet, i dlatego puszcza się go raz na dobę, a nie co kwadrans.
     """
     settings = get_settings()
-    voivodeship = voivodeship or settings.default_voivodeship
+    scope = scope if scope is not None else settings.scope
 
     with session_scope() as session:
         sync_sources(session)
@@ -411,7 +411,7 @@ async def run_scan(
 
     defaults = sources_config().get("defaults", {})
     ctx = ScrapeContext(
-        voivodeship=voivodeship,
+        voivodeships=scope,
         max_pages=max_pages or int(defaults.get("deep_max_pages" if deep else "max_pages", 60 if deep else 5)),
         max_items=max_items or int(defaults.get("deep_max_items" if deep else "max_items", 20000 if deep else 400)),
         fetch_details=fetch_details,
@@ -426,7 +426,7 @@ async def run_scan(
 
     for source, (items, error) in zip(sources, collected, strict=True):
         source_result, new_ids = _persist(
-            source.key, items, error, voivodeship, require_region, complete_pass=deep
+            source.key, items, error, scope, complete_pass=deep
         )
         result.sources.append(source_result)
         result.new_listing_ids.extend(new_ids)

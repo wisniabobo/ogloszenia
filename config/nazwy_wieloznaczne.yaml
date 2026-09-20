@@ -1,0 +1,53 @@
+# Nazwy miejscowości, które są jednocześnie zwykłymi polskimi słowami.
+#
+# W Polsce jest gmina Pokój, gmina Dobra, gmina Nowe i wieś Miejsce. Bez tej
+# listy ogłoszenie „Dobra oferta, 3 pokoje" trafiało do gminy Dobra, a „Miejsce
+# postojowe w garażu w Krakowie" — do wsi Miejsce pod Namysłowem.
+#
+# Takie nazwy uznajemy za lokalizację dopiero wtedy, gdy stoi przy nich
+# wskazówka („w miejscowości Dobra", „gm. Pokój") albo zgadzają się
+# z rozpoznanym powiatem. Sama wielka litera nie wystarcza — w tytule
+# ogłoszenia wielką literą pisane jest pierwsze słowo zdania.
+nazwy:
+- Biała
+- Biały Bór
+- Boru
+- Brzeziny
+- Budy
+- Czarna
+- Czarne
+- Dobra
+- Dolina
+- Dzielnica
+- Góra
+- Huta
+- Kolonia
+- Kąty
+- Lipie
+- Las
+- Łąki
+- Miasteczko
+- Miejsce
+- Most
+- Mała
+- Nowa
+- Nowe
+- Ogrody
+- Osiedle
+- Park
+- Piaski
+- Podlesie
+- Pokój
+- Przystań
+- Rogi
+- Ruda
+- Rynek
+- Sady
+- Stara
+- Stare
+- Stawy
+- Sucha
+- Wielka
+- Wola
+- Zalesie
+- Zamek

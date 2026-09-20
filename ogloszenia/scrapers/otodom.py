@@ -1,9 +1,20 @@
-"""Otodom.pl — aplikacja Next.js; dane listingu siedzą w `__NEXT_DATA__`.
+"""Otodom.pl — największy zbiór ofert biur i deweloperów w Polsce.
+
+Portal to aplikacja Next.js; komplet danych listy wyników siedzi w
+`__NEXT_DATA__`, razem z paginacją i **pełną hierarchią administracyjną**
+każdej oferty (województwo → powiat → gmina → miejscowość → dzielnica).
+To ostatnie jest tu najcenniejsze: nie trzeba zgadywać lokalizacji z tytułu,
+bo portal podaje ją wprost i poprawnie.
+
+**Pokrycie całej Polski.** Wyszukiwanie `cala-polska` stronicuje do końca —
+sprawdzone na żywo: mieszkania na sprzedaż to 150 862 oferty na 2096 stronach
+i strona 2096 faktycznie się otwiera. Nie ma więc potrzeby dzielenia zapytań
+po województwach; zwykły skan bierze kilka pierwszych stron posortowanych od
+najnowszych, a przebieg głęboki schodzi do ostatniej strony.
 
 Ścieżka w JSON-ie zmieniała się już kilka razy, więc zamiast jednej sztywnej
 lokalizacji przeszukujemy drzewo w poszukiwaniu kolekcji z polami typowymi dla
-ogłoszenia (`slug`, `totalPrice`, `areaInSquareMeters`). To przeżywa większość
-przemeblowań frontu.
+ogłoszenia. To przeżywa większość przemeblowań frontu.
 """
 
 from __future__ import annotations
@@ -18,7 +29,9 @@ from .generic_html import guess_property_type
 
 BASE = "https://www.otodom.pl"
 
-SEARCHES = [
+#: Wyszukiwania, które razem obejmują cały zasób portalu.
+#: (fragment adresu: transakcja, typ, nasz typ, nasza transakcja)
+SEARCHES: list[tuple[str, str, PropertyType, TransactionType]] = [
     ("sprzedaz", "mieszkanie", PropertyType.MIESZKANIE, TransactionType.SPRZEDAZ),
     ("sprzedaz", "dom", PropertyType.DOM, TransactionType.SPRZEDAZ),
     ("sprzedaz", "dzialka", PropertyType.DZIALKA, TransactionType.SPRZEDAZ),
@@ -28,10 +41,34 @@ SEARCHES = [
     ("wynajem", "mieszkanie", PropertyType.MIESZKANIE, TransactionType.WYNAJEM),
     ("wynajem", "dom", PropertyType.DOM, TransactionType.WYNAJEM),
     ("wynajem", "lokal", PropertyType.LOKAL, TransactionType.WYNAJEM),
+    ("wynajem", "haleimagazyny", PropertyType.HALA, TransactionType.WYNAJEM),
+    ("wynajem", "pokoj", PropertyType.POKOJ, TransactionType.WYNAJEM),
+    ("wynajem", "garaz", PropertyType.GARAZ, TransactionType.WYNAJEM),
 ]
 
-AGENCY_MARKERS = {"AGENCY", "DEVELOPER", "BUSINESS"}
+#: `estate` z portalu -> nasz typ nieruchomości
+ESTATES: dict[str, PropertyType] = {
+    "FLAT": PropertyType.MIESZKANIE,
+    "HOUSE": PropertyType.DOM,
+    "TERRAIN": PropertyType.DZIALKA,
+    "COMMERCIAL_PROPERTY": PropertyType.LOKAL,
+    "HALL": PropertyType.HALA,
+    "GARAGE": PropertyType.GARAZ,
+    "ROOM": PropertyType.POKOJ,
+    "INVESTMENT": PropertyType.MIESZKANIE,
+}
+
+ROOMS_WORDS = {"ONE": 1, "TWO": 2, "THREE": 3, "FOUR": 4, "FIVE": 5,
+               "SIX": 6, "SEVEN": 7, "EIGHT": 8, "NINE": 9, "TEN": 10}
+
+#: `floorNumber` przychodzi jako „FLOOR_3", „GROUND", „CELLAR", „GARRET"
+FLOOR_WORDS = {"GROUND": 0, "CELLAR": -1, "BASEMENT": -1, "GARRET": 99}
+
+AGENCY_MARKERS = {"AGENCY", "BUSINESS"}
 LISTING_MARKERS = {"slug", "title"}
+
+#: Ile pozycji portal oddaje na stronę (maksimum przyjmowane przez wyszukiwarkę).
+PAGE_SIZE = 72
 
 
 class OtodomScraper(BaseScraper):
@@ -40,36 +77,80 @@ class OtodomScraper(BaseScraper):
     base_url = BASE
     kind = OfferKind.NIERUCHOMOSC
 
+    def _region_slugs(self, ctx: ScrapeContext) -> list[str]:
+        """Fragmenty adresu opisujące obszar wyszukiwania.
+
+        Bez zawężania pytamy raz o całą Polskę. Gdy instancja jest zawężona do
+        wybranych województw, pytamy osobno o każde — wtedy portal sam odsiewa
+        resztę kraju i nie ściągamy danych, które i tak odrzucimy.
+        """
+        if self.config.get("region_slug"):
+            return [str(self.config["region_slug"])]
+        if not ctx.voivodeships:
+            return ["cala-polska"]
+        return [str(entry["otodom_slug"]) for entry in ctx.regions if entry.get("otodom_slug")]
+
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
         produced = 0
-        region = self.config.get("region_slug", "opolskie")
         searches = self.config.get("searches") or SEARCHES
 
-        for transaction_slug, type_slug, ptype, ttype in searches:
-            for page in range(1, ctx.max_pages + 1):
-                if produced >= ctx.max_items:
-                    return
-                url = (
-                    f"{BASE}/pl/wyniki/{transaction_slug}/{type_slug}/{region}"
-                    f"?page={page}&limit=72&by=LATEST&direction=DESC&viewType=listing"
-                )
-                try:
-                    tree = await self.html(url)
-                except Exception:
-                    break
-                data = self.next_data(tree)
-                rows = self._find_items(data)
-                if not rows:
-                    break
-                for row in rows:
-                    item = self._parse(row, ptype, ttype)
-                    if item:
-                        yield item
-                        produced += 1
-                        if produced >= ctx.max_items:
-                            return
+        for region_slug in self._region_slugs(ctx):
+            for transaction_slug, type_slug, ptype, ttype in searches:
+                page = 1
+                total_pages = ctx.max_pages
+                while page <= total_pages:
+                    if produced >= ctx.max_items:
+                        return
+                    url = (
+                        f"{BASE}/pl/wyniki/{transaction_slug}/{type_slug}/{region_slug}"
+                        f"?page={page}&limit={PAGE_SIZE}&by=LATEST&direction=DESC"
+                        f"&viewType=listing"
+                    )
+                    try:
+                        tree = await self.html(url)
+                    except Exception:
+                        break
+                    data = self.next_data(tree)
+                    rows = self._find_items(data)
+                    if not rows:
+                        break
+                    # W trybie głębokim idziemy do ostatniej strony, jaką portal
+                    # deklaruje — to jest cały zasób danej kategorii.
+                    if ctx.deep:
+                        declared = self._total_pages(data)
+                        total_pages = min(declared or ctx.max_pages, ctx.max_pages)
+                    for row in rows:
+                        item = self._parse(row, ptype, ttype)
+                        if item:
+                            yield item
+                            produced += 1
+                            if produced >= ctx.max_items:
+                                return
+                    page += 1
 
     # ------------------------------------------------------------------ #
+    def _total_pages(self, data: Any) -> int | None:
+        pagination = self._find_pagination(data)
+        value = (pagination or {}).get("totalPages")
+        return int(value) if isinstance(value, (int, float)) and value > 0 else None
+
+    def _find_pagination(self, data: Any, depth: int = 0) -> dict | None:
+        if depth > 8 or not isinstance(data, (dict, list)):
+            return None
+        if isinstance(data, dict):
+            if "totalPages" in data and "currentPage" in data:
+                return data
+            for value in data.values():
+                found = self._find_pagination(value, depth + 1)
+                if found:
+                    return found
+            return None
+        for element in data:
+            found = self._find_pagination(element, depth + 1)
+            if found:
+                return found
+        return None
+
     def _find_items(self, data: Any, depth: int = 0) -> list[dict]:
         """Rekurencyjnie znajduje listę ofert w `__NEXT_DATA__`."""
         if depth > 8 or data is None:
@@ -100,6 +181,34 @@ class OtodomScraper(BaseScraper):
                         return found
         return []
 
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _hierarchy(location: dict) -> dict[str, str]:
+        """Rozkłada `reverseGeocoding` na województwo, powiat, gminę i miejscowość.
+
+        Portal podaje tu rzeczywisty adres administracyjny, a nie „najbliższe
+        duże miasto": działka w Bezrzeczu ma w polu `address.city` wpisany
+        Szczecin, a w hierarchii — gminę Dobra (Szczecińska) w powiecie
+        polickim. Ta druga informacja jest prawdziwa i tę bierzemy.
+        """
+        mapping = {
+            "voivodeship": "voivodeship",
+            "county": "county",
+            "commune": "commune",
+            "city_or_village": "city",
+            "district": "district",
+        }
+        out: dict[str, str] = {}
+        levels = ((location.get("reverseGeocoding") or {}).get("locations")) or []
+        for level in levels:
+            if not isinstance(level, dict):
+                continue
+            field = mapping.get(str(level.get("locationLevel") or ""))
+            name = clean(level.get("name") or "")
+            if field and name:
+                out.setdefault(field, name)
+        return out
+
     def _parse(self, row: dict, ptype: PropertyType, ttype: TransactionType) -> RawListing | None:
         slug = row.get("slug")
         if not slug:
@@ -110,30 +219,58 @@ class OtodomScraper(BaseScraper):
             return None
 
         price = parse_number(self.dig(row, "totalPrice", "value") or row.get("price"))
+        if row.get("hidePrice"):
+            price = None          # „cena na zapytanie" to brak ceny, a nie zero
+        rent = parse_number(self.dig(row, "rentPrice", "value"))
         area = parse_number(row.get("areaInSquareMeters"))
+        plot_area = parse_number(row.get("terrainAreaInSquareMeters"))
+
         rooms = row.get("roomsNumber")
         if isinstance(rooms, str):
-            rooms = {"ONE": 1, "TWO": 2, "THREE": 3, "FOUR": 4, "FIVE": 5,
-                     "SIX": 6, "SEVEN": 7, "EIGHT": 8}.get(rooms.upper())
+            rooms = ROOMS_WORDS.get(rooms.upper())
+
+        floor = None
+        floor_raw = row.get("floorNumber")
+        if isinstance(floor_raw, (int, float)):
+            floor = int(floor_raw)
+        elif isinstance(floor_raw, str):
+            key = floor_raw.upper().replace("FLOOR_", "")
+            floor = FLOOR_WORDS.get(key, FLOOR_WORDS.get(floor_raw.upper()))
+            if floor is None and key.isdigit():
+                floor = int(key)
+
         location = row.get("location") or {}
         address = self.dig(location, "address", default={}) or {}
-        city = clean(self.dig(address, "city", "name", default="") or "")
-        district = clean(self.dig(address, "district", "name", default="") or "") or None
+        place = self._hierarchy(location)
+        city = place.get("city") or clean(self.dig(address, "city", "name", default="") or "")
         street = clean(self.dig(address, "street", "name", default="") or "") or None
-        county = clean(self.dig(address, "county", "name", default="") or "") or None
+        district = place.get("district") or clean(
+            self.dig(address, "district", "name", default="") or ""
+        ) or None
 
-        owner_type = str(row.get("agency") and "AGENCY" or row.get("ownerType") or "").upper()
-        seller_type = SellerType.POSREDNIK if owner_type in AGENCY_MARKERS else (
-            SellerType.PRYWATNA if owner_type == "PRIVATE" else SellerType.NIEZNANY
-        )
-        if str(row.get("developmentId") or "") not in ("", "None"):
+        agency = row.get("agency") if isinstance(row.get("agency"), dict) else None
+        advertiser = str(
+            (agency or {}).get("type") or row.get("extendedAdvertiserType") or ""
+        ).upper()
+        if row.get("isPrivateOwner"):
+            seller_type = SellerType.PRYWATNA
+        elif advertiser in AGENCY_MARKERS or agency:
+            seller_type = SellerType.POSREDNIK
+        elif advertiser in ("DEVELOPER",) or str(row.get("developmentId") or "0") not in ("0", ""):
             seller_type = SellerType.DEWELOPER
+        else:
+            seller_type = SellerType.NIEZNANY
 
         images = [
             img.get("large") or img.get("medium") or img.get("small")
             for img in (row.get("images") or [])
             if isinstance(img, dict)
         ]
+
+        estate = ESTATES.get(str(row.get("estate") or "").upper())
+        property_type = estate or ptype
+        if property_type == PropertyType.INNE:
+            property_type = guess_property_type(title)
 
         return RawListing(
             external_id=str(row.get("id") or slug),
@@ -143,23 +280,36 @@ class OtodomScraper(BaseScraper):
             description=clean(row.get("shortDescription") or row.get("description") or "") or None,
             price=price,
             area=area,
+            plot_area=plot_area,
             rooms=int(rooms) if isinstance(rooms, (int, float)) else None,
-            floor=None,
+            floor=floor,
             city=city or None,
             district=district,
             street=street,
-            county=county,
+            commune=place.get("commune"),
+            county=place.get("county")
+            or clean(self.dig(address, "county", "name", default="") or "")
+            or None,
+            voivodeship=place.get("voivodeship")
+            or clean(self.dig(address, "province", "name", default="") or "")
+            or None,
             lat=self.dig(location, "coordinates", "latitude"),
             lon=self.dig(location, "coordinates", "longitude"),
             seller_type=seller_type,
-            seller_name=clean(self.dig(row, "agency", "name", default="") or "") or None,
+            seller_name=clean((agency or {}).get("name") or "") or None,
             images=[i for i in images if i][:12],
-            published_at=parse_datetime(row.get("dateCreated") or row.get("createdAt")),
+            published_at=parse_datetime(row.get("dateCreatedFirst") or row.get("dateCreated")),
             source_updated_at=parse_datetime(row.get("pushedUpAt") or row.get("modifiedAt")),
-            property_type=ptype if ptype != PropertyType.INNE else guess_property_type(title),
+            property_type=property_type,
             transaction=ttype,
             market="pierwotny" if row.get("market") == "PRIMARY" else
                    ("wtorny" if row.get("market") == "SECONDARY" else None),
-            extra={"isPromoted": bool(row.get("isPromoted"))},
+            extra={
+                "czynsz": rent,
+                "promowana": bool(row.get("isPromoted")),
+                "cena_za_m2": parse_number(self.dig(row, "pricePerSquareMeter", "value")),
+                "biuro_id": (agency or {}).get("id"),
+                "biuro_slug": (agency or {}).get("slug"),
+            },
             raw=row,
         )

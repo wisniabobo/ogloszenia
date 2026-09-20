@@ -11,10 +11,12 @@ from .adresowo import AdresowoScraper
 from .agency_directory import AgencyDirectoryScraper
 from .amw import AMWScraper
 from .base import BaseScraper, RawListing, ScrapeContext
+from .bip import BipScraper
 from .domiporta import DomiportaScraper
 from .elicytacje_kas import ELicytacjeKASScraper
 from .ezamowienia import EZamowieniaScraper
 from .generic_html import GenericHtmlScraper
+from .gethome import GetHomeScraper
 from .gratka import GratkaScraper
 from .komornik import ELicytacjeScraper, LicytacjeKomornikScraper
 from .kowr import KOWRScraper
@@ -22,8 +24,6 @@ from .krz import KRZScraper
 from .morizon import MorizonScraper
 from .msig import MSiGScraper
 from .nieruchomosci_online import NieruchomosciOnlineScraper
-from .bip import BipScraper
-from .gethome import GetHomeScraper
 from .olx import OLXScraper
 from .otodom import OtodomScraper
 from .pkp import PKPScraper

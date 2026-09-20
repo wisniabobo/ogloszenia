@@ -83,7 +83,7 @@ class AMWScraper(BaseScraper):
     coverage = "krajowy"
 
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
-        voivodeship = (ctx.voivodeship or "opolskie").lower()
+        voivodeship = (ctx.voivodeship or "").lower()
         produced = 0
         for page in range(ctx.max_pages):
             url = f"{RESULTS}/page,{page},limit,100,surface_unit,ha,sort,estate_asc"

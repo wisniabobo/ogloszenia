@@ -128,7 +128,9 @@ def cmd_check_sources(
 def cmd_scan(
     source: list[str] = typer.Option(None, "--source", "-s", help="Skanuj tylko te źródła"),
     category: list[str] = typer.Option(None, "--category", "-c", help="Skanuj całą kategorię"),
-    region: str = typer.Option(None, help="Województwo (domyślnie z konfiguracji)"),
+    region: list[str] = typer.Option(
+        None, "--region", help="Zawęź do województw (domyślnie cała Polska)"
+    ),
     pages: int = typer.Option(None, help="Ile stron na sekcję"),
     limit: int = typer.Option(None, help="Maks. ofert na źródło"),
     details: bool = typer.Option(True, help="Dociągać karty ofert (wolniej, więcej danych)"),
@@ -155,7 +157,7 @@ def cmd_scan(
             categories=list(category or []) or None,
             max_pages=pages,
             max_items=limit,
-            voivodeship=region,
+            scope=list(region or []) or None,
             fetch_details=details,
             include_disabled=all_sources,
             deep=deep,
@@ -217,8 +219,10 @@ def cmd_web(
 
 @app.command("geocode")
 def cmd_geocode(
-    limit: int = typer.Option(300, help="Ile ofert geokodować w tym przebiegu"),
-    region: str = typer.Option(None, help="Województwo (domyślnie z konfiguracji)"),
+    limit: int = typer.Option(400, help="Ile ofert geokodować w tym przebiegu"),
+    region: list[str] = typer.Option(
+        None, "--region", help="Zawęź do województw (domyślnie cała Polska)"
+    ),
     all_listings: bool = typer.Option(False, "--all", help="Także oferty nieaktywne"),
 ) -> None:
     """Nadaje ofertom współrzędne (GUGiK, zapasowo OpenStreetMap).
@@ -230,11 +234,14 @@ def cmd_geocode(
 
     init_db()
     stats = asyncio.run(
-        geocode_pending(limit=limit, only_active=not all_listings, voivodeship=region)
+        geocode_pending(
+            limit=limit, only_active=not all_listings, scope=list(region or []) or None
+        )
     )
     console.print(
         f"[green]Geokodowanie:[/] sprawdzone {stats.checked}, z cache {stats.from_cache}, "
-        f"nowe {stats.geocoded}, nieudane {stats.failed}"
+        f"nowe {stats.geocoded}, poprawione regiony {stats.corrected}, "
+        f"nieudane {stats.failed}"
     )
     with session_scope() as session:
         total = session.scalar(select(func.count(Listing.id))) or 0

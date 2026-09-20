@@ -1,5 +1,5 @@
 # =============================================================================
-# REJESTR BIUR NIERUCHOMOŚCI — WOJ. OPOLSKIE
+# REJESTR BIUR NIERUCHOMOŚCI — CAŁA POLSKA
 # =============================================================================
 # WAŻNE: ten plik jest ZIARNEM, nie kompletną listą.
 #
@@ -9,7 +9,7 @@
 # `agencies` z licznikiem ofert. Po pierwszym pełnym skanie:
 #
 #     ogl agencies --min-offers 1          # wszystkie wykryte biura
-#     ogl agencies --export config/agencies_opolskie.yaml   # zapis z powrotem
+#     ogl agencies --export config/agencies.yaml   # zapis z powrotem
 #
 # Taka lista jest prawdziwa (wynika z danych), a nie przepisana z pamięci —
 # biura powstają i znikają, zmieniają nazwy i telefony.
@@ -20,12 +20,12 @@
 # =============================================================================
 
 meta:
-  wojewodztwo: opolskie
+  zasieg: cała Polska
   aktualizacja: auto
   zrodlo_prawdy: tabela `agencies` w bazie (uzupełniana przy każdym skanie)
 
-# Sieci franczyzowe działające w całym kraju — jeśli mają oddział w regionie,
-# ich oferty wpadną z portali i zostaną tu automatycznie potwierdzone.
+# Sieci franczyzowe działające w całym kraju — ich oferty wpadają z portali
+# i są tu automatycznie rozpoznawane po marce w nazwie oferenta.
 # Wpisy służą do rozpoznawania marki w nazwie oferenta ("Freedom Opole",
 # "RE/MAX Partner"), nie są deklaracją, że oddział istnieje.
 sieci_ogolnopolskie:
