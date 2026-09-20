@@ -70,6 +70,9 @@ LISTING_MARKERS = {"slug", "title"}
 #: Ile pozycji portal oddaje na stronę (maksimum przyjmowane przez wyszukiwarkę).
 PAGE_SIZE = 72
 
+#: `Floor_no` z karty oferty: „floor_1", „ground_floor", „cellar", „garret".
+DETAIL_FLOORS = {"ground_floor": 0, "cellar": -1, "garret": 99, "attic": 99}
+
 
 class OtodomScraper(BaseScraper):
     key = "otodom"
@@ -93,40 +96,54 @@ class OtodomScraper(BaseScraper):
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
         produced = 0
         searches = self.config.get("searches") or SEARCHES
+        # (obszar, transakcja, typ) -> ile stron portal deklaruje; None = jeszcze
+        # nie wiemy, 0 = sekcja wyczerpana
+        limits: dict[tuple[str, str, str], int | None] = {}
+        sections = [
+            (region, *search)
+            for region in self._region_slugs(ctx)
+            for search in searches
+        ]
 
-        for region_slug in self._region_slugs(ctx):
-            for transaction_slug, type_slug, ptype, ttype in searches:
-                page = 1
-                total_pages = ctx.max_pages
-                while page <= total_pages:
-                    if produced >= ctx.max_items:
-                        return
-                    url = (
-                        f"{BASE}/pl/wyniki/{transaction_slug}/{type_slug}/{region_slug}"
-                        f"?page={page}&limit={PAGE_SIZE}&by=LATEST&direction=DESC"
-                        f"&viewType=listing"
-                    )
-                    try:
-                        tree = await self.html(url)
-                    except Exception:
-                        break
-                    data = self.next_data(tree)
-                    rows = self._find_items(data)
-                    if not rows:
-                        break
-                    # W trybie głębokim idziemy do ostatniej strony, jaką portal
-                    # deklaruje — to jest cały zasób danej kategorii.
-                    if ctx.deep:
-                        declared = self._total_pages(data)
-                        total_pages = min(declared or ctx.max_pages, ctx.max_pages)
-                    for row in rows:
-                        item = self._parse(row, ptype, ttype)
-                        if item:
-                            yield item
-                            produced += 1
-                            if produced >= ctx.max_items:
-                                return
-                    page += 1
+        # Pętla po stronach jest **na zewnątrz**, a po sekcjach w środku: przy
+        # zawężonym limicie mieszkania nie zjadają całego budżetu, a działki
+        # i lokale nie zostają bez ani jednej oferty.
+        page = 1
+        while page <= ctx.max_pages and sections:
+            for region_slug, transaction_slug, type_slug, ptype, ttype in list(sections):
+                if produced >= ctx.max_items:
+                    return
+                key = (region_slug, transaction_slug, type_slug)
+                declared = limits.get(key)
+                if declared is not None and page > declared:
+                    sections.remove((region_slug, transaction_slug, type_slug, ptype, ttype))
+                    continue
+                url = (
+                    f"{BASE}/pl/wyniki/{transaction_slug}/{type_slug}/{region_slug}"
+                    f"?page={page}&limit={PAGE_SIZE}&by=LATEST&direction=DESC"
+                    f"&viewType=listing"
+                )
+                try:
+                    tree = await self.html(url)
+                except Exception:
+                    sections.remove((region_slug, transaction_slug, type_slug, ptype, ttype))
+                    continue
+                data = self.next_data(tree)
+                rows = self._find_items(data)
+                if not rows:
+                    sections.remove((region_slug, transaction_slug, type_slug, ptype, ttype))
+                    continue
+                # Portal deklaruje, ile stron ma dana sekcja — w trybie głębokim
+                # idziemy do ostatniej i to jest cały jego zasób.
+                limits[key] = self._total_pages(data) or page
+                for row in rows:
+                    item = self._parse(row, ptype, ttype)
+                    if item:
+                        yield item
+                        produced += 1
+                        if produced >= ctx.max_items:
+                            return
+            page += 1
 
     # ------------------------------------------------------------------ #
     def _total_pages(self, data: Any) -> int | None:
@@ -313,3 +330,72 @@ class OtodomScraper(BaseScraper):
             },
             raw=row,
         )
+
+
+    # ------------------------------------------------------------------ #
+    # Karta oferty
+    # ------------------------------------------------------------------ #
+    async def fetch_detail(self, url: str) -> dict:
+        """Dociąga z karty oferty to, czego nie ma na liście wyników.
+
+        Najważniejszy jest **numer telefonu**: Otodom podaje go wprost
+        w `__NEXT_DATA__` karty — osobno numer agenta (`contactDetails.phones`)
+        i centralę biura (`owner.phones`). Na liście wyników numeru nie ma
+        w ogóle, więc bez wejścia na kartę kontakt przy ofertach Otodomu
+        pozostawał pusty.
+
+        Poza tym stąd bierzemy pełny opis (lista wyników ma tylko zajawkę),
+        rok budowy, piętro, materiał i stan wykończenia.
+        """
+        tree = await self.html(url)
+        ad = self.dig(self.next_data(tree), "props", "pageProps", "ad", default={}) or {}
+        if not ad:
+            return {}
+
+        phones: list[str] = []
+        for source in (ad.get("contactDetails") or {}, ad.get("owner") or {}):
+            for phone in source.get("phones") or []:
+                value = clean(phone)
+                if value and value not in phones:
+                    phones.append(value)
+
+        target = ad.get("target") or {}
+        characteristics = {
+            c.get("key"): c.get("value")
+            for c in (ad.get("characteristics") or [])
+            if isinstance(c, dict)
+        }
+
+        floor = None
+        floor_raw = (target.get("Floor_no") or [None])[0]
+        if isinstance(floor_raw, str):
+            floor = DETAIL_FLOORS.get(floor_raw)
+            if floor is None and floor_raw.startswith("floor_"):
+                tail = floor_raw.removeprefix("floor_")
+                floor = int(tail) if tail.isdigit() else None
+
+        location = ad.get("location") or {}
+        place = self._hierarchy(location)
+
+        out: dict[str, Any] = {
+            "phones_raw": phones,
+            "description": clean(ad.get("description") or "") or None,
+            "year_built": parse_number(target.get("Build_year")),
+            "floor": floor,
+            "floors_total": parse_number(target.get("Building_floors_num")),
+            "building_type": clean((target.get("Building_type") or [""])[0]) or None,
+            "plot_area": parse_number(target.get("Terrain_area")),
+            "lat": self.dig(location, "coordinates", "latitude"),
+            "lon": self.dig(location, "coordinates", "longitude"),
+            "market": {"secondary": "wtorny", "primary": "pierwotny"}.get(
+                str(characteristics.get("market") or "").lower()
+            ),
+            "city": place.get("city"),
+            "district": place.get("district"),
+            "commune": place.get("commune"),
+            "county": place.get("county"),
+            "voivodeship": place.get("voivodeship"),
+            "street": clean(self.dig(ad, "location", "address", "street", "name", default="") or "")
+            or None,
+        }
+        return {k: v for k, v in out.items() if v not in (None, "", [])}

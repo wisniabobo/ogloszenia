@@ -21,7 +21,13 @@ sources:
     niego numery bierzemy z treści ogłoszenia.
 
     '
-  config: {}
+  config:
+    # 16 województw x 10 kategorii x 50 ofert = jedna strona z każdego przekroju.
+    # Przy wspólnym limicie 400 skan kończył się na pierwszym województwie.
+    max_pages: 1
+    max_items: 8000
+    deep_max_pages: 20
+    deep_max_items: 160000
 - key: otodom
   name: Otodom.pl
   scraper: otodom
@@ -33,7 +39,13 @@ sources:
   coverage: krajowy
   sprawdzono: 2026-09-19
   notes: Największy portal ofert biur i deweloperów. Dane w __NEXT_DATA__.
-  config: {}
+  config:
+    # 12 wyszukiwań x 72 oferty na stronę; przebieg głęboki schodzi do ostatniej
+    # strony, jaką portal deklaruje (dla mieszkań na sprzedaż to 2096 stron).
+    max_pages: 2
+    max_items: 2000
+    deep_max_pages: 2200
+    deep_max_items: 400000
 - key: gratka
   name: Gratka.pl
   scraper: gratka

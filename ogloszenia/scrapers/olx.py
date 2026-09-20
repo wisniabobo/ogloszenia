@@ -100,14 +100,24 @@ class OLXScraper(BaseScraper):
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
         produced = 0
         seen: set[str] = set()
+        exhausted: set[tuple[int, int]] = set()
         max_pages = ctx.max_pages if not ctx.deep else MAX_OFFSET // PAGE_SIZE
+        regions = self._regions(ctx)
 
-        for voivodeship, region_id in self._regions(ctx):
-            for category_id, (ptype, ttype) in self.categories.items():
-                for page in range(max_pages):
-                    offset = page * PAGE_SIZE
-                    if produced >= ctx.max_items or offset >= MAX_OFFSET:
-                        break
+        # Pętla po stronach jest **na zewnątrz**, a po województwach w środku.
+        # Odwrotna kolejność wyczerpywała limit ofert na pierwszym regionie
+        # z brzegu i do pozostałych piętnastu skan nigdy nie docierał — przy
+        # zawężeniu limitem w bazie lądowało samo Dolnośląskie.
+        for page in range(max_pages):
+            offset = page * PAGE_SIZE
+            if offset >= MAX_OFFSET:
+                return
+            for voivodeship, region_id in regions:
+                for category_id, (ptype, ttype) in self.categories.items():
+                    if produced >= ctx.max_items:
+                        return
+                    if (region_id, category_id) in exhausted:
+                        continue
                     params = {
                         "offset": offset,
                         "limit": PAGE_SIZE,
@@ -118,10 +128,11 @@ class OLXScraper(BaseScraper):
                     try:
                         payload = await self.client.get_json(f"{API}/offers/", params=params)
                     except Exception:
-                        break
+                        exhausted.add((region_id, category_id))
+                        continue
                     rows = self.dig(payload, "data", default=[]) or []
-                    if not rows:
-                        break
+                    if len(rows) < PAGE_SIZE:
+                        exhausted.add((region_id, category_id))
                     for row in rows:
                         item = self._parse_offer(row, ptype, ttype)
                         if item is None or item.external_id in seen:
@@ -130,10 +141,8 @@ class OLXScraper(BaseScraper):
                         seen.add(item.external_id)
                         yield item
                         produced += 1
-                    if len(rows) < PAGE_SIZE:
-                        break
-                if produced >= ctx.max_items:
-                    return
+            if len(exhausted) >= len(regions) * len(self.categories):
+                return
 
     # ------------------------------------------------------------------ #
     def _parse_offer(

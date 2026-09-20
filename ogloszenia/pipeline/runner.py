@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import timedelta
 
 from sqlalchemy import func, select
@@ -224,10 +224,32 @@ JS_REQUIRED_MESSAGE = (
 )
 
 
+def _source_context(source: Source, ctx: ScrapeContext) -> ScrapeContext:
+    """Kontekst z limitami danego źródła.
+
+    Wspólny limit „400 ofert na źródło" ma sens przy BIP-ie gminy i jest
+    bez sensu przy OLX-ie, który dzieli zasób na 16 województw razy 10
+    kategorii — przy takim limicie skan nie docierał poza pierwszy region.
+    Dlatego źródło może podnieść swój limit w `config/sources.yaml`.
+    """
+    config = source.config or {}
+    prefix = "deep_" if ctx.deep else ""
+    pages = config.get(f"{prefix}max_pages", config.get("max_pages"))
+    items = config.get(f"{prefix}max_items", config.get("max_items"))
+    if pages is None and items is None:
+        return ctx
+    return replace(
+        ctx,
+        max_pages=int(pages) if pages is not None else ctx.max_pages,
+        max_items=int(items) if items is not None else ctx.max_items,
+    )
+
+
 async def _collect(source: Source, client: HttpClient, ctx: ScrapeContext) -> tuple[list[RawListing], str]:
     if (source.config or {}).get("requires_js"):
         # lepiej powiedzieć wprost, że się nie da, niż zwrócić ciche zero
         return [], JS_REQUIRED_MESSAGE
+    ctx = _source_context(source, ctx)
     scraper = _build_scraper(source, client)
     items: list[RawListing] = []
     error = ""

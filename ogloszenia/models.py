@@ -223,6 +223,10 @@ class Listing(Base):
     geo_precision: Mapped[str | None] = mapped_column(String(16))   # address/street/city
     geo_source: Mapped[str | None] = mapped_column(String(24))      # gugik/nominatim/portal
     teryt: Mapped[str | None] = mapped_column(String(16), index=True)
+    #: Kiedy dociągnęliśmy kartę oferty. Pusty znaczy „jeszcze nie próbowano" —
+    #: dzięki temu przebieg po numery telefonu nie wraca w kółko do tych samych
+    #: ofert, które kartę mają, ale numeru w niej nie było.
+    detail_fetched_at: Mapped[datetime | None] = mapped_column(DateTime)
     simc: Mapped[str | None] = mapped_column(String(16))
     postal_code: Mapped[str | None] = mapped_column(String(8))
     poi: Mapped[dict] = mapped_column(JSON, default=dict)           # odległości do udogodnień

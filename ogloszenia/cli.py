@@ -217,6 +217,29 @@ def cmd_web(
     uvicorn.run("ogloszenia.api:app", host=host, port=port, reload=reload, log_level="info")
 
 
+@app.command("kontakty")
+def cmd_details(
+    limit: int = typer.Option(300, help="Ile kart ofert dociągnąć w tym przebiegu"),
+    source: list[str] = typer.Option(None, "--source", "-s", help="Tylko te źródła"),
+) -> None:
+    """Dociąga karty ofert po numery telefonu i pełne opisy.
+
+    Listy wyników portali numeru nie podają; karta pojedynczej oferty — owszem.
+    Wejście na kartę to jedno zapytanie na ofertę, więc przebieg jest
+    budżetowany: bierze oferty bez kontaktu, najnowsze najpierw.
+    """
+    from .pipeline.details import enrich_details
+
+    init_db()
+    stats = asyncio.run(
+        enrich_details(limit=limit, sources=list(source or []) or None)
+    )
+    console.print(
+        f"[green]Karty ofert:[/] sprawdzone {stats.checked}, pobrane {stats.fetched}, "
+        f"z numerem {stats.with_phone}, nieudane {stats.failed}"
+    )
+
+
 @app.command("geocode")
 def cmd_geocode(
     limit: int = typer.Option(400, help="Ile ofert geokodować w tym przebiegu"),
