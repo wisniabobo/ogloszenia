@@ -1,0 +1,19 @@
+[Unit]
+Description=Metruj — dociąganie kart ofert po numery telefonu
+
+[Service]
+Type=oneshot
+User=metruj
+Group=metruj
+WorkingDirectory=/opt/metruj
+EnvironmentFile=/opt/metruj/.env
+# Karta oferty to jedno zapytanie na ogłoszenie, więc przebieg jest
+# budżetowany: bierze oferty bez kontaktu, najnowsze najpierw.
+ExecStart=/opt/metruj/.venv/bin/python -m metruj.cli kontakty --limit 1500
+TimeoutStartSec=7200
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/metruj/data

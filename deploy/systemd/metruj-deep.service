@@ -1,0 +1,21 @@
+[Unit]
+Description=Metruj — pełne przejście wyników (dobowe)
+
+[Service]
+Type=oneshot
+User=metruj
+Group=metruj
+WorkingDirectory=/opt/metruj
+EnvironmentFile=/opt/metruj/.env
+# Przejście do ostatniej strony każdego wyszukiwania — to ono daje komplet
+# ofert z kraju. Karty ofert pomijamy (--no-details), bo przy setkach tysięcy
+# pozycji to osobny, budżetowany przebieg.
+ExecStart=/opt/metruj/.venv/bin/python -m metruj.cli scan --deep --no-details
+ExecStartPost=/opt/metruj/.venv/bin/python -m metruj.cli geocode --limit 20000
+TimeoutStartSec=43200
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/metruj/data

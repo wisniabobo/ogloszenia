@@ -7,7 +7,7 @@
 #
 # Co robi:
 #   1. instaluje Dockera, jeśli go nie ma,
-#   2. klonuje repozytorium do /opt/ogloszenia,
+#   2. klonuje repozytorium do /opt/metruj,
 #   3. tworzy .env z losową solą do haszowania numerów,
 #   4. uruchamia aplikację na 127.0.0.1:8000 (nie zajmuje portów 80/443),
 #   5. jeśli na serwerze jest nginx — dokłada vhosta dla podanej domeny
@@ -23,7 +23,7 @@ DOMAIN="${1:-}"
 ACME_EMAIL="${2:-}"
 REPO="${REPO:-https://github.com/wisniabobo/ogloszenia.git}"
 BRANCH="${BRANCH:-main}"
-APP_DIR="${APP_DIR:-/opt/ogloszenia}"
+APP_DIR="${APP_DIR:-/opt/metruj}"
 
 log()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m[!] %s\033[0m\n' "$*"; }
@@ -111,8 +111,8 @@ if command -v nginx >/dev/null 2>&1 && [[ -d /etc/nginx/sites-available ]]; then
 	fi
 	sed "s/bot\.wisnia\.dev/$DOMAIN/g" deploy/nginx-vhost.conf > "$VHOST"
 	ln -sf "$VHOST" "/etc/nginx/sites-enabled/$DOMAIN"
-	mkdir -p /var/cache/nginx/ogloszenia
-	chown -R www-data:www-data /var/cache/nginx/ogloszenia 2>/dev/null || true
+	mkdir -p /var/cache/nginx/metruj
+	chown -R www-data:www-data /var/cache/nginx/metruj 2>/dev/null || true
 
 	if nginx -t 2>/dev/null; then
 		systemctl reload nginx

@@ -1,5 +1,5 @@
 [Unit]
-Description=ogloszenia — zbieranie ofert co 15 minut
+Description=Metruj — zbieranie nowych ofert co 15 minut
 
 [Timer]
 OnBootSec=3min

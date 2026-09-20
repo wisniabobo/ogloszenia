@@ -17,8 +17,8 @@ DOMAIN="${1:-}"
 ACME_EMAIL="${2:-}"
 REPO="${REPO:-https://github.com/wisniabobo/ogloszenia.git}"
 BRANCH="${BRANCH:-main}"
-APP_DIR="${APP_DIR:-/opt/ogloszenia}"
-APP_USER="${APP_USER:-ogl}"
+APP_DIR="${APP_DIR:-/opt/metruj}"
+APP_USER="${APP_USER:-metruj}"
 PORT="${PORT:-8000}"
 
 log()  { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
@@ -107,9 +107,9 @@ echo "baza zainicjowana"
 
 # --------------------------------------------------------------------------- #
 log "Usługi systemd"
-cat > /etc/systemd/system/ogloszenia-web.service <<UNIT
+cat > /etc/systemd/system/metruj-web.service <<UNIT
 [Unit]
-Description=ogloszenia — interfejs i API
+Description=Metruj — interfejs i API
 After=network-online.target
 Wants=network-online.target
 
@@ -132,13 +132,13 @@ ReadWritePaths=$APP_DIR/data
 WantedBy=multi-user.target
 UNIT
 
-cat > /etc/systemd/system/ogloszenia-scan.service <<UNIT
+cat > /etc/systemd/system/metruj-scan.service <<UNIT
 [Unit]
-Description=ogloszenia — zbieranie ofert
+Description=Metruj — szybki przebieg zbierania ofert
 # Zwykły skan i dobowe pełne przejście nie mogą chodzić naraz — oba piszą
 # do tej samej bazy i do cache'u geokodowania.
-Conflicts=ogloszenia-deep.service
-After=ogloszenia-deep.service
+Conflicts=metruj-deep.service
+After=metruj-deep.service
 
 [Service]
 Type=oneshot
@@ -156,9 +156,9 @@ ProtectHome=true
 ReadWritePaths=$APP_DIR/data
 UNIT
 
-cat > /etc/systemd/system/ogloszenia-scan.timer <<UNIT
+cat > /etc/systemd/system/metruj-scan.timer <<UNIT
 [Unit]
-Description=ogloszenia — zbieranie ofert co 15 minut
+Description=Metruj — zbieranie nowych ofert co 15 minut
 
 [Timer]
 OnBootSec=5min
@@ -171,10 +171,10 @@ WantedBy=timers.target
 UNIT
 
 # Pełne przejście wyników raz na dobę — zwykły skan bierze tylko nowości.
-cat > /etc/systemd/system/ogloszenia-deep.service <<UNIT
+cat > /etc/systemd/system/metruj-deep.service <<UNIT
 [Unit]
-Description=ogloszenia — pełne przejście wyników (dobowe)
-Conflicts=ogloszenia-scan.service
+Description=Metruj — pełne przejście wyników (dobowe)
+Conflicts=metruj-scan.service
 
 [Service]
 Type=oneshot
@@ -192,9 +192,9 @@ ProtectHome=true
 ReadWritePaths=$APP_DIR/data
 UNIT
 
-cat > /etc/systemd/system/ogloszenia-deep.timer <<UNIT
+cat > /etc/systemd/system/metruj-deep.timer <<UNIT
 [Unit]
-Description=ogloszenia — pełne przejście wyników co dobę
+Description=Metruj — pełne przejście wyników co dobę
 
 [Timer]
 OnCalendar=*-*-* 03:20:00
@@ -206,9 +206,9 @@ WantedBy=timers.target
 UNIT
 
 systemctl daemon-reload
-systemctl enable --now ogloszenia-web >/dev/null 2>&1
-systemctl restart ogloszenia-web
-systemctl enable --now ogloszenia-scan.timer ogloszenia-deep.timer >/dev/null 2>&1
+systemctl enable --now metruj-web >/dev/null 2>&1
+systemctl restart metruj-web
+systemctl enable --now metruj-scan.timer metruj-deep.timer >/dev/null 2>&1
 echo "usługi uruchomione"
 
 log "Czy aplikacja odpowiada"
@@ -219,7 +219,7 @@ for _ in $(seq 1 30); do
 	sleep 2
 done
 curl -fsS --max-time 5 "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 \
-	|| { journalctl -u ogloszenia-web -n 30 --no-pager; die "aplikacja nie wstała"; }
+	|| { journalctl -u metruj-web -n 30 --no-pager; die "aplikacja nie wstała"; }
 
 # --------------------------------------------------------------------------- #
 if command -v nginx >/dev/null 2>&1 && [[ -d /etc/nginx/sites-available ]]; then
@@ -233,8 +233,8 @@ if command -v nginx >/dev/null 2>&1 && [[ -d /etc/nginx/sites-available ]]; then
 	sed -e "s/bot\.wisnia\.dev/$DOMAIN/g" -e "s/127\.0\.0\.1:8000/127.0.0.1:$PORT/g" \
 		"$APP_DIR/deploy/nginx-vhost.conf" > "$VHOST"
 	ln -sf "$VHOST" "/etc/nginx/sites-enabled/$DOMAIN"
-	mkdir -p /var/cache/nginx/ogloszenia
-	chown -R www-data:www-data /var/cache/nginx/ogloszenia 2>/dev/null || true
+	mkdir -p /var/cache/nginx/metruj
+	chown -R www-data:www-data /var/cache/nginx/metruj 2>/dev/null || true
 
 	if nginx -t 2>/dev/null; then
 		systemctl reload nginx
@@ -268,7 +268,7 @@ echo "  strona:   https://$DOMAIN"
 echo "  API:      https://$DOMAIN/api/health"
 echo "  dokum.:   https://$DOMAIN/docs"
 echo
-echo "  logi:         journalctl -u ogloszenia-web -f"
-echo "  zbieranie:    journalctl -u ogloszenia-scan -f"
-echo "  harmonogram:  systemctl list-timers 'ogloszenia*'"
+echo "  logi:         journalctl -u metruj-web -f"
+echo "  zbieranie:    journalctl -u metruj-scan -f"
+echo "  harmonogram:  systemctl list-timers 'metruj*'"
 echo "  aktualizacja: sudo bash $APP_DIR/deploy/install.sh $DOMAIN ${ACME_EMAIL:-}"

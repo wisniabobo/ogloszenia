@@ -17,8 +17,8 @@
 set -euo pipefail
 
 TARGET="${1:-}"
-REMOTE_DIR="${REMOTE_DIR:-/opt/ogloszenia}"
-APP_USER="${APP_USER:-ogl}"
+REMOTE_DIR="${REMOTE_DIR:-/opt/metruj}"
+APP_USER="${APP_USER:-metruj}"
 BRANCH="${BRANCH:-main}"
 
 if [[ -z "$TARGET" ]]; then
@@ -40,14 +40,16 @@ ssh -o BatchMode=yes -o PasswordAuthentication=no "$TARGET" bash -euo pipefail <
 	sudo -u "$APP_USER" "$REMOTE_DIR/.venv/bin/pip" install -q -r requirements.txt
 
 	echo "==> Domykam schemat bazy i wczytuję rejestr źródeł"
+	# init-db dokłada też kolumny, których nie było w poprzedniej wersji —
+	# bez tego pierwsze zapytanie po restarcie kończy się „no such column".
 	sudo -u "$APP_USER" "$REMOTE_DIR/.venv/bin/python" -m metruj.cli init-db
 
 	echo "==> Restartuję interfejs"
-	systemctl restart ogloszenia-web
-	systemctl is-active ogloszenia-web
+	systemctl restart metruj-web
+	systemctl is-active metruj-web
 
 	echo "==> Stan zbierania"
-	systemctl list-timers --all --no-legend | grep ogloszenia || true
+	systemctl list-timers --all --no-legend | grep metruj || true
 REMOTE
 
 echo "==> Gotowe. Sprawdź: https://bot.wisnia.dev/api/health"

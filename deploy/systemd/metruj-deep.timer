@@ -1,0 +1,10 @@
+[Unit]
+Description=Metruj — pełne przejście wyników raz na dobę
+
+[Timer]
+OnCalendar=*-*-* 03:20:00
+RandomizedDelaySec=900
+Persistent=true
+
+[Install]
+WantedBy=timers.target

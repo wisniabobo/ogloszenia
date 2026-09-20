@@ -1,0 +1,21 @@
+[Unit]
+Description=Metruj — szybki przebieg zbierania ofert
+
+[Service]
+Type=oneshot
+User=metruj
+Group=metruj
+WorkingDirectory=/opt/metruj
+EnvironmentFile=/opt/metruj/.env
+# Szybki przebieg bierze najnowsze strony każdego źródła: nowa oferta ma trafić
+# do bazy w kilka minut. Komplet zbiera przebieg głęboki, raz na dobę.
+ExecStart=/opt/metruj/.venv/bin/python -m metruj.cli scan --notify
+ExecStartPost=/opt/metruj/.venv/bin/python -m metruj.cli geocode --limit 800
+ExecStartPost=/opt/metruj/.venv/bin/python -m metruj.cli kontakty --limit 400
+TimeoutStartSec=3600
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/metruj/data

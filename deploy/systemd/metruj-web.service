@@ -1,15 +1,15 @@
 [Unit]
-Description=ogloszenia — interfejs i API
+Description=Metruj — interfejs i API
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=exec
-User=ogl
-Group=ogl
-WorkingDirectory=/opt/ogloszenia
-EnvironmentFile=/opt/ogloszenia/.env
-ExecStart=/opt/ogloszenia/.venv/bin/uvicorn metruj.api:app \
+User=metruj
+Group=metruj
+WorkingDirectory=/opt/metruj
+EnvironmentFile=/opt/metruj/.env
+ExecStart=/opt/metruj/.venv/bin/uvicorn metruj.api:app \
     --host 127.0.0.1 --port 8000 --workers 2 --proxy-headers
 Restart=always
 RestartSec=5
@@ -18,7 +18,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/ogloszenia/data
+ReadWritePaths=/opt/metruj/data
 
 [Install]
 WantedBy=multi-user.target
