@@ -1,10 +1,12 @@
-"""CLI: `ogl <komenda>`."""
+"""CLI: `metruj <komenda>` (stara nazwa `ogl` działa dalej)."""
 
 from __future__ import annotations
 
 import asyncio
 import csv
 import json
+import logging
+import os
 import sys
 from pathlib import Path
 
@@ -22,9 +24,21 @@ from .utils.http import HttpClient
 
 app = typer.Typer(
     add_completion=False,
-    help="Bot monitorująco-scrapujący: nieruchomości, licytacje i przetargi (woj. opolskie).",
+    help="Metruj — monitor rynku nieruchomości: oferty, licytacje i przetargi z całej Polski.",
 )
 console = Console()
+
+# Przebiegi chodzą z systemd, gdzie jedynym oknem na to, co się dzieje, jest
+# dziennik. Bez tego `journalctl` pokazywał „Skanowanie…" i nic więcej przez
+# godzinę, a operator nie miał jak odróżnić pracy od zawieszenia.
+logging.basicConfig(
+    level=os.environ.get("METRUJ_LOG_LEVEL", os.environ.get("OGL_LOG_LEVEL", "INFO")).upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+    stream=sys.stderr,
+)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 def _money(value: float | None) -> str:
