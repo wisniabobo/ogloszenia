@@ -96,8 +96,9 @@ a wyniki (łącznie z porażkami) zapisane w `config/sources.yaml`.
 | **OLX.pl** | oferty prywatne, najszybciej | `/api/v1/offers/` — jedyna ścieżka API, którą OLX sam dopuszcza w robots.txt |
 | **Otodom.pl** | oferty biur i deweloperów | dane z `__NEXT_DATA__` |
 | **Domiporta.pl** | oferty biur | HTML + JSON-LD |
-| **Morizon.pl** | oferty biur | paginacja tylko przez `page=` (reszta zabroniona w robots) |
-| **Gratka.pl** | oferty biur | robots dopuszcza wyłącznie `page=2`…`page=10` |
+| **GetHome.pl** | oferty biur i deweloperów | `window.__INITIAL_STATE__`: cena, metraż, zdjęcia, **współrzędne i numer telefonu** |
+| **Morizon.pl** | oferty biur | ten sam silnik co Gratka |
+| **Gratka.pl** | oferty biur | wspólny szablon kart z Morizonem — jeden parser dla obu |
 | **licytacje.komornik.pl** | licytacje komornicze | cena wywoławcza, oszacowanie, rękojmia, termin, adres |
 | **eLicytacje KAS** | licytacje urzędów skarbowych | publiczne API; także **etap przed licytacją** (opis i oszacowanie) |
 | **Monitor Sądowy i Gospodarczy** | sprzedaż z mas upadłości | publiczne API wyszukiwarki MSiG |
@@ -216,18 +217,39 @@ dymka, spakowane gzipem. 2000 ofert to ~86 kB i kilka milisekund po stronie serw
 
 ## Telefony: co się da, a czego nie
 
-Portale coraz mocniej chowają numery. OLX na zapytanie o telefon odpowiada
-wprost `Disallowed for this user` — bez zalogowanego konta numeru nie wyda
-i nie ma na to obejścia. W treści ogłoszeń numer podaje mniej niż 5% ofert.
+Stu procent nie będzie i warto powiedzieć wprost dlaczego.
 
-Jest jednak druga, całkowicie jawna droga: **katalog biur, w którym pośrednicy
-sami publikują swój numer**. Jeśli ofertę wystawiło biuro, którego numer znamy,
-to jest to numer kontaktowy do tej oferty.
+OLX ma publiczny adres `/api/v1/offers/{id}/limited-phones/` i robots.txt go
+dopuszcza, ale po kilkunastu zapytaniach z jednego adresu IP zaczyna odpowiadać
+`Disallowed for this user`. To limit po stronie serwisu i nie zamierzamy go
+obchodzić. Otodom i Domiporta numeru w ogóle nie wystawiają w HTML-u.
+W treści ogłoszeń numer zostaje przy mniej niż 5% ofert — portale go wycinają.
 
-Dlatego każdy numer niesie **etykietę pochodzenia** — „z ogłoszenia" albo
-„centrala biura". Bez tego rozróżnienia podsuwalibyśmy numer, sugerując, że
-stoi w ogłoszeniu. Efekt: kontakt jest dostępny przy **1 867 z 4 965** ofert
-zamiast przy 284.
+Numer bierzemy więc z czterech jawnych źródeł, w tej kolejności:
+
+1. **Z treści ogłoszenia**, jeśli sprzedający go tam zostawił.
+2. **Z danych portalu** — GetHome podaje numer agenta wprost przy 99% ofert,
+   jako jedyny z dużych serwisów.
+3. **Z katalogu biur**, w którym pośrednicy sami publikują swój numer. Skoro
+   ofertę wystawiło biuro, którego numer znamy, to jest to numer do tej oferty.
+   Czytamy katalogi pięciu województw, bo sporo biur działających w Opolskiem
+   ma siedzibę tuż za jego granicą.
+4. **Z bliźniaczego ogłoszenia** tej samej nieruchomości na innym portalu.
+   Jedno mieszkanie wisi zwykle w kilku serwisach i nie każdy chowa kontakt.
+
+Każdy numer niesie **etykietę pochodzenia** — „z ogłoszenia", „centrala biura"
+albo „z tej samej oferty na GetHome.pl". Bez tego podsuwalibyśmy numer,
+sugerując, że stoi w tym konkretnym ogłoszeniu.
+
+Efekt: kontakt przy **44% ofert** zamiast przy 5%. Reszta to w większości
+ogłoszenia osób prywatnych z OLX, gdzie numer widać wyłącznie po kliknięciu
+„pokaż numer" na samym OLX — i tam odsyłamy.
+
+**Facebook Marketplace zostaje poza serwisem.** Regulamin Meta zakazuje
+automatycznego pobierania treści bez pisemnej zgody, Marketplace wymaga
+zalogowanego konta, a Meta takie sprawy prowadzi w sądach. Zbieranie stamtąd
+oznaczałoby użycie czyjegoś konta wbrew regulaminowi — ryzyko spadłoby
+na właściciela serwisu, nie na nas.
 
 ---
 
