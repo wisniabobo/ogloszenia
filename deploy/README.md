@@ -44,7 +44,7 @@ git clone https://github.com/wisniabobo/ogloszenia.git /opt/ogloszenia
 cd /opt/ogloszenia
 cp .env.example .env && nano .env      # DOMAIN, ACME_EMAIL, OGL_PHONE_HASH_SALT
 docker compose up -d --build
-docker compose exec web python -m ogloszenia.cli init-db
+docker compose exec web python -m metruj.cli init-db
 
 sudo cp deploy/nginx-vhost.conf /etc/nginx/sites-available/bot.wisnia.dev
 sudo ln -sf /etc/nginx/sites-available/bot.wisnia.dev /etc/nginx/sites-enabled/
@@ -66,10 +66,10 @@ sudo certbot --nginx -d bot.wisnia.dev
 ```bash
 cd /opt/ogloszenia
 docker compose logs -f worker                                   # co robi zbieranie
-docker compose exec web python -m ogloszenia.cli stats
-docker compose exec web python -m ogloszenia.cli check-sources
-docker compose exec web python -m ogloszenia.cli scan --pages 5
-docker compose exec web python -m ogloszenia.cli geocode --limit 2000
+docker compose exec web python -m metruj.cli stats
+docker compose exec web python -m metruj.cli check-sources
+docker compose exec web python -m metruj.cli scan --pages 5
+docker compose exec web python -m metruj.cli geocode --limit 2000
 docker compose restart web                                      # po zmianie .env
 ```
 
@@ -80,7 +80,7 @@ Cała baza to jeden plik:
 ```bash
 docker compose exec web sh -c 'python -c "
 import sqlite3, shutil
-src = sqlite3.connect(\"/data/ogloszenia.db\")
+src = sqlite3.connect(\"/data/metruj.db\")
 dst = sqlite3.connect(\"/data/backup.db\")
 src.backup(dst); dst.close(); src.close()
 "'

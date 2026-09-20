@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from ogloszenia.geo import (
+from metruj.geo import (
     detect_location,
     detect_voivodeship,
     extract_street,
@@ -22,7 +22,7 @@ from ogloszenia.geo import (
     resolve_place,
     split_house_number,
 )
-from ogloszenia.geo.teryt import by_teryt, counties, towns, units, voivodeships
+from metruj.geo.teryt import by_teryt, counties, towns, units, voivodeships
 
 
 class TestRejestrTeryt:

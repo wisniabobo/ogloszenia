@@ -29,9 +29,10 @@ from ..utils.http import HttpClient
 from ..utils.phones import PhoneNumber
 from .dedup import compute_fingerprints, link_duplicates
 from .enrich import enrich_listing, recount_agencies, upsert_agency_record
+from .market import recompute as recompute_market
 from .normalize import normalize
 
-log = logging.getLogger("ogloszenia.runner")
+log = logging.getLogger("metruj.runner")
 
 #: Po ilu dniach bez zobaczenia oferty uznajemy ją za zdjętą.
 #: Liczymy w dobach, bo tylko pełne przejście wyników widzi CAŁY zasób —
@@ -455,5 +456,11 @@ async def run_scan(
 
     with session_scope() as session:
         recount_agencies(session)
+
+    # Odniesienie rynkowe liczymy po skanie, a nie przy wyświetlaniu strony:
+    # mediana ceny za metr dla miasta zmienia się raz na przebieg, a lista
+    # okazji ma się otwierać natychmiast.
+    with session_scope() as session:
+        recompute_market(session)
 
     return result

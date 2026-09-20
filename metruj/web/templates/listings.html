@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "_macros.html" import offer_card, pager, result_bar %}
+{% block title %}Oferty nieruchomości z całej Polski — Metruj{% endblock %}
+{% block heading %}Oferty{% endblock %}
+{% block subhead %}
+<p class="lede">Portale, strony biur, licytacje i przetargi z całej Polski —
+  po odsianiu powtórek tej samej nieruchomości.</p>
+{% endblock %}
+{% block actions %}
+  <a class="btn btn--quiet btn--sm" href="/mapa?{{ query_string }}">Zobacz na mapie</a>
+  <button class="btn btn--sm" onclick="saveSearch()">Powiadom o nowych</button>
+{% endblock %}
+{% block content %}
+
+{% include "_filters.html" %}
+
+{{ result_bar(total, filters, query_string, SORT_LABELS) }}
+
+<div>
+  {% for listing in listings %}{{ offer_card(listing) }}{% else %}
+    <div class="empty">
+      <strong>Żadne ogłoszenie nie pasuje do tych filtrów.</strong>
+      <p>Najczęściej wystarczy odpuścić jeden warunek:</p>
+      <div class="chips" style="justify-content:center">
+        {% if filters.price_max %}<a class="chip" href="?{{ query_string | replace_param('price_max', '') }}">bez górnej ceny</a>{% endif %}
+        {% if filters.city %}<a class="chip" href="?{{ query_string | replace_param('city', '') }}">w całej Polsce</a>{% endif %}
+        {% if filters.voivodeship %}<a class="chip" href="?{{ query_string | replace_param('voivodeship', '') }}">bez województwa</a>{% endif %}
+        {% if filters.street %}<a class="chip" href="?{{ query_string | replace_param('street', '') }}">bez ulicy i dzielnicy</a>{% endif %}
+        {% if filters.rooms_min or filters.rooms_max %}<a class="chip" href="?{{ query_string | replace_param('rooms_min', '') | replace_param('rooms_max', '') }}">bez liczby pokoi</a>{% endif %}
+        {% if filters.area_min or filters.area_max %}<a class="chip" href="?{{ query_string | replace_param('area_min', '') | replace_param('area_max', '') }}">bez metrażu</a>{% endif %}
+        {% if filters.property_type %}<a class="chip" href="?{{ query_string | replace_param('property_type', '') }}">każdy rodzaj nieruchomości</a>{% endif %}
+        <a class="chip" href="/nieruchomosci">zacznij od nowa</a>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+{{ pager(filters, pages, query_string) }}
+{% endblock %}

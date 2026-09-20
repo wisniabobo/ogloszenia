@@ -3,20 +3,22 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ogloszenia"
+name = "metruj"
 version = "1.0.0"
 description = "Bot monitorująco-scrapujący rynek nieruchomości, licytacji i przetargów (start: woj. opolskie)"
 requires-python = ">=3.10"
 dynamic = ["dependencies"]
 
 [project.scripts]
-ogl = "ogloszenia.cli:app"
+metruj = "metruj.cli:app"
+# Stara nazwa zostaje: mają jej skrypty wdrożeniowe i przyzwyczajenie.
+ogl = "metruj.cli:app"
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
 
 [tool.setuptools.packages.find]
-include = ["ogloszenia*"]
+include = ["metruj*"]
 
 [tool.ruff]
 line-length = 110

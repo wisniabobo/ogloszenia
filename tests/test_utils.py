@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from ogloszenia.utils.phones import extract_phones, mask, parse_phone
-from ogloszenia.utils.text import (
+from metruj.utils.phones import extract_phones, mask, parse_phone
+from metruj.utils.text import (
     extract_area,
     extract_case_number,
     extract_floor,
@@ -83,12 +83,12 @@ class TestDaty:
 class TestHtml:
     def test_usuwa_znaczniki(self):
         """OLX zwraca opis jako HTML — do bazy ma trafić czysty tekst."""
-        from ogloszenia.utils.text import strip_html
+        from metruj.utils.text import strip_html
 
         assert strip_html("<p>Ładne <b>mieszkanie</b></p><br>49 m2") == "Ładne mieszkanie 49 m2"
 
     def test_zamienia_encje(self):
-        from ogloszenia.utils.text import strip_html
+        from metruj.utils.text import strip_html
 
         assert strip_html("Dom&nbsp;z ogrodem &amp; garażem") == "Dom z ogrodem & garażem"
 

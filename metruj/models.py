@@ -223,6 +223,15 @@ class Listing(Base):
     geo_precision: Mapped[str | None] = mapped_column(String(16))   # address/street/city
     geo_source: Mapped[str | None] = mapped_column(String(24))      # gugik/nominatim/portal
     teryt: Mapped[str | None] = mapped_column(String(16), index=True)
+    #: Cena za metr tej oferty podzielona przez medianę rynkową dla tej samej
+    #: miejscowości, typu i transakcji. 1,00 to dokładnie mediana; 0,70 znaczy
+    #: „trzydzieści procent poniżej tego, co się tu płaci". Puste = nie ma
+    #: z czym porównać (za mało ofert w okolicy albo nietypowy przedmiot).
+    deal_ratio: Mapped[float | None] = mapped_column(Float, index=True)
+    #: Na jakim poziomie liczone jest odniesienie: miasto, powiat, województwo.
+    #: Uczciwość wobec czytającego: „30% poniżej mediany województwa" to inna
+    #: informacja niż „30% poniżej mediany dzielnicy".
+    deal_level: Mapped[str | None] = mapped_column(String(16))
     #: Kiedy dociągnęliśmy kartę oferty. Pusty znaczy „jeszcze nie próbowano" —
     #: dzięki temu przebieg po numery telefonu nie wraca w kółko do tych samych
     #: ofert, które kartę mają, ale numeru w niej nie było.
@@ -414,6 +423,31 @@ class Region(Base):
     lat: Mapped[float | None] = mapped_column(Float)
     lon: Mapped[float | None] = mapped_column(Float)
     teryt: Mapped[str | None] = mapped_column(String(16))
+
+
+class MarketStat(Base):
+    """Mediana ceny za metr dla zakresu (miasto/powiat/województwo + typ).
+
+    Liczona po skanie i zapisywana, bo odniesienie rynkowe ma być tanie do
+    odczytania: bez niego każda lista „okazji" musiałaby liczyć medianę
+    w locie dla każdej oferty z osobna.
+    """
+
+    __tablename__ = "market_stats"
+    __table_args__ = (
+        UniqueConstraint("level", "scope", "property_type", "transaction",
+                         name="uq_market_scope"),
+        Index("ix_market_scope", "level", "scope"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    level: Mapped[str] = mapped_column(String(16))       # miasto | powiat | wojewodztwo
+    scope: Mapped[str] = mapped_column(String(160))
+    property_type: Mapped[str] = mapped_column(String(32))
+    transaction: Mapped[str] = mapped_column(String(32))
+    median_price_m2: Mapped[float] = mapped_column(Float)
+    sample: Mapped[int] = mapped_column(Integer, default=0)
+    computed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class GeocodeCache(Base):

@@ -21,7 +21,7 @@ from .models import Source, utcnow
 from .pipeline.runner import run_scan, sync_sources
 from .settings import get_settings
 
-log = logging.getLogger("ogloszenia.scheduler")
+log = logging.getLogger("metruj.scheduler")
 
 
 async def scan_source(source_key: str) -> None:

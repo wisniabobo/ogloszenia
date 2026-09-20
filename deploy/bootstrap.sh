@@ -73,7 +73,7 @@ if [[ ! -f .env ]]; then
 		echo "DOMAIN=$DOMAIN"
 		[[ -n "$ACME_EMAIL" ]] && echo "ACME_EMAIL=$ACME_EMAIL"
 		echo "OGL_PHONE_HASH_SALT=$SALT"
-		echo "OGL_DATABASE_URL=sqlite:////data/ogloszenia.db"
+		echo "OGL_DATABASE_URL=sqlite:////data/metruj.db"
 	} >> .env
 	echo "utworzono .env (sól do haszowania numerów wylosowana)"
 else
@@ -84,7 +84,7 @@ fi
 log "Buduję obraz i uruchamiam usługi"
 docker compose up -d --build
 sleep 5
-docker compose exec -T web python -m ogloszenia.cli init-db || true
+docker compose exec -T web python -m metruj.cli init-db || true
 
 log "Sprawdzam, czy aplikacja odpowiada"
 for _ in $(seq 1 30); do
@@ -150,9 +150,9 @@ fi
 
 # --------------------------------------------------------------------------- #
 log "Pierwszy skan (to potrwa kilka minut)"
-docker compose exec -T web python -m ogloszenia.cli scan --pages 3 || true
-docker compose exec -T web python -m ogloszenia.cli geocode --limit 1000 || true
-docker compose exec -T web python -m ogloszenia.cli stats || true
+docker compose exec -T web python -m metruj.cli scan --pages 3 || true
+docker compose exec -T web python -m metruj.cli geocode --limit 1000 || true
+docker compose exec -T web python -m metruj.cli stats || true
 
 log "Gotowe"
 echo "  strona:     https://$DOMAIN"

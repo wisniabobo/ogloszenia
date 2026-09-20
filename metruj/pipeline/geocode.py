@@ -36,7 +36,7 @@ from ..settings import region
 from ..utils.http import HttpClient
 from ..utils.text import clean, sha1
 
-log = logging.getLogger("ogloszenia.geocode")
+log = logging.getLogger("metruj.geocode")
 
 #: ile ofert geokodujemy w jednym przebiegu (ochrona cudzych serwerów)
 DEFAULT_BATCH = 400

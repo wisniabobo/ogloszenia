@@ -8,13 +8,13 @@ import httpx
 import pytest
 import respx
 
-from ogloszenia.models import OfferKind, PropertyType, SellerType, TransactionType
-from ogloszenia.scrapers import ScrapeContext
-from ogloszenia.scrapers.bip import BipScraper
-from ogloszenia.scrapers.generic_html import GenericHtmlScraper, guess_property_type
-from ogloszenia.scrapers.olx import OLXScraper
-from ogloszenia.scrapers.otodom import OtodomScraper
-from ogloszenia.utils.http import HttpClient
+from metruj.models import OfferKind, PropertyType, SellerType, TransactionType
+from metruj.scrapers import ScrapeContext
+from metruj.scrapers.bip import BipScraper
+from metruj.scrapers.generic_html import GenericHtmlScraper, guess_property_type
+from metruj.scrapers.olx import OLXScraper
+from metruj.scrapers.otodom import OtodomScraper
+from metruj.utils.http import HttpClient
 
 OLX_OFFER = {
     "id": 26034079,

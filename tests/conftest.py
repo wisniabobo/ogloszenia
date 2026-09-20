@@ -18,8 +18,8 @@ def _isolated_db(tmp_path_factory):
     os.environ["OGL_PHONE_HASH_SALT"] = "test-salt"
     os.environ["OGL_RESPECT_ROBOTS"] = "false"
 
-    from ogloszenia import db as db_module
-    from ogloszenia.settings import get_settings
+    from metruj import db as db_module
+    from metruj.settings import get_settings
 
     get_settings.cache_clear()
     db_module._engine = None
@@ -30,7 +30,7 @@ def _isolated_db(tmp_path_factory):
 
 @pytest.fixture
 def session():
-    from ogloszenia.db import get_session_factory
+    from metruj.db import get_session_factory
 
     s = get_session_factory()()
     try:

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% from "_macros.html" import offer_card, pager, result_bar, money %}
+{% block title %}Okazje — oferty tańsze niż mediana okolicy | Metruj{% endblock %}
+{% block heading %}Okazje{% endblock %}
+{% block subhead %}
+<p class="lede">
+  Oferty, których cena za metr jest wyraźnie niższa niż mediana podobnych
+  nieruchomości w tej samej okolicy.
+</p>
+{% endblock %}
+{% block actions %}
+  <a class="btn btn--quiet btn--sm" href="/mapa?{{ query_string }}">Zobacz na mapie</a>
+  <button class="btn btn--sm" onclick="saveSearch()">Powiadom o nowych</button>
+{% endblock %}
+{% block content %}
+
+<p class="deal-legend">
+  Porównujemy <strong>cenę za metr</strong> tej oferty z <strong>medianą</strong> ofert
+  tego samego rodzaju i tej samej transakcji w tej miejscowości. Gdy ofert
+  w miejscowości jest za mało, żeby mediana coś znaczyła, schodzimy na powiat.
+  Porównania do całego województwa <em>nie</em> pokazujemy na tej liście:
+  mieszkanie we wsi zestawione z medianą województwa zawsze wygląda na okazję
+  życia i nigdy nią nie jest.
+  <br>
+  To cena <strong>ofertowa</strong>, nie transakcyjna — niska cena bywa też
+  skutkiem stanu technicznego, statusu prawnego albo lokalizacji, której
+  mediana nie widzi. Lista wskazuje, czemu warto się przyjrzeć, a nie co kupić.
+</p>
+
+<div class="dealgrid">
+  <div class="dealstat">
+    <div class="dealstat__label">Ofert z odniesieniem</div>
+    <div class="dealstat__value num">{{ '{:,}'.format(scored).replace(',', ' ') }}</div>
+    <div class="dealstat__hint">tyle da się porównać z okolicą</div>
+  </div>
+  <div class="dealstat">
+    <div class="dealstat__label">Min. 20% poniżej mediany</div>
+    <div class="dealstat__value num">{{ '{:,}'.format(bargains).replace(',', ' ') }}</div>
+    <div class="dealstat__hint">w tej chwili na liście</div>
+  </div>
+  <div class="dealstat">
+    <div class="dealstat__label">Porównań rynkowych</div>
+    <div class="dealstat__value num">{{ '{:,}'.format(scopes).replace(',', ' ') }}</div>
+    <div class="dealstat__hint">miejscowości, powiatów i typów</div>
+  </div>
+  <div class="dealstat">
+    <div class="dealstat__label">Przeliczone</div>
+    <div class="dealstat__value">{{ computed_at.strftime('%d.%m, %H:%M') if computed_at else '—' }}</div>
+    <div class="dealstat__hint">po ostatnim skanie</div>
+  </div>
+</div>
+
+{% include "_filters.html" %}
+
+{{ result_bar(total, filters, query_string, SORT_LABELS) }}
+
+<div>
+  {% for listing in listings %}{{ offer_card(listing) }}{% else %}
+    <div class="empty">
+      <strong>Przy tych filtrach nie ma nic wyraźnie tańszego od okolicy.</strong>
+      <p>Spróbuj poluzować próg albo poszerzyć obszar:</p>
+      <div class="chips" style="justify-content:center">
+        <a class="chip" href="/okazje?deal_max=0.95">min. 5% poniżej mediany</a>
+        <a class="chip" href="/okazje?deal_max=0.9">min. 10% poniżej</a>
+        <a class="chip" href="/okazje">zacznij od nowa</a>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+{{ pager(filters, pages, query_string) }}
+{% endblock %}

@@ -86,7 +86,7 @@ log "Konfiguracja"
 if [[ ! -f "$APP_DIR/.env" ]]; then
 	SALT="$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 40)"
 	cat > "$APP_DIR/.env" <<ENV
-OGL_DATABASE_URL=sqlite:///$APP_DIR/data/ogloszenia.db
+OGL_DATABASE_URL=sqlite:///$APP_DIR/data/metruj.db
 OGL_DEFAULT_VOIVODESHIP=opolskie
 OGL_WEB_HOST=127.0.0.1
 OGL_WEB_PORT=$PORT
@@ -102,7 +102,7 @@ else
 	echo ".env już istnieje — nie ruszam"
 fi
 
-sudo -u "$APP_USER" bash -c "cd '$APP_DIR' && .venv/bin/python -m ogloszenia.cli init-db" >/dev/null
+sudo -u "$APP_USER" bash -c "cd '$APP_DIR' && .venv/bin/python -m metruj.cli init-db" >/dev/null
 echo "baza zainicjowana"
 
 # --------------------------------------------------------------------------- #
@@ -119,7 +119,7 @@ User=$APP_USER
 Group=$APP_USER
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env
-ExecStart=$APP_DIR/.venv/bin/uvicorn ogloszenia.api:app --host 127.0.0.1 --port $PORT --workers 2 --proxy-headers
+ExecStart=$APP_DIR/.venv/bin/uvicorn metruj.api:app --host 127.0.0.1 --port $PORT --workers 2 --proxy-headers
 Restart=always
 RestartSec=5
 NoNewPrivileges=true
@@ -146,8 +146,8 @@ User=$APP_USER
 Group=$APP_USER
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env
-ExecStart=$APP_DIR/.venv/bin/python -m ogloszenia.cli scan
-ExecStartPost=$APP_DIR/.venv/bin/python -m ogloszenia.cli geocode --limit 400
+ExecStart=$APP_DIR/.venv/bin/python -m metruj.cli scan
+ExecStartPost=$APP_DIR/.venv/bin/python -m metruj.cli geocode --limit 400
 TimeoutStartSec=3600
 NoNewPrivileges=true
 PrivateTmp=true
@@ -182,8 +182,8 @@ User=$APP_USER
 Group=$APP_USER
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env
-ExecStart=$APP_DIR/.venv/bin/python -m ogloszenia.cli scan --deep --no-details
-ExecStartPost=$APP_DIR/.venv/bin/python -m ogloszenia.cli geocode --limit 3000
+ExecStart=$APP_DIR/.venv/bin/python -m metruj.cli scan --deep --no-details
+ExecStartPost=$APP_DIR/.venv/bin/python -m metruj.cli geocode --limit 3000
 TimeoutStartSec=21600
 NoNewPrivileges=true
 PrivateTmp=true

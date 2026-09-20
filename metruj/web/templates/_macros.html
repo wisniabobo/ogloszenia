@@ -1,10 +1,22 @@
 {# ------------------------------------------------------------- formaty #}
 {% macro money(value, unit='zł') %}
-  {%- if value -%}{{ '{:,.0f}'.format(value).replace(',', ' ') }} {{ unit }}{%- else -%}—{%- endif -%}
+  {%- if value -%}
+    {%- if value < 100 -%}{{ '{:,.2f}'.format(value).replace(',', ' ').replace('.', ',') }} {{ unit }}
+    {%- else -%}{{ '{:,.0f}'.format(value).replace(',', ' ') }} {{ unit }}{%- endif -%}
+  {%- else -%}—{%- endif -%}
 {% endmacro %}
 
 {% macro area(value) %}
   {%- if value -%}{{ ('%g' % value) }} m²{%- endif -%}
+{% endmacro %}
+
+{# Grunt mierzy się w arach i hektarach — „12 000 m²" nikomu nic nie mówi,
+   a „1,2 ha" mówi wszystko. #}
+{% macro land(value) %}
+  {%- if not value -%}
+  {%- elif value >= 10000 -%}{{ ('%g' % (value / 10000) | round(2)) }} ha
+  {%- elif value >= 1000 -%}{{ ('%g' % (value / 100) | round(1)) }} a
+  {%- else -%}{{ ('%g' % value) }} m²{%- endif -%}
 {% endmacro %}
 
 {# Polska odmiana przez przypadki: "2 dni", ale "5 dni"; "2 lata", ale "5 lat".
@@ -48,9 +60,33 @@
   {%- endif -%}
 {% endmacro %}
 
+{# Cena tej oferty wobec mediany okolicy. Podpis mówi wprost, z czym
+   porównujemy: „taniej niż w Opolu" to inna informacja niż „taniej niż
+   w województwie", a bez tego rozróżnienia mieszkanie ze wsi zawsze
+   wyglądałoby na okazję życia. #}
+{% set DEAL_SCOPE = {'miasto': 'w tej miejscowości', 'powiat': 'w powiecie',
+                     'wojewodztwo': 'w województwie'} %}
+{% macro deal_badge(listing) %}
+  {%- if listing.deal_ratio -%}
+    {%- set diff = ((1 - listing.deal_ratio) * 100) | round(0) | int -%}
+    {%- set scope = DEAL_SCOPE.get(listing.deal_level, '') -%}
+    {%- if diff >= 20 -%}{% set cls = 'great' %}
+    {%- elif diff >= 7 -%}{% set cls = 'good' %}
+    {%- elif diff > -7 -%}{% set cls = 'fair' %}
+    {%- else -%}{% set cls = 'high' %}{%- endif -%}
+    <span class="deal deal--{{ cls }}" title="Cena za m² wobec mediany ofert {{ scope }}">
+      {%- if diff >= 3 -%}{{ diff }}% taniej
+      {%- elif diff <= -3 -%}{{ -diff }}% drożej
+      {%- else -%}cena jak {{ scope }}{%- endif -%}
+      {%- if diff >= 3 or diff <= -3 %} <span class="deal__scope">niż {{ scope }}</span>{% endif -%}
+    </span>
+  {%- endif -%}
+{% endmacro %}
+
 {# --------------------------------------------------------- karta oferty #}
 {% macro offer_card(listing, contacts=None) %}
 {% set kind = listing.kind.value %}
+{% set is_land = listing.property_type.value in ('dzialka', 'gospodarstwo') %}
 <article class="offer
   {%- if listing.is_fresh %} offer--fresh{% endif %}
   {%- if not listing.is_original %} offer--copy{% endif %}
@@ -92,6 +128,7 @@
       {% if listing.street %}<strong>{{ address(listing.street) }}</strong>{% if listing.district or listing.city %}, {% endif %}{% endif %}
       {% if listing.district %}{{ listing.district }}, {% endif %}{{ listing.city or '—' }}
       {%- if listing.county and listing.county != listing.city %} <span class="muted">· pow. {{ listing.county }}</span>{% endif %}
+      {%- if listing.voivodeship %} <span class="muted">· {{ listing.voivodeship }}</span>{% endif %}
     </div>
 
     <div class="offer__price">
@@ -100,10 +137,12 @@
       {% if listing.initial_price and listing.price and listing.price < listing.initial_price %}
         <span class="offer__was">{{ money(listing.initial_price) }}</span>
       {% endif %}
+      {{ deal_badge(listing) }}
     </div>
 
     <div class="specs">
-      {% if listing.area %}<span class="spec"><strong>{{ area(listing.area) }}</strong></span>{% endif %}
+      {% if listing.area %}<span class="spec"><strong>{{ area(listing.area) if not is_land else land(listing.area) }}</strong></span>{% endif %}
+      {% if listing.plot_area and not is_land %}<span class="spec">działka {{ land(listing.plot_area) }}</span>{% endif %}
       {% if listing.rooms %}<span class="spec">{{ listing.rooms }} {{ 'pokój' if listing.rooms == 1 else ('pokoje' if listing.rooms < 5 else 'pokoi') }}</span>{% endif %}
       {% if listing.floor is not none %}<span class="spec">{{ 'parter' if listing.floor == 0 else listing.floor ~ '. piętro' }}{% if listing.floors_total %} z {{ listing.floors_total }}{% endif %}</span>{% endif %}
       {% if listing.year_built %}<span class="spec">rok {{ listing.year_built }}</span>{% endif %}
@@ -153,10 +192,41 @@
 </article>
 {% endmacro %}
 
+{# ------------------------------------------------- pasek nad wynikami #}
+{% macro result_bar(total, filters, query_string, sorts) %}
+<div class="resultbar">
+  <div class="resultbar__count">
+    {{ '{:,}'.format(total).replace(',', ' ') }}
+    <span>{{ plural(total, 'oferta', 'oferty', 'ofert') }}</span>
+  </div>
+  {% set chips = active_filters(filters, query_string) %}
+  {% if chips %}
+    <div class="activefilters">
+      <span class="activefilters__label">filtry:</span>
+      {% for chip in chips %}
+        <a class="filterchip" href="?{{ chip.url }}" title="Zdejmij ten filtr">
+          {{ chip.label }}<span class="filterchip__x" aria-hidden="true">×</span>
+        </a>
+      {% endfor %}
+    </div>
+  {% endif %}
+  <form class="resultbar__sort" method="get">
+    {{ hidden_fields(query_string, 'sort') }}
+    <label for="sortbar">Sortuj</label>
+    <select id="sortbar" name="sort" onchange="this.form.submit()">
+      {% for value, label in sorts.items() %}
+        <option value="{{ value }}" {{ 'selected' if filters.sort == value }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <noscript><button class="btn btn--sm" type="submit">Zastosuj</button></noscript>
+  </form>
+</div>
+{% endmacro %}
+
 {# ------------------------------------------------------------ paginacja #}
 {% macro pager(filters, pages, query_string) %}
 {% if pages > 1 %}
-{% set qs = query_string | replace('page=' ~ filters.page, '') %}
+{% set qs = query_string | replace_param('page', '') %}
 <nav class="pager" aria-label="Strony wyników">
   {% if filters.page > 1 %}<a href="?{{ qs }}&page={{ filters.page - 1 }}">‹ poprzednia</a>{% endif %}
   {% for p in range(1, pages + 1) %}

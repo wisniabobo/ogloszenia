@@ -67,8 +67,53 @@ def session_scope() -> Iterator[Session]:
         session.close()
 
 
+def _add_missing_columns(engine: Engine, metadata) -> list[str]:
+    """Dopisuje do istniejących tabel kolumny, których w nich jeszcze nie ma.
+
+    `create_all` tworzy brakujące **tabele**, ale nie rusza tych, które już są.
+    Przy wdrożeniu na działającą bazę (a taka stoi na serwerze z kilkudziesięcioma
+    tysiącami ofert) nowe pole modelu kończyło się błędem „no such column"
+    w pierwszym zapytaniu po restarcie.
+
+    Alembic byłby tu armatą na wróbla: wszystkie zmiany schematu w tym projekcie
+    to dokładanie kolumn, a `ALTER TABLE ADD COLUMN` jest w SQLite operacją
+    natychmiastową i bezpieczną. Kolumn nie usuwamy i nie zmieniamy ich typów —
+    gdyby kiedyś zaszła taka potrzeba, będzie to świadoma, osobna migracja.
+    """
+    from sqlalchemy import inspect, text
+    from sqlalchemy.schema import CreateColumn
+
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    added: list[str] = []
+
+    with engine.begin() as conn:
+        for table in metadata.sorted_tables:
+            if table.name not in existing_tables:
+                continue
+            have = {col["name"] for col in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in have:
+                    continue
+                ddl = CreateColumn(column).compile(engine).string
+                # SQLite nie przyjmuje NOT NULL bez wartości domyślnej przy
+                # dokładaniu kolumny do niepustej tabeli — a wszystkie nasze
+                # nowe pola i tak są opcjonalne.
+                ddl = ddl.replace(" NOT NULL", "")
+                conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {ddl}"))
+                added.append(f"{table.name}.{column.name}")
+    return added
+
+
 def init_db() -> None:
     from . import models  # noqa: F401  (rejestracja mapperów)
 
     engine = get_engine()
     models.Base.metadata.create_all(engine)
+    added = _add_missing_columns(engine, models.Base.metadata)
+    if added:
+        import logging
+
+        logging.getLogger("metruj.db").info(
+            "Uzupełniono schemat bazy o kolumny: %s", ", ".join(added)
+        )

@@ -14,11 +14,11 @@
 services:
   web:
     build: .
-    image: ogloszenia:latest
+    image: metruj:latest
     restart: unless-stopped
     env_file: [.env]
     environment:
-      OGL_DATABASE_URL: sqlite:////data/ogloszenia.db
+      OGL_DATABASE_URL: sqlite:////data/metruj.db
       OGL_WEB_HOST: 0.0.0.0
     volumes:
       - ogl-data:/data
@@ -36,14 +36,14 @@ services:
   # serwowania strony. Ten sam obraz, inna komenda.
   worker:
     build: .
-    image: ogloszenia:latest
+    image: metruj:latest
     restart: unless-stopped
     env_file: [.env]
     environment:
-      OGL_DATABASE_URL: sqlite:////data/ogloszenia.db
+      OGL_DATABASE_URL: sqlite:////data/metruj.db
     volumes:
       - ogl-data:/data
-    command: ["python", "-m", "ogloszenia.cli", "watch"]
+    command: ["python", "-m", "metruj.cli", "watch"]
     depends_on:
       web:
         condition: service_healthy

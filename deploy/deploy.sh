@@ -40,7 +40,7 @@ ssh -o BatchMode=yes -o PasswordAuthentication=no "$TARGET" bash -euo pipefail <
 	sudo -u "$APP_USER" "$REMOTE_DIR/.venv/bin/pip" install -q -r requirements.txt
 
 	echo "==> Domykam schemat bazy i wczytuję rejestr źródeł"
-	sudo -u "$APP_USER" "$REMOTE_DIR/.venv/bin/python" -m ogloszenia.cli init-db
+	sudo -u "$APP_USER" "$REMOTE_DIR/.venv/bin/python" -m metruj.cli init-db
 
 	echo "==> Restartuję interfejs"
 	systemctl restart ogloszenia-web

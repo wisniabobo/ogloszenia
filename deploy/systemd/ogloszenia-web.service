@@ -9,7 +9,7 @@ User=ogl
 Group=ogl
 WorkingDirectory=/opt/ogloszenia
 EnvironmentFile=/opt/ogloszenia/.env
-ExecStart=/opt/ogloszenia/.venv/bin/uvicorn ogloszenia.api:app \
+ExecStart=/opt/ogloszenia/.venv/bin/uvicorn metruj.api:app \
     --host 127.0.0.1 --port 8000 --workers 2 --proxy-headers
 Restart=always
 RestartSec=5

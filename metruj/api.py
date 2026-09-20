@@ -18,6 +18,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.cors import CORSMiddleware
@@ -31,6 +32,7 @@ from .models import (
     DuplicateLink,
     Favorite,
     Listing,
+    MarketStat,
     OfferKind,
     SavedSearch,
     ScanRun,
@@ -39,6 +41,7 @@ from .models import (
     utcnow,
 )
 from .query import (
+    SORT_LABELS,
     Filters,
     apply_filters,
     apply_sort,
@@ -111,6 +114,127 @@ templates.env.globals["asset"] = asset
 # Szablon karty oferty sam pyta o numery kontaktowe — inaczej każdy widok
 # musiałby je przekazywać osobno i łatwo byłoby o tym zapomnieć.
 templates.env.globals["contacts_for"] = contacts_for
+templates.env.globals["SORT_LABELS"] = SORT_LABELS
+
+
+#: Ludzkie nazwy filtrów do paska nad wynikami. Bez nich pasek pokazywałby
+#: „price_max = 400000", a ma pokazywać „do 400 000 zł".
+FILTER_LABELS: dict[str, str] = {
+    "property_type": "rodzaj",
+    "transaction": "transakcja",
+    "city": "miejscowość",
+    "district": "dzielnica",
+    "county": "powiat",
+    "voivodeship": "województwo",
+    "street": "ulica",
+    "seller_type": "wystawia",
+    "source": "serwis",
+    "market": "rynek",
+    "period": "dodane",
+    "q": "szukane słowo",
+}
+
+#: Zakresy pokazujemy jako jeden znacznik: „cena 200 000 – 400 000 zł".
+RANGE_LABELS: dict[str, tuple[str, str, str]] = {
+    "price": ("price_min", "price_max", "cena"),
+    "price_m2": ("price_m2_min", "price_m2_max", "cena za m²"),
+    "area": ("area_min", "area_max", "powierzchnia"),
+    "plot_area": ("plot_area_min", "plot_area_max", "działka"),
+    "rooms": ("rooms_min", "rooms_max", "pokoje"),
+    "floor": ("floor_min", "floor_max", "piętro"),
+    "days_on_market": ("days_on_market_min", "days_on_market_max", "wisi dni"),
+}
+
+FLAG_LABELS: dict[str, str] = {
+    "with_phone": "da się zadzwonić",
+    "price_dropped": "po obniżce",
+}
+
+PERIOD_LABELS = {
+    "dzis": "dzisiaj", "7dni": "w tym tygodniu", "30dni": "w tym miesiącu",
+    "90dni": "w 3 miesiące", "1rok": "w ciągu roku",
+}
+
+
+def _number(value: str) -> str:
+    try:
+        return f"{float(value):,.0f}".replace(",", " ")
+    except (TypeError, ValueError):
+        return value
+
+
+def active_filters(filters: Filters, query_string: str) -> list[dict[str, str]]:
+    """Znaczniki aktywnych filtrów z adresem, który każdy z nich zdejmuje.
+
+    Przy pół milionie ofert w całej Polsce najczęstsze pytanie brzmi „dlaczego
+    wyników jest sto". Odpowiedź musi być widoczna nad listą, a nie schowana
+    w zwiniętej sekcji formularza.
+    """
+    params = dict(parse_qsl(query_string, keep_blank_values=False))
+    chips: list[dict[str, str]] = []
+
+    used: set[str] = set()
+    for _, (low_key, high_key, label) in RANGE_LABELS.items():
+        low, high = params.get(low_key), params.get(high_key)
+        if not low and not high:
+            continue
+        used |= {low_key, high_key}
+        if low and high:
+            text = f"{label} {_number(low)}–{_number(high)}"
+        elif low:
+            text = f"{label} od {_number(low)}"
+        else:
+            text = f"{label} do {_number(high)}"
+        url = _replace_param(_replace_param(query_string, low_key), high_key)
+        chips.append({"label": text, "url": url})
+
+    for key, label in FILTER_LABELS.items():
+        value = params.get(key)
+        if not value or key in used:
+            continue
+        if key == "period":
+            value = PERIOD_LABELS.get(value, value)
+        elif key == "source":
+            value = source_name(value)
+        chips.append({"label": f"{label}: {value}", "url": _replace_param(query_string, key)})
+
+    for key, label in FLAG_LABELS.items():
+        if params.get(key) not in (None, "", "0", "false"):
+            chips.append({"label": label, "url": _replace_param(query_string, key)})
+
+    if params.get("deal_max"):
+        try:
+            percent = round((1 - float(params["deal_max"])) * 100)
+            chips.append({"label": f"min. {percent}% poniżej mediany",
+                          "url": _replace_param(query_string, "deal_max")})
+        except ValueError:
+            pass
+
+    if params.get("only_original") in ("0", "false"):
+        chips.append({"label": "z powtórkami z innych portali",
+                      "url": _replace_param(query_string, "only_original")})
+    if params.get("only_active") in ("0", "false"):
+        chips.append({"label": "także nieaktualne",
+                      "url": _replace_param(query_string, "only_active")})
+    return chips
+
+
+def hidden_fields(query_string: str, *skip: str) -> Markup:
+    """Ukryte pola odtwarzające bieżące zapytanie — dla formularzy pomocniczych.
+
+    Pasek sortowania jest osobnym formularzem; bez przepisania reszty parametrów
+    zmiana kolejności kasowałaby wszystkie ustawione filtry.
+    """
+    out = []
+    for key, value in parse_qsl(query_string, keep_blank_values=False):
+        if key in skip or key == "page":
+            continue
+        out.append(f'<input type="hidden" name="{escape(key)}" value="{escape(value)}">')
+    return Markup("".join(out))
+
+
+templates.env.globals["active_filters"] = active_filters
+templates.env.globals["hidden_fields"] = hidden_fields
 
 app = FastAPI(
     title="ogloszenia — otwarty monitor rynku nieruchomości",
@@ -170,6 +294,21 @@ def suggest_cities(db: Session, limit: int = 400) -> list[str]:
     return found or town_names()[:limit]
 
 
+def filter_context(db: Session, request: Request) -> dict[str, Any]:
+    """Dane, których potrzebuje panel filtrów — na każdej stronie te same."""
+    from .geo import voivodeships
+
+    return {
+        "cities": suggest_cities(db),
+        "counties": counties(),
+        "voivodeships": voivodeships(),
+        "sources": list(
+            db.scalars(select(Source).where(Source.enabled.is_(True)).order_by(Source.name))
+        ),
+        "query_string": str(request.query_params),
+    }
+
+
 def get_db() -> Session:
     session = get_session_factory()()
     try:
@@ -223,6 +362,7 @@ def _filters_from_query(request: Request) -> Filters:
         city=params.get("city") or None,
         district=params.get("district") or None,
         county=params.get("county") or None,
+        voivodeship=params.get("voivodeship") or None,
         street=params.get("street") or None,
         source=params.getlist("source") or [],
         seller_type=params.get("seller_type") or None,
@@ -233,6 +373,8 @@ def _filters_from_query(request: Request) -> Filters:
         price_m2_max=num("price_m2_max"),
         area_min=num("area_min"),
         area_max=num("area_max"),
+        plot_area_min=num("plot_area_min"),
+        plot_area_max=num("plot_area_max"),
         rooms_min=num("rooms_min", int),
         rooms_max=num("rooms_max", int),
         floor_min=num("floor_min", int),
@@ -243,6 +385,8 @@ def _filters_from_query(request: Request) -> Filters:
         only_active=flag("only_active", True),
         with_phone=flag("with_phone", False),
         price_dropped=flag("price_dropped", False),
+        deal_max=num("deal_max"),
+        deal_level=params.getlist("deal_level") or [],
         period=params.get("period") or None,
         days_on_market_min=num("days_on_market_min", int),
         days_on_market_max=num("days_on_market_max", int),
@@ -369,7 +513,6 @@ def view_listings(request: Request, db: DB):
     filters = _filters_from_query(request)
     _default_to_sale(request, filters)
     listings, total = search_listings(db, filters)
-    sources = list(db.scalars(select(Source).where(Source.enabled.is_(True)).order_by(Source.name)))
     return templates.TemplateResponse(
         request,
         "listings.html",
@@ -378,11 +521,58 @@ def view_listings(request: Request, db: DB):
             "total": total,
             "filters": filters,
             "pages": max(1, math.ceil(total / filters.per_page)),
-            "sources": sources,
-            "cities": suggest_cities(db),
-            "counties": counties(),
             "active": "nieruchomosci",
-            "query_string": str(request.query_params),
+            **filter_context(db, request),
+        },
+    )
+
+
+@app.get("/okazje", response_class=HTMLResponse)
+def view_deals(request: Request, db: DB):
+    """Oferty tańsze od mediany swojej okolicy.
+
+    Domyślnie: co najmniej 15% poniżej mediany i **tylko** tam, gdzie
+    odniesieniem jest miejscowość albo powiat. Porównanie do całego
+    województwa zostawiamy zwykłej liście: mieszkanie we wsi zestawione
+    z medianą województwa zawsze wygląda na okazję i nigdy nią nie jest.
+    """
+    filters = _filters_from_query(request)
+    _default_to_sale(request, filters)
+    if filters.deal_max is None:
+        filters.deal_max = 0.85
+    if not filters.deal_level:
+        filters.deal_level = ["miasto", "powiat"]
+    if "sort" not in request.query_params:
+        filters.sort = "okazje"
+    listings, total = search_listings(db, filters)
+
+    scored = int(db.scalar(
+        select(func.count(Listing.id)).where(Listing.deal_ratio.is_not(None))
+    ) or 0)
+    bargains = int(db.scalar(
+        select(func.count(Listing.id)).where(
+            Listing.deal_ratio <= 0.8, Listing.deal_level.in_(["miasto", "powiat"])
+        )
+    ) or 0)
+    scopes = int(db.scalar(select(func.count(MarketStat.id))) or 0)
+    computed_at = db.scalar(select(func.max(MarketStat.computed_at)))
+
+    return templates.TemplateResponse(
+        request,
+        "okazje.html",
+        {
+            "listings": listings,
+            "total": total,
+            "filters": filters,
+            "pages": max(1, math.ceil(total / filters.per_page)),
+            "scored": scored,
+            "bargains": bargains,
+            "scopes": scopes,
+            "computed_at": computed_at,
+            "active": "okazje",
+            "reset_url": "/okazje",
+            "form_action": "/okazje",
+            **filter_context(db, request),
         },
     )
 
@@ -442,18 +632,10 @@ def view_listing(listing_id: int, request: Request, db: DB):
 def view_map(request: Request, db: DB):
     filters = _filters_from_query(request)
     _default_to_sale(request, filters)
-    sources = list(db.scalars(select(Source).where(Source.enabled.is_(True)).order_by(Source.name)))
     return templates.TemplateResponse(
         request,
         "map.html",
-        {
-            "filters": filters,
-            "sources": sources,
-            "cities": suggest_cities(db),
-            "counties": counties(),
-            "active": "mapa",
-            "query_string": str(request.query_params),
-        },
+        {"filters": filters, "active": "mapa", **filter_context(db, request)},
     )
 
 

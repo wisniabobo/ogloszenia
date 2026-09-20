@@ -22,7 +22,7 @@ from .models import AlertLog, Listing, SavedSearch, utcnow
 from .query import apply_filters
 from .settings import get_settings
 
-log = logging.getLogger("ogloszenia.alerts")
+log = logging.getLogger("metruj.alerts")
 
 
 def format_listing(listing: Listing, *, reveal_phone: bool = False) -> str:

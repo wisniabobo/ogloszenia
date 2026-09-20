@@ -34,9 +34,30 @@ SORTS = {
     "cena_m2_rosnaco": (Listing.price_per_m2, False),
     "cena_m2_malejaco": (Listing.price_per_m2, True),
     "powierzchnia": (Listing.area, True),
+    "powierzchnia_rosnaco": (Listing.area, False),
+    "dzialka": (Listing.plot_area, True),
+    # Im niższy stosunek do mediany, tym większa okazja — stąd rosnąco.
+    "okazje": (Listing.deal_ratio, False),
     "najdluzej_wisi": (Listing.first_seen_at, False),
     "najwiecej_kopii": (Listing.copies_count, True),
     "termin_licytacji": (Listing.event_date, False),
+}
+
+#: Etykiety sortowań dla interfejsu — jedno miejsce zamiast listy w szablonie.
+SORT_LABELS = {
+    "najnowsze": "od najnowszych",
+    "okazje": "największa okazja",
+    "cena_rosnaco": "od najtańszych",
+    "cena_malejaco": "od najdroższych",
+    "cena_m2_rosnaco": "najtańsze za m²",
+    "cena_m2_malejaco": "najdroższe za m²",
+    "powierzchnia": "największe",
+    "powierzchnia_rosnaco": "najmniejsze",
+    "dzialka": "największa działka",
+    "najstarsze": "od najstarszych",
+    "najdluzej_wisi": "najdłużej wiszące",
+    "najwiecej_kopii": "najczęściej powtarzane",
+    "termin_licytacji": "najbliższy termin licytacji",
 }
 
 PERIODS = {"dzis": 1, "7dni": 7, "30dni": 30, "90dni": 90, "1rok": 365}
@@ -52,6 +73,7 @@ class Filters:
     city: str | None = None
     district: str | None = None
     county: str | None = None
+    voivodeship: str | None = None
     street: str | None = None
     source: list[str] = field(default_factory=list)
     seller_type: str | None = None
@@ -62,6 +84,8 @@ class Filters:
     price_m2_max: float | None = None
     area_min: float | None = None
     area_max: float | None = None
+    plot_area_min: float | None = None
+    plot_area_max: float | None = None
     rooms_min: int | None = None
     rooms_max: int | None = None
     floor_min: int | None = None
@@ -75,6 +99,14 @@ class Filters:
     days_on_market_min: int | None = None
     days_on_market_max: int | None = None
     price_dropped: bool = False
+    #: Maksymalny stosunek ceny za metr do mediany rynkowej. 0,85 znaczy
+    #: „pokaż tylko oferty co najmniej 15% tańsze niż reszta w okolicy".
+    deal_max: float | None = None
+    #: Do czego wolno porównywać: „miasto", „powiat", „wojewodztwo".
+    #: Mieszkanie we wsi porównane z medianą całego województwa zawsze wyjdzie
+    #: na okazję życia — i nigdy nią nie będzie. Lista okazji domyślnie żąda
+    #: więc odniesienia z miasta albo powiatu.
+    deal_level: list[str] = field(default_factory=list)
     q: str | None = None
     sort: str = "najnowsze"
     page: int = 1
@@ -116,6 +148,8 @@ def apply_filters(stmt: Select, filters: dict[str, Any] | Filters) -> Select:
         clauses.append(Listing.district.ilike(f"%{f.district}%"))
     if f.county:
         clauses.append(Listing.county.ilike(f"%{f.county}%"))
+    if f.voivodeship:
+        clauses.append(Listing.voivodeship == f.voivodeship)
     if f.street:
         clauses.append(Listing.street.ilike(f"%{f.street}%"))
     if f.source:
@@ -129,6 +163,7 @@ def apply_filters(stmt: Select, filters: dict[str, Any] | Filters) -> Select:
         (Listing.price, f.price_min, f.price_max),
         (Listing.price_per_m2, f.price_m2_min, f.price_m2_max),
         (Listing.area, f.area_min, f.area_max),
+        (Listing.plot_area, f.plot_area_min, f.plot_area_max),
         (Listing.rooms, f.rooms_min, f.rooms_max),
         (Listing.floor, f.floor_min, f.floor_max),
     ):
@@ -175,6 +210,11 @@ def apply_filters(stmt: Select, filters: dict[str, Any] | Filters) -> Select:
 
     if f.price_dropped:
         clauses.append(and_(Listing.initial_price.is_not(None), Listing.price < Listing.initial_price))
+
+    if f.deal_max is not None:
+        clauses.append(and_(Listing.deal_ratio.is_not(None), Listing.deal_ratio <= f.deal_max))
+    if f.deal_level:
+        clauses.append(Listing.deal_level.in_(f.deal_level))
 
     if f.q:
         pattern = f"%{f.q}%"

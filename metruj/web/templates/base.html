@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Metruj — wszystkie ogłoszenia nieruchomości z Polski{% endblock %}</title>
+<meta name="description" content="{% block description %}Oferty nieruchomości, licytacje komornicze i przetargi z całej Polski w jednym miejscu. Cena porównana z medianą okolicy. Bez konta, bez limitów.{% endblock %}">
+<meta name="theme-color" content="#15654a">
+<link rel="stylesheet" href="{{ asset('app.css') }}">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2315654a'/><path d='M8 23V9h3.2l4.8 8 4.8-8H24v14h-3v-8.6l-4 6.6h-1.6l-4-6.6V23z' fill='white'/></svg>">
+</head>
+<body>
+
+<a class="skip" href="#tresc">Przejdź do treści</a>
+
+<header class="topbar">
+  <div class="topbar__inner">
+    <a class="brand" href="/" aria-label="Metruj — strona główna">
+      <span class="brand__mark" aria-hidden="true">M</span>
+      <span class="brand__name">metruj</span>
+      <span class="brand__where">cała Polska</span>
+    </a>
+
+    <button class="burger" onclick="toggleNav()" aria-label="Menu" aria-expanded="false">☰</button>
+
+    <nav class="mainnav" id="mainnav" aria-label="Główna">
+      <a href="/nieruchomosci" class="{{ 'is-active' if active == 'nieruchomosci' }}">Oferty</a>
+      <a href="/okazje"        class="{{ 'is-active' if active == 'okazje' }}">Okazje</a>
+      <a href="/mapa"          class="{{ 'is-active' if active == 'mapa' }}">Mapa</a>
+      <a href="/licytacje"     class="{{ 'is-active' if active == 'licytacje' }}">Licytacje</a>
+      <a href="/przetargi"     class="{{ 'is-active' if active == 'przetargi' }}">Przetargi</a>
+      <a href="/biura"         class="{{ 'is-active' if active == 'biura' }}">Biura</a>
+      <a href="/rynek"         class="{{ 'is-active' if active == 'rynek' }}">Rynek</a>
+      <a href="/poszukiwania"  class="{{ 'is-active' if active == 'poszukiwania' }}">Alerty</a>
+      <a href="/schowek"       class="{{ 'is-active' if active == 'schowek' }}">Schowek</a>
+      <a href="/zrodla"        class="{{ 'is-active' if active == 'zrodla' }}">Źródła</a>
+    </nav>
+
+    <span class="topbar__meta">bez konta · bez limitów</span>
+  </div>
+</header>
+
+<main class="page" id="tresc">
+  <div class="page__head">
+    <div class="page__title">
+      <h1>{% block heading %}{% endblock %}</h1>
+      {% block subhead %}{% endblock %}
+    </div>
+    <div class="page__actions">{% block actions %}{% endblock %}</div>
+  </div>
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="footer">
+  <div class="footer__inner">
+    <div>
+      <strong>Metruj</strong> — otwarty monitor rynku nieruchomości.
+      Dane pochodzą z publicznie dostępnych ogłoszeń i rejestrów państwowych.
+    </div>
+    <nav class="footer__links" aria-label="Stopka">
+      <a href="/docs">API</a>
+      <a href="/zrodla">Skąd są dane</a>
+      <a href="https://github.com/wisniabobo/ogloszenia" rel="noopener">Kod źródłowy</a>
+    </nav>
+  </div>
+</footer>
+
+<script src="{{ asset('app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

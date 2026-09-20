@@ -6,7 +6,7 @@ z których adresów bot w ogóle korzysta.
 
 from __future__ import annotations
 
-from ogloszenia.utils.robots import RobotsTxt
+from metruj.utils.robots import RobotsTxt
 
 UA = "ogloszenia-bot/1.0"
 

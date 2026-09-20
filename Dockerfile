@@ -21,7 +21,7 @@ FROM python:3.12-slim
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    OGL_DATABASE_URL=sqlite:////data/ogloszenia.db
+    OGL_DATABASE_URL=sqlite:////data/metruj.db
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl tini \
@@ -31,7 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /opt/venv /opt/venv
 
 WORKDIR /app
-COPY ogloszenia/ ./ogloszenia/
+COPY metruj/ ./metruj/
 COPY config/ ./config/
 COPY scripts/ ./scripts/
 COPY pyproject.toml README.md ./
@@ -45,5 +45,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8000/api/health || exit 1
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["uvicorn", "ogloszenia.api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", \
+CMD ["uvicorn", "metruj.api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", \
      "--proxy-headers", "--forwarded-allow-ips", "*"]

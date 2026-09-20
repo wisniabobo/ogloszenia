@@ -214,7 +214,73 @@ def cmd_web(
     host = host or settings.web_host
     port = port or settings.web_port
     console.print(f"[green]Interfejs:[/] http://{host}:{port}  ·  [dim]API: /docs[/]")
-    uvicorn.run("ogloszenia.api:app", host=host, port=port, reload=reload, log_level="info")
+    uvicorn.run("metruj.api:app", host=host, port=port, reload=reload, log_level="info")
+
+
+@app.command("napraw")
+def cmd_repair(
+    regeocode_all: bool = typer.Option(
+        False, "--przelicz-wszystko", help="Unieważnij współrzędne wszystkich ofert"
+    ),
+) -> None:
+    """Przelicza pola policzone starym, błędnym kodem.
+
+    Uruchamiane raz po wdrożeniu: skan aktualizuje tylko to, co akurat przyszło
+    ze źródła, a ogłoszenie sprzed pół roku może już ze źródła nie przychodzić.
+    """
+    from .pipeline.market import recompute as recompute_market
+    from .pipeline.repair import repair
+
+    init_db()
+    with session_scope() as session:
+        stats = repair(session, regeocode_all=regeocode_all)
+    with session_scope() as session:
+        market = recompute_market(session)
+    console.print(
+        f"[green]Naprawa:[/] ceny {stats.prices}, cena za m² {stats.price_per_m2}, "
+        f"powierzchnia gruntu {stats.land_area}, regiony {stats.regions}, "
+        f"do przeliczenia na mapie {stats.regeocode}"
+    )
+    console.print(f"[green]Odniesienie rynkowe:[/] {market}")
+
+
+@app.command("okazje")
+def cmd_deals(
+    limit: int = typer.Option(15, help="Ile ofert pokazać"),
+    transaction: str = typer.Option("sprzedaz", help="sprzedaz / wynajem / wszystkie"),
+) -> None:
+    """Przelicza odniesienie rynkowe i wypisuje największe okazje.
+
+    Domyślnie sprzedaż: wynajem i sprzedaż na jednej liście nie mają wspólnej
+    miary, bo „cena za m²" znaczy w nich co innego.
+    """
+    from .models import Listing, TransactionType
+    from .pipeline.market import recompute as recompute_market
+
+    init_db()
+    with session_scope() as session:
+        console.print(f"[green]Odniesienie rynkowe:[/] {recompute_market(session)}")
+        stmt = select(Listing).where(
+            Listing.deal_ratio.is_not(None),
+            Listing.deal_level.in_(["miasto", "powiat"]),
+        )
+        if transaction != "wszystkie":
+            stmt = stmt.where(Listing.transaction == TransactionType(transaction))
+        rows = list(session.scalars(stmt.order_by(Listing.deal_ratio).limit(limit)))
+        table = Table(title="Największe okazje wobec mediany okolicy")
+        for column in ("różnica", "cena", "m²", "zł/m²", "miejscowość", "wobec", "tytuł"):
+            table.add_column(column, justify="right" if column != "tytuł" else "left")
+        for listing in rows:
+            table.add_row(
+                f"-{round((1 - listing.deal_ratio) * 100)}%",
+                f"{listing.price:,.0f}".replace(",", " ") if listing.price else "—",
+                f"{listing.area:g}" if listing.area else "—",
+                f"{listing.price_per_m2:,.0f}".replace(",", " ") if listing.price_per_m2 else "—",
+                (listing.city or "—")[:18],
+                listing.deal_level or "—",
+                listing.title[:46],
+            )
+        console.print(table)
 
 
 @app.command("kontakty")

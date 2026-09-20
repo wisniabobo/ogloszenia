@@ -16,8 +16,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ogloszenia.db import init_db, session_scope  # noqa: E402
-from ogloszenia.models import (  # noqa: E402
+from metruj.db import init_db, session_scope  # noqa: E402
+from metruj.models import (  # noqa: E402
     Listing,
     OfferKind,
     PriceHistory,
@@ -27,11 +27,11 @@ from ogloszenia.models import (  # noqa: E402
     TransactionType,
     utcnow,
 )
-from ogloszenia.pipeline.dedup import compute_fingerprints, link_duplicates  # noqa: E402
-from ogloszenia.pipeline.enrich import enrich_listing, recount_agencies  # noqa: E402
-from ogloszenia.pipeline.normalize import normalize  # noqa: E402
-from ogloszenia.pipeline.runner import sync_sources  # noqa: E402
-from ogloszenia.scrapers.base import RawListing  # noqa: E402
+from metruj.pipeline.dedup import compute_fingerprints, link_duplicates  # noqa: E402
+from metruj.pipeline.enrich import enrich_listing, recount_agencies  # noqa: E402
+from metruj.pipeline.normalize import normalize  # noqa: E402
+from metruj.pipeline.runner import sync_sources  # noqa: E402
+from metruj.scrapers.base import RawListing  # noqa: E402
 
 random.seed(17)
 
@@ -169,7 +169,7 @@ def main() -> None:
             session.flush()
 
             for phone in result.phones:
-                from ogloszenia.models import Phone
+                from metruj.models import Phone
 
                 listing.phones.append(Phone(
                     e164=phone.e164, national=phone.national, masked=phone.masked,
@@ -197,7 +197,7 @@ def main() -> None:
         recount_agencies(session)
 
     print(f"Dodano {inserted} ofert, powiązano {linked} kopii.")
-    print("Uruchom interfejs:  ogl web   (albo: python -m ogloszenia.cli web)")
+    print("Uruchom interfejs:  ogl web   (albo: python -m metruj.cli web)")
 
 
 if __name__ == "__main__":

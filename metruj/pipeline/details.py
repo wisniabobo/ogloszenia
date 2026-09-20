@@ -30,7 +30,7 @@ from ..settings import get_settings
 from ..utils.http import HttpClient
 from ..utils.phones import parse_phone
 
-log = logging.getLogger("ogloszenia.details")
+log = logging.getLogger("metruj.details")
 
 #: Źródła, których karta oferty wnosi dane niedostępne na liście wyników.
 #: Klucz źródła -> klasa scrapera z metodą `fetch_detail(url) -> dict`.

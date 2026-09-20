@@ -212,7 +212,13 @@ def normalize(
         ):
             transaction = TransactionType.WYNAJEM
 
-    price_per_m2 = round(price / area, 2) if price and area and area > 1 else None
+    # Grunt rolny w dzierżawie potrafi kosztować 100 zł za 29 hektarów, czyli
+    # 0,0034 zł/m². Zaokrąglone do groszy dawało to 0,00 — a zero w tym polu
+    # windowało takie oferty na sam szczyt listy „najtańsze za m²".
+    price_per_m2 = None
+    if price and area and area > 1:
+        per_meter = price / area
+        price_per_m2 = round(per_meter, 2) if per_meter >= 1 else round(per_meter, 4) or None
 
     # --- telefony ---
     phones: list[PhoneNumber] = []

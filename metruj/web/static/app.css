@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Monitor rynku nieruchomości — warstwa wizualna
+   Metruj — warstwa wizualna
    --------------------------------------------------------------------------
    Założenie: to nie jest panel administracyjny, tylko narzędzie do czytania
    ofert. Stąd górna nawigacja zamiast ciemnego paska z boku, dużo światła
@@ -331,7 +331,6 @@ h1, h2, h3, h4 { margin: 0; line-height: 1.25; font-weight: 650; letter-spacing:
     --shadow: 0 1px 2px rgba(0,0,0,.35); --shadow-lift: 0 4px 20px rgba(0,0,0,.45);
   }
   .tag--agent   { background: #272138; color: #b9a8f0; border-color: #3a3054; }
-  .tag--private { background: #1a2433; color: #8cb6f0; border-color: #2a3away; }
   .tag--private { background: #1a2433; color: #8cb6f0; border-color: #2a3a52; }
   .tag--dev     { background: #2e2318; color: #e0a86a; border-color: #45341f; }
   .tag--drop    { background: #2e1b1a; color: #f0938c; border-color: #472625; }
@@ -449,3 +448,128 @@ h1, h2, h3, h4 { margin: 0; line-height: 1.25; font-weight: 650; letter-spacing:
 .filters__more[open] > summary::before { content: "▾ "; }
 .filters__more > summary:hover { color: var(--brand-ink); }
 .filters__more .filters__grid { margin-top: 14px; }
+
+/* ==========================================================================
+   Metruj — znak, stopka, okazje i przebudowany panel filtrów
+   --------------------------------------------------------------------------
+   Serwis obejmuje całą Polskę, więc filtrów musi być więcej niż wcześniej,
+   a jednocześnie mają być czytelne. Rozwiązanie: cztery pola zawsze na
+   wierzchu, reszta w rozwijanej sekcji, a **nad wynikami pasek z aktywnymi
+   filtrami**, z którego każdy da się zdjąć jednym kliknięciem. Bez tego przy
+   pół milionie ofert nie da się dojść, dlaczego wyników jest sto zamiast stu
+   tysięcy.
+   ========================================================================== */
+
+.skip {
+  position: absolute; left: -9999px; top: 0; z-index: 100;
+  background: var(--brand); color: #fff; padding: 10px 16px; border-radius: 0 0 8px 0;
+}
+.skip:focus { left: 0; }
+
+.brand__mark {
+  width: 26px; height: 26px; border-radius: 7px; background: var(--brand);
+  color: #fff; font-size: 15px; font-weight: 700; line-height: 26px; text-align: center;
+  transform: none; letter-spacing: -.03em; flex: 0 0 auto;
+}
+.brand { align-items: center; gap: 8px; }
+.brand__name { font-size: 19px; }
+.brand__where { align-self: center; }
+
+.footer { border-top: 1px solid var(--line); background: var(--surface); margin-top: 40px; }
+.footer__inner {
+  max-width: 1360px; margin: 0 auto; padding: 22px 20px;
+  display: flex; gap: 18px; flex-wrap: wrap; align-items: center;
+  font-size: 14px; color: var(--ink-soft);
+}
+.footer__links { margin-left: auto; display: flex; gap: 16px; flex-wrap: wrap; }
+
+.page__head { align-items: flex-start; }
+.page__title { min-width: 0; }
+
+/* ------------------------------------------------------------- okazje --- */
+/* Stosunek ceny za metr do mediany okolicy. Kolor nie jest ozdobą: zielony
+   znaczy „taniej niż w okolicy", czerwony „drożej", a podpis zawsze mówi,
+   z czym porównujemy — mieszkanie ze wsi porównane z medianą województwa
+   wygląda na okazję życia i nigdy nią nie jest. */
+.deal {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  padding: 3px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 650;
+  border: 1px solid transparent; white-space: nowrap;
+}
+.deal--great { background: #e2f3ea; color: #0d5c3d; border-color: #b6ddc9; }
+.deal--good  { background: #edf5e9; color: #3b6b28; border-color: #cfe3c5; }
+.deal--fair  { background: var(--surface-alt); color: var(--ink-soft); border-color: var(--line); }
+.deal--high  { background: #fdeeec; color: #9b2c22; border-color: #f4cec9; }
+.deal__scope { font-weight: 500; opacity: .8; }
+
+.deal-legend { font-size: 13.5px; color: var(--ink-soft); margin: 0 0 14px; max-width: 70ch; }
+
+/* ------------------------------------------------- pasek nad wynikami --- */
+.resultbar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 16px 0 12px; padding: 11px 14px;
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.resultbar__count { font-size: 15px; font-weight: 600; }
+.resultbar__count span { color: var(--ink-faint); font-weight: 500; }
+.resultbar__sort { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.resultbar__sort label { font-size: 13.5px; color: var(--ink-faint); }
+.resultbar__sort select {
+  padding: 7px 11px; font-size: 14px; font-family: inherit; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+}
+
+.activefilters { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
+.activefilters__label { font-size: 13px; color: var(--ink-faint); }
+.filterchip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 6px 4px 11px; border-radius: 999px; font-size: 13px;
+  background: var(--brand-soft); color: var(--brand-ink); border: 1px solid #c4e0d2;
+}
+.filterchip:hover { text-decoration: none; }
+.filterchip__x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; height: 17px; border-radius: 50%; background: rgba(0,0,0,.08);
+  font-size: 12px; line-height: 1;
+}
+.filterchip:hover .filterchip__x { background: rgba(0,0,0,.18); }
+
+/* ------------------------------------------------------------ formularz --- */
+.filters__group {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+  gap: 12px 14px;
+}
+.filters__legend {
+  font-size: 12px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--ink-faint); margin: 16px 0 9px;
+}
+.filters__legend:first-child { margin-top: 0; }
+
+.field__hint { font-size: 12px; color: var(--ink-faint); }
+
+/* --------------------------------------------------------------- okazje --- */
+.dealgrid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.dealstat {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 15px 17px; box-shadow: var(--shadow);
+}
+.dealstat__label { font-size: 12px; font-weight: 650; text-transform: uppercase;
+                   letter-spacing: .06em; color: var(--ink-faint); }
+.dealstat__value { font-size: 25px; font-weight: 680; margin-top: 4px; letter-spacing: -.02em; }
+.dealstat__hint { font-size: 13px; color: var(--ink-faint); margin-top: 3px; }
+
+@media (max-width: 720px) {
+  .resultbar__sort { margin-left: 0; width: 100%; }
+  .resultbar__sort select { flex: 1; }
+  .footer__links { margin-left: 0; }
+}
+
+@media (prefers-color-scheme: dark) {
+  .deal--great { background: #142b21; color: #7fd3aa; border-color: #22483a; }
+  .deal--good  { background: #1a2a17; color: #a3cf8f; border-color: #2c4626; }
+  .deal--high  { background: #2e1b1a; color: #f0938c; border-color: #472625; }
+  .filterchip  { background: var(--brand-soft); color: var(--brand-ink); border-color: #23463a; }
+  .filterchip__x { background: rgba(255,255,255,.12); }
+}

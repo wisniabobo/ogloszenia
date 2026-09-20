@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from ogloszenia.models import OfferKind, PropertyType, SellerType, TransactionType, utcnow
-from ogloszenia.pipeline.dedup import compute_fingerprints, link_duplicates
-from ogloszenia.pipeline.enrich import detect_seller_type, looks_like_agency, match_agency
-from ogloszenia.pipeline.normalize import normalize
-from ogloszenia.scrapers.base import RawListing
+from metruj.models import OfferKind, PropertyType, SellerType, TransactionType, utcnow
+from metruj.pipeline.dedup import compute_fingerprints, link_duplicates
+from metruj.pipeline.enrich import detect_seller_type, looks_like_agency, match_agency
+from metruj.pipeline.normalize import normalize
+from metruj.scrapers.base import RawListing
 
 
 def make_raw(**kw) -> RawListing:
@@ -96,7 +96,7 @@ class TestRozpoznanieOferenta:
 
 class TestDeduplikacja:
     def _add(self, session, **kw):
-        from ogloszenia.models import Listing
+        from metruj.models import Listing
 
         raw = make_raw(**kw)
         result = normalize(raw, require_region=False)
@@ -136,7 +136,7 @@ class TestDeduplikacja:
 
     def test_rozne_licytacje_o_tym_samym_tytule(self, session):
         """Obwieszczenia bywają zatytułowane identycznie — to nie czyni ich kopiami."""
-        from ogloszenia.models import OfferKind
+        from metruj.models import OfferKind
 
         common = {
             "kind": OfferKind.LICYTACJA,
@@ -154,7 +154,7 @@ class TestDeduplikacja:
         assert first.copies_count == 0
 
     def test_ta_sama_licytacja_po_sygnaturze(self, session):
-        from ogloszenia.models import OfferKind
+        from metruj.models import OfferKind
 
         common = {
             "kind": OfferKind.LICYTACJA,
@@ -230,7 +230,7 @@ class TestDeduplikacja:
         assert data["fingerprint"] is None
 
     def test_krotki_tytul_nie_daje_odcisku_tekstowego(self):
-        from ogloszenia.utils.text import shingle_hash
+        from metruj.utils.text import shingle_hash
 
         assert shingle_hash("lokal mieszkalny") is None
         assert shingle_hash(" ".join(f"slowo{i}" for i in range(20))) is not None
@@ -252,27 +252,27 @@ class TestBudowanieScrapera:
     """
 
     def _source(self, scraper: str, key: str):
-        from ogloszenia.models import OfferKind, Source
+        from metruj.models import OfferKind, Source
 
         return Source(key=key, scraper=scraper, kind=OfferKind.NIERUCHOMOSC, name=key, config={})
 
     def test_scrapery_uniwersalne_dostaja_klucz_zrodla(self):
-        from ogloszenia.pipeline.runner import _build_scraper
+        from metruj.pipeline.runner import _build_scraper
 
         for scraper, key in [("sitemap", "investdom_pl"), ("generic_html", "bip_nysa")]:
             built = _build_scraper(self._source(scraper, key), client=None)
             assert built.source_key == key
 
     def test_scrapery_dedykowane_maja_wlasny_klucz(self):
-        from ogloszenia.pipeline.runner import _build_scraper
+        from metruj.pipeline.runner import _build_scraper
 
         for scraper in ("olx", "otodom", "licytacje_komornik"):
             built = _build_scraper(self._source(scraper, scraper), client=None)
             assert built.key == scraper
 
     def test_nieznany_scraper_schodzi_na_generyczny(self):
-        from ogloszenia.pipeline.runner import _build_scraper
-        from ogloszenia.scrapers.generic_html import GenericHtmlScraper
+        from metruj.pipeline.runner import _build_scraper
+        from metruj.scrapers.generic_html import GenericHtmlScraper
 
         built = _build_scraper(self._source("nie-ma-takiego", "cokolwiek"), client=None)
         assert isinstance(built, GenericHtmlScraper)
@@ -289,7 +289,7 @@ class TestBezpieczneUsuwanie:
     def _pair(self, session, tag: str):
         """Para oryginał + kopia. `tag` rozdziela przypadki, bo baza jest
         wspólna dla całej sesji testowej i identyfikatory nie mogą się powtarzać."""
-        from ogloszenia.pipeline.dedup import link_duplicates
+        from metruj.pipeline.dedup import link_duplicates
 
         common = {"description": None, "price": 500000.0, "area": 55.0, "rooms": 2,
                   "city": "Opole"}
@@ -305,8 +305,8 @@ class TestBezpieczneUsuwanie:
         return first, second
 
     def test_usuwa_oryginal_majacy_kopie(self, session):
-        from ogloszenia.models import Listing
-        from ogloszenia.pipeline.prune import delete_listings
+        from metruj.models import Listing
+        from metruj.pipeline.prune import delete_listings
 
         first, second = self._pair(session, "usun")
         removed = delete_listings(session, [first.id])
@@ -320,8 +320,8 @@ class TestBezpieczneUsuwanie:
         assert survivor.is_original is True
 
     def test_usuwa_cale_zrodlo(self, session):
-        from ogloszenia.models import Listing
-        from ogloszenia.pipeline.prune import delete_by_source
+        from metruj.models import Listing
+        from metruj.pipeline.prune import delete_by_source
 
         self._pair(session, "zrodlo")
         removed = delete_by_source(session, "src-zrodlo-a")
@@ -341,7 +341,7 @@ class TestPrzeliczanieWspolrzednych:
     def test_wpis_z_ulica_w_zapytaniu_jest_wykrywany(self, session):
         from sqlalchemy import select
 
-        from ogloszenia.models import GeocodeCache
+        from metruj.models import GeocodeCache
 
         session.add_all([
             GeocodeCache(query_hash="h-ulica", query="Opole, Telesfora",
@@ -373,20 +373,20 @@ class TestGeokodowanieDzielnic:
     """
 
     def test_prawdziwa_dzielnica_przechodzi(self):
-        from ogloszenia.pipeline.geocode import MAX_DISTRICT_KM, _distance_km
+        from metruj.pipeline.geocode import MAX_DISTRICT_KM, _distance_km
 
         # Zaodrze wobec centrum Opola
         assert _distance_km(50.6751, 17.9213, 50.66430, 17.89755) <= MAX_DISTRICT_KM
 
     def test_ta_sama_nazwa_w_innym_wojewodztwie_odpada(self):
-        from ogloszenia.pipeline.geocode import MAX_DISTRICT_KM, _distance_km
+        from metruj.pipeline.geocode import MAX_DISTRICT_KM, _distance_km
 
         # Gosławice na Dolnym Śląsku i Śródmieście w Lublinie
         assert _distance_km(50.6751, 17.9213, 51.2280, 16.8307) > MAX_DISTRICT_KM
         assert _distance_km(50.6751, 17.9213, 51.2483, 22.5558) > MAX_DISTRICT_KM
 
     def test_odleglosc_liczona_poprawnie(self):
-        from ogloszenia.pipeline.geocode import _distance_km
+        from metruj.pipeline.geocode import _distance_km
 
         # Opole - Wrocław to ok. 80 km w linii prostej
         assert 75 < _distance_km(50.6751, 17.9213, 51.1079, 17.0385) < 90
@@ -403,8 +403,8 @@ class TestWygaszanieOfert:
     def test_zwykly_skan_nie_wygasza(self, session):
         from datetime import timedelta
 
-        from ogloszenia.models import ListingStatus, Source, utcnow
-        from ogloszenia.pipeline.runner import _mark_missing
+        from metruj.models import ListingStatus, Source, utcnow
+        from metruj.pipeline.runner import _mark_missing
 
         source = Source(key="wygasz-test", name="test", interval_minutes=15)
         session.add(source)
@@ -422,8 +422,8 @@ class TestWygaszanieOfert:
     def test_wygasza_dopiero_po_kilku_dniach(self, session):
         from datetime import timedelta
 
-        from ogloszenia.models import ListingStatus, Source, utcnow
-        from ogloszenia.pipeline.runner import DAYS_MISSING_BEFORE_REMOVAL, _mark_missing
+        from metruj.models import ListingStatus, Source, utcnow
+        from metruj.pipeline.runner import DAYS_MISSING_BEFORE_REMOVAL, _mark_missing
 
         source = Source(key="wygasz-test2", name="test", interval_minutes=15)
         session.add(source)

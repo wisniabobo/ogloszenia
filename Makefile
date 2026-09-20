@@ -7,31 +7,31 @@ dev:
 	.venv/bin/pip install -r requirements-dev.txt
 
 init:
-	.venv/bin/python -m ogloszenia.cli init-db
+	.venv/bin/python -m metruj.cli init-db
 
 sources:
-	.venv/bin/python -m ogloszenia.cli sources
+	.venv/bin/python -m metruj.cli sources
 
 scan:
-	.venv/bin/python -m ogloszenia.cli scan --region opolskie
+	.venv/bin/python -m metruj.cli scan --region opolskie
 
 geocode:
-	.venv/bin/python -m ogloszenia.cli geocode --limit 500
+	.venv/bin/python -m metruj.cli geocode --limit 500
 
 check:
-	.venv/bin/python -m ogloszenia.cli check-sources
+	.venv/bin/python -m metruj.cli check-sources
 
 docker:
 	docker compose up -d --build
 
 web:
-	.venv/bin/python -m ogloszenia.cli web
+	.venv/bin/python -m metruj.cli web
 
 watch:
-	.venv/bin/python -m ogloszenia.cli watch
+	.venv/bin/python -m metruj.cli watch
 
 test:
 	.venv/bin/python -m pytest -q
 
 lint:
-	.venv/bin/ruff check ogloszenia tests
+	.venv/bin/ruff check metruj tests scripts

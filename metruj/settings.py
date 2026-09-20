@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     )
 
     # --- baza ---
-    database_url: str = f"sqlite:///{DATA_DIR / 'ogloszenia.db'}"
+    database_url: str = f"sqlite:///{DATA_DIR / 'metruj.db'}"
 
     # --- zasięg ---
     #: Domyślnie serwis zbiera oferty z **całej Polski**. Pojedyncze
@@ -85,8 +85,24 @@ class Settings(BaseSettings):
         return [part.strip() for part in raw.split(",") if part.strip()]
 
 
+#: Historycznie wszystkie zmienne miały przedrostek `OGL_`. Po zmianie nazwy
+#: naturalny jest `METRUJ_`, ale działające instalacje mają w `.env` stary
+#: zapis i nie ma powodu ich psuć — przyjmujemy oba, przy czym wpis jawny
+#: w starym formacie ma pierwszeństwo, bo ktoś go tam świadomie postawił.
+LEGACY_PREFIX, PREFIX = "OGL_", "METRUJ_"
+
+
+def _merge_env_prefixes() -> None:
+    import os
+
+    for name, value in list(os.environ.items()):
+        if name.startswith(PREFIX):
+            os.environ.setdefault(LEGACY_PREFIX + name[len(PREFIX):], value)
+
+
 @functools.lru_cache(maxsize=1)
 def get_settings() -> Settings:
+    _merge_env_prefixes()
     return Settings()
 
 
