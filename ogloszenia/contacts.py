@@ -76,24 +76,6 @@ def contacts_for(listing: Listing) -> list[Contact]:
             )
         )
 
-    if not out:
-        for twin in _twins(listing):
-            for phone in twin.phones or []:
-                masked = phone.masked or "***"
-                if masked in seen:
-                    continue
-                seen.add(masked)
-                out.append(
-                    Contact(
-                        masked=masked,
-                        origin="blizniacze",
-                        label=f"z tej samej oferty na {_source_label(twin)}",
-                        from_listing=False,
-                    )
-                )
-            if out:
-                break
-
     agency = listing.agency
     if agency is not None:
         for number in (agency.phones or [])[:2]:
@@ -104,11 +86,59 @@ def contacts_for(listing: Listing) -> list[Contact]:
                 Contact(
                     masked=number,
                     origin="katalog",
-                    label=f"centrala: {agency.name[:40]}",
+                    label=f"centrala: {_short(agency.name)}",
                     from_listing=False,
                 )
             )
+
+    if out:
+        return out
+
+    # Dopiero gdy przy samym ogłoszeniu nie ma nic, sięgamy po bliźniacze
+    # ogłoszenie tej samej nieruchomości z innego portalu. Tam numer bywa
+    # wprost w ogłoszeniu albo w rejestrze biura, które je wystawiło.
+    for twin in _twins(listing):
+        skad = _source_label(twin)
+        for phone in twin.phones or []:
+            masked = phone.masked or "***"
+            if masked in seen:
+                continue
+            seen.add(masked)
+            out.append(
+                Contact(
+                    masked=masked,
+                    origin="blizniacze",
+                    label=f"z tej samej oferty na {skad}",
+                    from_listing=False,
+                )
+            )
+        twin_agency = twin.agency
+        if not out and twin_agency is not None:
+            for number in (twin_agency.phones or [])[:1]:
+                if number in seen:
+                    continue
+                seen.add(number)
+                out.append(
+                    Contact(
+                        masked=number,
+                        origin="blizniacze",
+                        label=f"centrala {_short(twin_agency.name)} · z {skad}",
+                        from_listing=False,
+                    )
+                )
+        if out:
+            break
     return out
+
+
+#: Etykieta pochodzenia stoi w wąskiej kolumnie pod numerem — pełne nazwy biur
+#: („AFKPOL Biuro Obrotu Nieruchomościami i Wycen") łamałyby ją na cztery wiersze.
+LABEL_MAX = 26
+
+
+def _short(name: str) -> str:
+    name = (name or "").strip()
+    return name if len(name) <= LABEL_MAX else name[: LABEL_MAX - 1].rstrip(" ,-") + "…"
 
 
 def _source_label(listing: Listing) -> str:
@@ -137,7 +167,7 @@ def _twins(listing: Listing) -> list[Listing]:
         )
         .limit(8)
     )
-    return [row for row in rows if row.phones]
+    return [row for row in rows if row.phones or (row.agency and row.agency.phones)]
 
 
 def has_any_contact(listing: Listing) -> bool:
