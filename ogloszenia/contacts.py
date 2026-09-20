@@ -9,14 +9,23 @@ pośrednicy sami publikują swój numer. Jeśli ofertę wystawiło biuro, które
 numer znamy, to jest to numer kontaktowy do tej oferty — po prostu pochodzi
 z rejestru firmy, a nie z treści ogłoszenia.
 
+Jest i trzecia: ta sama nieruchomość wisi zwykle na kilku portalach, a nie
+każdy z nich chowa numer. GetHome podaje go wprost przy 99% ofert. Skoro
+deduplikacja rozpoznała, że to jedno i to samo mieszkanie, to numer z tamtego
+ogłoszenia jest numerem do tej nieruchomości.
+
 Dlatego każdy numer niesie ze sobą **pochodzenie**, a interfejs mówi wprost,
-czy to numer z ogłoszenia, czy centrala biura. Bez tego rozróżnienia
-podpowiadalibyśmy numer, sugerując, że stoi w ogłoszeniu.
+czy to numer z ogłoszenia, czy centrala biura, czy bliźniacze ogłoszenie
+z innego portalu. Bez tego rozróżnienia podpowiadalibyśmy numer, sugerując,
+że stoi w tym konkretnym ogłoszeniu.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+from sqlalchemy import or_, select
+from sqlalchemy.orm import object_session
 
 from .models import Listing
 
@@ -27,6 +36,7 @@ ORIGIN_LABELS = {
     "opis": "z treści ogłoszenia",
     "katalog": "centrala biura",
     "biuro": "centrala biura",
+    "blizniacze": "z bliźniaczego ogłoszenia",
 }
 
 
@@ -66,6 +76,24 @@ def contacts_for(listing: Listing) -> list[Contact]:
             )
         )
 
+    if not out:
+        for twin in _twins(listing):
+            for phone in twin.phones or []:
+                masked = phone.masked or "***"
+                if masked in seen:
+                    continue
+                seen.add(masked)
+                out.append(
+                    Contact(
+                        masked=masked,
+                        origin="blizniacze",
+                        label=f"z tej samej oferty na {_source_label(twin)}",
+                        from_listing=False,
+                    )
+                )
+            if out:
+                break
+
     agency = listing.agency
     if agency is not None:
         for number in (agency.phones or [])[:2]:
@@ -81,6 +109,35 @@ def contacts_for(listing: Listing) -> list[Contact]:
                 )
             )
     return out
+
+
+def _source_label(listing: Listing) -> str:
+    """Nazwa portalu widoczna dla czytającego, nie klucz z konfiguracji."""
+    source = listing.source
+    if source is not None and source.name:
+        return source.name.split(" — ")[0]
+    return (listing.source_key or "").replace("_", " ")
+
+
+def _twins(listing: Listing) -> list[Listing]:
+    """Ogłoszenia tej samej nieruchomości na innych portalach.
+
+    Deduplikacja wskazuje jedno ogłoszenie jako pierwotne, a resztę wiąże
+    z nim przez `duplicate_of_id`. Szukamy więc i w górę, i w bok.
+    """
+    session = object_session(listing)
+    if session is None:
+        return []
+    root = listing.duplicate_of_id or listing.id
+    rows = session.scalars(
+        select(Listing)
+        .where(
+            Listing.id != listing.id,
+            or_(Listing.id == root, Listing.duplicate_of_id == root),
+        )
+        .limit(8)
+    )
+    return [row for row in rows if row.phones]
 
 
 def has_any_contact(listing: Listing) -> bool:

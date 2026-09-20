@@ -139,17 +139,29 @@ sources:
     title_selector: h2, h3
 - key: gethome
   name: GetHome.pl
-  scraper: generic_html
+  scraper: gethome
   kind: nieruchomosc
   category: portal_krajowy
   base_url: https://gethome.pl
-  enabled: false
-  verify: true
-  notes: Rynek pierwotny i wtórny; dużo ofert deweloperskich.
+  enabled: true
+  interval_minutes: 30
+  coverage: krajowy
+  sprawdzono: 2026-09-20
+  notes: "Lista renderowana po stronie serwera, więc czytelna bez przeglądarki. Nazwy klas CSS portal generuje losowo przy każdym wdrożeniu, dlatego parser trzyma się znacznika address i układu tekstu karty, a nie selektorów."
   config:
-    urls:
-    - https://gethome.pl/mieszkania/na-sprzedaz/opolskie/?page={page}
-    - https://gethome.pl/domy/na-sprzedaz/opolskie/?page={page}
+    sections:
+    - path: /mieszkania/na-sprzedaz/opolskie/
+      transaction: sprzedaz
+    - path: /domy/na-sprzedaz/opolskie/
+      transaction: sprzedaz
+    - path: /dzialki/na-sprzedaz/opolskie/
+      transaction: sprzedaz
+    - path: /lokale-uzytkowe/na-sprzedaz/opolskie/
+      transaction: sprzedaz
+    - path: /mieszkania/do-wynajecia/opolskie/
+      transaction: wynajem
+    - path: /domy/do-wynajecia/opolskie/
+      transaction: wynajem
 - key: rynekpierwotny
   name: RynekPierwotny.pl
   scraper: generic_html
