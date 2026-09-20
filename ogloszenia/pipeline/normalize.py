@@ -265,6 +265,10 @@ def normalize(
         "street": street,
         "lat": raw.lat,
         "lon": raw.lon,
+        # Współrzędne prosto z portalu są dokładniejsze niż nasze geokodowanie
+        # po adresie — oznaczamy je, żeby mapa nie podpisywała ich jako
+        # przybliżonych i żeby geokoder ich nie nadpisywał.
+        "geo_precision": "portal" if (raw.lat and raw.lon) else None,
         "seller_type": raw.seller_type or SellerType.NIEZNANY,
         "seller_name": clean(raw.seller_name or "")[:300] or None,
         "contact_email": clean(raw.contact_email or "")[:200] or None,
