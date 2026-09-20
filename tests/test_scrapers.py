@@ -10,6 +10,7 @@ import respx
 
 from ogloszenia.models import OfferKind, PropertyType, SellerType, TransactionType
 from ogloszenia.scrapers import ScrapeContext
+from ogloszenia.scrapers.bip import BipScraper
 from ogloszenia.scrapers.generic_html import GenericHtmlScraper, guess_property_type
 from ogloszenia.scrapers.olx import OLXScraper
 from ogloszenia.scrapers.otodom import OtodomScraper
@@ -241,3 +242,77 @@ def test_rozpoznanie_typu_nieruchomosci():
     assert guess_property_type("Działka budowlana 1200 m2").value == "dzialka"
     assert guess_property_type("Hala magazynowa").value == "hala"
     assert guess_property_type("Miejsce postojowe w garażu").value == "garaz"
+
+
+BIP_SEKCJA = """<html><body>
+<div id="tresc">
+  <a href="/a,1">Skorochów, działka nr 140/4 — nieruchomość gruntowa niezabudowana</a>
+  <a href="/a,2">Informacja o wyniku przetargu na sprzedaż działki nr 12</a>
+  <a href="/a,3">Oświadczenia przetargowe do pobrania dla uczestników</a>
+  <a href="/a,4">więcej » (GNP.6840.5.2014.JK - Ogłoszenie przetargu na sprzedaż działki)</a>
+  <a href="/zalacznik/ogloszenie.pdf">ogłoszenie sprzedaż działki 1303_ (PDF | 114,38KB)</a>
+  <a href="/a,5">Przejdź do treści strony ALT + 5</a>
+</div></body></html>"""
+
+BIP_OFERTA = """<html><body><div id="tresc">
+  <h1>Skorochów, działka nr 140/4</h1>
+  <p>Burmistrz ogłasza przetarg ustny nieograniczony na sprzedaż nieruchomości
+  gruntowej niezabudowanej położonej w Skorochowie, dz. nr 140/4.</p>
+  <p>Cena wywoławcza nieruchomości wynosi: 115 000,00 zł</p>
+  <p>Przetarg odbędzie się w dniu 6 października 2026 r. o godzinie 10:00.</p>
+  <p>Data publikacji 2026-09-01 08:30</p>
+</div></body></html>"""
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_bip_bierze_oferty_a_pomija_wyniki_druki_i_zalaczniki():
+    archiwalna = BIP_OFERTA.replace("Data publikacji 2026-09-01 08:30",
+                                    "Data publikacji 2014-09-01 08:30")
+    archiwalna = archiwalna.replace("6 października 2026", "6 października 2014")
+    respx.get("https://bip.test.pl/sekcja").mock(
+        return_value=httpx.Response(200, text=BIP_SEKCJA))
+    respx.get("https://bip.test.pl/a,1").mock(
+        return_value=httpx.Response(200, text=BIP_OFERTA))
+    respx.get("https://bip.test.pl/a,4").mock(
+        return_value=httpx.Response(200, text=archiwalna))
+
+    async with HttpClient() as client:
+        scraper = BipScraper(
+            client,
+            {"sections": ["https://bip.test.pl/sekcja"], "commune": "Nysa",
+             "authority": "Urząd Miejski w Nysie"},
+            source_key="bip_test", name="BIP testowy")
+        items = await collect(scraper, ScrapeContext(max_items=10, max_pages=1))
+
+    # Z sześciu odnośników zostaje jeden: wynik przetargu, druk do wypełnienia,
+    # załącznik PDF i pozycja nawigacji odpadają, archiwalne ogłoszenie też.
+    tytuly = [i.title for i in items]
+    assert len(items) == 1, tytuly
+    oferta = items[0]
+    assert oferta.title.startswith("Skorochów")
+    assert oferta.price == 115000.0            # kwota z treści ogłoszenia
+    assert oferta.property_type is PropertyType.DZIALKA   # nie „dom" od „niezabudowana"
+    assert oferta.transaction is TransactionType.SPRZEDAZ
+    assert oferta.event_date.date().isoformat() == "2026-10-06"
+    assert oferta.region_assured is True
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_bip_odrzuca_ogloszenia_sprzed_lat():
+    """Sekcje BIP-ów trzymają razem bieżące ogłoszenia i archiwum."""
+    stare = BIP_OFERTA.replace("Data publikacji 2026-09-01 08:30",
+                               "Data publikacji 2014-08-24 08:33")
+    stare = stare.replace("6 października 2026", "6 października 2014")
+    respx.get("https://bip.test.pl/sekcja").mock(
+        return_value=httpx.Response(200, text=BIP_SEKCJA))
+    for n in (1, 4):
+        respx.get(f"https://bip.test.pl/a,{n}").mock(return_value=httpx.Response(200, text=stare))
+
+    async with HttpClient() as client:
+        scraper = BipScraper(
+            client, {"sections": ["https://bip.test.pl/sekcja"]},
+            source_key="bip_test", name="BIP testowy")
+        items = await collect(scraper, ScrapeContext(max_items=10, max_pages=1))
+    assert items == []

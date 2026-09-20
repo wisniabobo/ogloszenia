@@ -34,14 +34,6 @@
       <input id="f-city" name="city" list="cities" value="{{ filters.city or '' }}" placeholder="np. Opole">
       <datalist id="cities">{% for c in cities %}<option value="{{ c }}">{% endfor %}</datalist>
     </div>
-    <div class="field"><label for="f-county">Powiat</label>
-      <select id="f-county" name="county"><option value="">wszystkie</option>
-        {% for c in counties %}<option value="{{ c }}" {{ 'selected' if filters.county == c }}>{{ c }}</option>{% endfor %}
-      </select>
-    </div>
-    <div class="field"><label for="f-street">Ulica lub dzielnica</label>
-      <input id="f-street" name="street" value="{{ filters.street or '' }}" placeholder="np. Wrocławska">
-    </div>
     <div class="field"><label>Cena [zł]</label>
       <div class="field__pair">
         <input name="price_min" value="{{ filters.price_min or '' }}" placeholder="od" inputmode="numeric" aria-label="Cena od">
@@ -53,6 +45,19 @@
         <input name="area_min" value="{{ filters.area_min or '' }}" placeholder="od" inputmode="numeric" aria-label="Powierzchnia od">
         <input name="area_max" value="{{ filters.area_max or '' }}" placeholder="do" inputmode="numeric" aria-label="Powierzchnia do">
       </div>
+    </div>
+  </div>
+
+  <details class="filters__more"{{ ' open' if filters.county or filters.street or filters.price_m2_min or filters.price_m2_max or filters.rooms_min or filters.rooms_max or filters.floor_min or filters.floor_max or filters.seller_type or filters.source or filters.period or filters.days_on_market_min or filters.days_on_market_max or filters.q }}>
+    <summary>Więcej filtrów — ulica, pokoje, piętro, kto wystawia, serwis</summary>
+    <div class="filters__grid">
+    <div class="field"><label for="f-county">Powiat</label>
+      <select id="f-county" name="county"><option value="">wszystkie</option>
+        {% for c in counties %}<option value="{{ c }}" {{ 'selected' if filters.county == c }}>{{ c }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field"><label for="f-street">Ulica lub dzielnica</label>
+      <input id="f-street" name="street" value="{{ filters.street or '' }}" placeholder="np. Wrocławska">
     </div>
     <div class="field"><label>Cena za m²</label>
       <div class="field__pair">
@@ -111,7 +116,9 @@
         {% endfor %}
       </select>
     </div>
-  </div>
+    </div>
+  </details>
+
 
   <div class="filters__actions">
     <label class="toggle {{ 'is-on' if filters.only_original }}">
@@ -143,8 +150,17 @@
 <div style="margin-top:18px">
   {% for listing in listings %}{{ offer_card(listing) }}{% else %}
     <div class="empty">
-      <strong>Nic nie pasuje do tych filtrów.</strong>
-      Spróbuj poszerzyć zakres ceny albo wybrać większy obszar.
+      <strong>Żadne ogłoszenie nie pasuje do tych filtrów.</strong>
+      <p>Najczęściej wystarczy odpuścić jeden warunek:</p>
+      <div class="chips" style="justify-content:center">
+        {% if filters.price_max %}<a class="chip" href="?{{ query_string | replace_param('price_max', '') }}">bez górnej ceny</a>{% endif %}
+        {% if filters.city %}<a class="chip" href="?{{ query_string | replace_param('city', '') }}">w całym województwie</a>{% endif %}
+        {% if filters.street %}<a class="chip" href="?{{ query_string | replace_param('street', '') }}">bez ulicy i dzielnicy</a>{% endif %}
+        {% if filters.rooms_min or filters.rooms_max %}<a class="chip" href="?{{ query_string | replace_param('rooms_min', '') | replace_param('rooms_max', '') }}">bez liczby pokoi</a>{% endif %}
+        {% if filters.area_min or filters.area_max %}<a class="chip" href="?{{ query_string | replace_param('area_min', '') | replace_param('area_max', '') }}">bez metrażu</a>{% endif %}
+        {% if filters.property_type %}<a class="chip" href="?{{ query_string | replace_param('property_type', '') }}">każdy rodzaj nieruchomości</a>{% endif %}
+        <a class="chip" href="/nieruchomosci">zacznij od nowa</a>
+      </div>
     </div>
   {% endfor %}
 </div>

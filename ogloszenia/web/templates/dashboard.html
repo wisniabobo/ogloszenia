@@ -2,6 +2,7 @@
 {% from "_macros.html" import offer_card, money %}
 {% block title %}Rynek nieruchomości w woj. opolskim — podsumowanie{% endblock %}
 {% block heading %}Rynek w liczbach{% endblock %}
+{% block subhead %}<p class="lede">Zestawienie liczy tylko ogłoszenia na sprzedaż i pomija powtórki z innych portali. To ceny ofertowe — tyle sprzedający chcą dostać.</p>{% endblock %}
 {% block actions %}<a class="btn btn--sm" href="/nieruchomosci">Przeglądaj oferty</a>{% endblock %}
 {% block content %}
 
@@ -80,24 +81,4 @@
   <div class="empty"><strong>Baza jest jeszcze pusta.</strong> Zbieranie ofert rusza automatycznie co kwadrans.</div>
 {% endfor %}
 
-<div class="section-title">Czy zbieranie działa</div>
-<table class="table">
-  <thead><tr><th>Serwis</th><th>Kiedy</th><th class="num">Pobrane</th><th class="num">Nowe</th>
-             <th class="num">Powtórzenia</th><th>Wynik</th></tr></thead>
-  <tbody>
-  {% for run in runs %}
-  <tr>
-    <td>{{ run.source_key }}</td>
-    <td class="nowrap muted">{{ run.started_at.strftime('%d.%m, %H:%M') }}</td>
-    <td class="num">{{ run.fetched }}</td>
-    <td class="num">{{ run.new }}</td>
-    <td class="num">{{ run.duplicates }}</td>
-    <td>{% if run.ok %}<span class="dot dot--ok"></span>w porządku
-        {% else %}<span class="dot dot--err"></span>{{ (run.message or 'błąd')[:60] }}{% endif %}</td>
-  </tr>
-  {% else %}
-  <tr><td colspan="6" class="muted">Jeszcze nie było przebiegu.</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
 {% endblock %}

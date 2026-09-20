@@ -16,6 +16,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from urllib.parse import parse_qsl, urlencode
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 from starlette.middleware.cors import CORSMiddleware
@@ -70,6 +71,20 @@ def asset(name: str) -> str:
     return f"/static/{name}?v={_asset_version(name)}"
 
 
+def _replace_param(query_string: str, name: str, value: str = "") -> str:
+    """Adres tego samego wyszukiwania z jednym warunkiem zdjętym albo zmienionym.
+
+    Używane w komunikacie o pustym wyniku: zamiast samego „nic nie znaleziono"
+    dajemy gotowe odnośniki, które odpuszczają po jednym filtrze.
+    """
+    params = [(k, v) for k, v in parse_qsl(query_string, keep_blank_values=True) if k != name]
+    if value:
+        params.append((name, value))
+    params = [(k, v) for k, v in params if k != "page"]
+    return urlencode(params)
+
+
+templates.env.filters["replace_param"] = _replace_param
 templates.env.globals["asset"] = asset
 # Szablon karty oferty sam pyta o numery kontaktowe — inaczej każdy widok
 # musiałby je przekazywać osobno i łatwo byłoby o tym zapomnieć.
@@ -273,22 +288,38 @@ def listing_to_dict(listing: Listing, *, reveal_phone: bool = False) -> dict[str
 # Widoki HTML
 # --------------------------------------------------------------------------- #
 @app.get("/", response_class=HTMLResponse)
-def view_dashboard(request: Request, db: DB):
+def view_home(request: Request, db: DB):
+    """Strona główna: wyszukiwarka i najnowsze oferty.
+
+    Dziennik pracy scrapera trafia na /zrodla, a zestawienia rynkowe na /rynek —
+    kto wchodzi tu po mieszkanie, ma zacząć od szukania, a nie od tabeli
+    przebiegów zbierania.
+    """
     stats = dashboard_stats(db)
-    recent_runs = list(
-        db.scalars(select(ScanRun).order_by(desc(ScanRun.started_at)).limit(12))
-    )
-    sources = list(db.scalars(select(Source).order_by(Source.category, Source.name)))
     newest = list(
         db.scalars(
-            apply_sort(apply_filters(select(Listing), {"only_original": True}), "najnowsze").limit(8)
+            apply_sort(apply_filters(select(Listing), {"only_original": True}), "najnowsze").limit(9)
+        )
+    )
+    return templates.TemplateResponse(
+        request,
+        "home.html",
+        {"stats": stats, "newest": newest, "cities": all_cities(), "active": "start"},
+    )
+
+
+@app.get("/rynek", response_class=HTMLResponse)
+def view_dashboard(request: Request, db: DB):
+    stats = dashboard_stats(db)
+    newest = list(
+        db.scalars(
+            apply_sort(apply_filters(select(Listing), {"only_original": True}), "najnowsze").limit(6)
         )
     )
     return templates.TemplateResponse(
         request,
         "dashboard.html",
-        {"stats": stats, "runs": recent_runs, "sources": sources, "newest": newest,
-         "active": "pulpit"},
+        {"stats": stats, "newest": newest, "active": "rynek"},
     )
 
 
@@ -406,8 +437,11 @@ def view_sources(request: Request, db: DB):
             select(ScanRun.source_key, func.max(ScanRun.started_at)).group_by(ScanRun.source_key)
         ).all()
     }
+    recent = list(db.scalars(select(ScanRun).order_by(desc(ScanRun.started_at)).limit(20)))
     return templates.TemplateResponse(
-        request, "sources.html", {"sources": sources, "runs": runs, "active": "zrodla"}
+        request,
+        "sources.html",
+        {"sources": sources, "runs": runs, "recent": recent, "active": "zrodla"},
     )
 
 

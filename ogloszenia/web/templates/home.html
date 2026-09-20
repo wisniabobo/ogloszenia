@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% from "_macros.html" import offer_card, money %}
+{% block title %}Ogłoszenia nieruchomości z woj. opolskiego — wszystkie portale naraz{% endblock %}
+{% block heading %}Wszystkie ogłoszenia z Opolszczyzny w jednym miejscu{% endblock %}
+{% block subhead %}
+<p class="lede">
+  Zbieramy oferty z portali, ze stron biur nieruchomości, z licytacji komorniczych
+  i z przetargów gminnych — i pokazujemy je razem, bez konta i bez limitu wyszukiwań.
+  Gdy ta sama nieruchomość wisi na kilku portalach, sklejamy ją w jeden wpis.
+</p>
+{% endblock %}
+{% block content %}
+
+<form class="hero-search" method="get" action="/nieruchomosci">
+  <div class="hero-search__row">
+    <div class="field">
+      <label for="h-pt">Czego szukasz</label>
+      <select id="h-pt" name="property_type">
+        <option value="">wszystkiego</option>
+        {% for value, label in [('mieszkanie','mieszkania'),('dom','domu'),('dzialka','działki'),
+                                ('lokal','lokalu użytkowego'),('garaz','garażu'),
+                                ('hala','hali lub magazynu'),('gospodarstwo','gospodarstwa')] %}
+          <option value="{{ value }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="h-tr">Kupno czy wynajem</label>
+      <select id="h-tr" name="transaction">
+        <option value="sprzedaz">na sprzedaż</option>
+        <option value="wynajem">do wynajęcia</option>
+        <option value="wszystkie">jedno i drugie</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="h-city">Gdzie</label>
+      <input id="h-city" name="city" list="cities" placeholder="np. Opole, Nysa, Kędzierzyn-Koźle">
+      <datalist id="cities">{% for c in cities %}<option value="{{ c }}">{% endfor %}</datalist>
+    </div>
+    <div class="field">
+      <label for="h-max">Cena do [zł]</label>
+      <input id="h-max" name="price_max" inputmode="numeric" placeholder="bez ograniczeń">
+    </div>
+    <button class="btn btn--lg" type="submit">Szukaj</button>
+  </div>
+</form>
+
+<div class="chips">
+  <span class="chips__label">Na skróty:</span>
+  <a class="chip" href="/nieruchomosci?property_type=mieszkanie&city=Opole">mieszkania w Opolu</a>
+  <a class="chip" href="/nieruchomosci?property_type=dom&price_max=600000">domy do 600 tys.</a>
+  <a class="chip" href="/nieruchomosci?property_type=dzialka">działki</a>
+  <a class="chip" href="/nieruchomosci?transaction=wynajem&property_type=mieszkanie">mieszkania do wynajęcia</a>
+  {% if stats.price_drops %}<a class="chip" href="/nieruchomosci?price_dropped=1">po obniżce ceny</a>{% endif %}
+  <a class="chip" href="/licytacje">licytacje komornicze</a>
+  <a class="chip" href="/przetargi">przetargi gmin</a>
+</div>
+
+<div class="section-title">Najnowsze ogłoszenia</div>
+{% for listing in newest %}{{ offer_card(listing) }}{% else %}
+  <div class="empty"><strong>Baza jest jeszcze pusta.</strong>
+    Zbieranie rusza samo — pierwsze oferty pojawią się w ciągu kwadransa.</div>
+{% endfor %}
+<p class="more"><a href="/nieruchomosci">Zobacz wszystkie {{ '{:,}'.format(stats.original).replace(',', ' ') }} ogłoszeń →</a></p>
+
+<div class="section-title">Co tu znajdziesz</div>
+<div class="cols-3">
+  <a class="card card--pad card--link" href="/nieruchomosci">
+    <div class="card__num num">{{ '{:,}'.format(stats.original).replace(',', ' ') }}</div>
+    <div class="card__head">ogłoszeń nieruchomości</div>
+    <p class="card__text">Z portali ogólnopolskich, serwisów lokalnych i ze stron
+      {{ stats.agencies }} biur nieruchomości z regionu. Powtórki z różnych portali
+      są sklejone, więc jedna nieruchomość to jeden wpis.</p>
+  </a>
+  <a class="card card--pad card--link" href="/licytacje">
+    <div class="card__num num">{{ stats.auctions }}</div>
+    <div class="card__head">licytacji</div>
+    <p class="card__text">Komornicze, skarbowe i z postępowań upadłościowych.
+      Z ceną wywołania, sumą oszacowania i terminem licytacji.</p>
+  </a>
+  <a class="card card--pad card--link" href="/przetargi">
+    <div class="card__num num">{{ stats.tenders }}</div>
+    <div class="card__head">przetargów i wykazów</div>
+    <p class="card__text">Gminy i powiaty ogłaszają sprzedaż swoich nieruchomości
+      wyłącznie w Biuletynach Informacji Publicznej. Tych ogłoszeń nie ma
+      na żadnym portalu.</p>
+  </a>
+</div>
+
+<div class="cols-2" style="margin-top:22px">
+  <div class="card card--pad">
+    <div class="section-title" style="margin-top:0">Gdzie jest najwięcej ofert</div>
+    <table class="table">
+      <tbody>
+      {% for row in stats.by_city[:8] %}
+        <tr><td><a href="/nieruchomosci?city={{ row.city }}">{{ row.city }}</a></td>
+            <td class="num">{{ row.count }}</td></tr>
+      {% else %}
+        <tr><td class="muted">Brak danych — zbieranie dopiero rusza.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card card--pad">
+    <div class="section-title" style="margin-top:0">Ile kosztuje metr</div>
+    <p class="card__text">Średnia cena metra mieszkania wystawionego na sprzedaż
+      w województwie to <strong class="num">{{ money(stats.avg_price_m2, 'zł') }}</strong>.
+      To cena ofertowa — tyle sprzedający chcą dostać, nie tyle, za ile faktycznie
+      sprzedają.</p>
+    <p class="card__text">Dzisiaj przybyło {{ stats.today }} ogłoszeń, przez tydzień
+      {{ stats.week }}.
+      {% if stats.price_drops %}U {{ stats.price_drops }} sprzedający zszedł z ceny
+      od chwili wystawienia.{% else %}Cenę każdej oferty zapisujemy przy pierwszym
+      spotkaniu, więc obniżki zaczniemy pokazywać, gdy ktoś zejdzie z ceny.{% endif %}</p>
+    <p class="more"><a href="/rynek">Więcej liczb o rynku →</a></p>
+  </div>
+</div>
+{% endblock %}

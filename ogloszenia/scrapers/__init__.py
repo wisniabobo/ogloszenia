@@ -22,6 +22,7 @@ from .krz import KRZScraper
 from .morizon import MorizonScraper
 from .msig import MSiGScraper
 from .nieruchomosci_online import NieruchomosciOnlineScraper
+from .bip import BipScraper
 from .olx import OLXScraper
 from .otodom import OtodomScraper
 from .pkp import PKPScraper
@@ -32,6 +33,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
     cls.key: cls
     for cls in (
         AgencyDirectoryScraper,
+        BipScraper,
         OLXScraper,
         OtodomScraper,
         GratkaScraper,

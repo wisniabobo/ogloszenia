@@ -226,6 +226,13 @@ class HttpClient:
     async def get_text(self, url: str, **kw) -> str:
         return (await self.request(url, **kw)).text
 
+    async def get_bytes(self, url: str, *, max_size: int = 8_000_000, **kw) -> bytes:
+        """Pobiera plik. Załączniki BIP-ów bywają skanami po kilkanaście MB —
+        takich nie czytamy, bo i tak nie ma w nich warstwy tekstowej."""
+        resp = await self.request(url, **kw)
+        content = resp.content
+        return b"" if len(content) > max_size else content
+
     async def get_json(self, url: str, **kw) -> dict | list:
         headers = {"Accept": "application/json, text/plain, */*"} | (kw.pop("headers", None) or {})
         resp = await self.request(url, headers=headers, **kw)

@@ -421,17 +421,15 @@ sources:
   kind: przetarg
   category: przetargi
   base_url: https://ezamowienia.gov.pl
-  enabled: true
+  enabled: false
   interval_minutes: 180
   coverage: krajowy
-  verify: true
-  notes: Filtrowane po CPV 45/70/71 (roboty budowlane, nieruchomości, projektowanie).
+  sprawdzono: 2026-09-20
+  notes: "Wyłączone. BZP to zamówienia publiczne — gminy ogłaszają tam, co chcą KUPIĆ, a nie co sprzedają. Sprawdzone na 200 ostatnich ogłoszeniach z kraju: ani jednego z CPV 70 (usługi w zakresie nieruchomości), a z opolskiego same roboty drogowe i oprogramowanie. Sprzedaż mienia komunalnego ogłasza się w BIP gminy, nie w BZP — stamtąd bierzemy przetargi na nieruchomości."
   config:
     voivodeship: OPOLSKIE
     cpv_prefixes:
     - '70'
-    - '45'
-    - '71'
 - key: bzp
   name: Biuletyn Zamówień Publicznych (UZP)
   scraper: generic_html
@@ -584,34 +582,53 @@ sources:
     detail: true
     seller_type: urzad
     authority: Urząd Miasta Opola
+  requires_js: true
+  notes: "Silnik SISCO renderuje listę ogłoszeń skryptem — w HTML-u jest tylko „Proszę czekać”. Bez przeglądarki nie da się tego odczytać."
 - key: bip_powiat_opolski
-  name: BIP Starostwa Powiatowego w Opolu
-  scraper: generic_html
-  kind: wykaz
+  name: "BIP Powiatu Opolskiego — nieruchomości"
+  scraper: bip
+  kind: przetarg
   category: bip
   base_url: https://bip.powiatopolski.pl
+  enabled: true
+  interval_minutes: 720
   coverage: lokalny
-  enabled: false
-  verify: true
+  sprawdzono: 2026-09-20
+  config:
+    authority: "Starostwo Powiatowe w Opolu"
+    sections:
+    - https://bip.powiatopolski.pl/2540/wydzial-gospodarki-nieruchomosciami-i-rolnictwa.html
 - key: bip_nysa
-  name: BIP Gminy Nysa — nieruchomości
-  scraper: generic_html
-  kind: wykaz
+  name: "BIP Gminy Nysa — nieruchomości"
+  scraper: bip
+  kind: przetarg
   category: bip
   base_url: https://bip.nysa.pl
-  sprawdzono: 2026-09-19
+  enabled: true
+  interval_minutes: 720
   coverage: lokalny
-  enabled: false
-  verify: true
+  sprawdzono: 2026-09-20
+  config:
+    commune: "Nysa"
+    authority: "Urząd Miejski w Nysie"
+    sections:
+    - https://bip.nysa.pl?c=280
 - key: bip_kedzierzyn_kozle
-  name: BIP Kędzierzyn-Koźle — nieruchomości
-  scraper: generic_html
-  kind: wykaz
+  name: "BIP Gminy Kędzierzyn-Koźle — nieruchomości"
+  scraper: bip
+  kind: przetarg
   category: bip
   base_url: https://bip.kedzierzynkozle.pl
+  enabled: true
+  interval_minutes: 720
   coverage: lokalny
-  enabled: false
-  verify: true
+  sprawdzono: 2026-09-20
+  notes: "Serwis odpowiada wolno, bywa że ponad 30 sekund."
+  config:
+    commune: "Kędzierzyn-Koźle"
+    authority: "Urząd Miasta Kędzierzyn-Koźle"
+    sections:
+    - https://bip.kedzierzynkozle.pl/artykuly/127/sprzedaz-dzierzawa-obciazanie-nieruchomosci-komunalnych
 - key: bip_brzeg
   name: BIP Gminy Brzeg — nieruchomości
   scraper: generic_html
@@ -621,43 +638,77 @@ sources:
   coverage: lokalny
   enabled: false
   verify: true
+  requires_js: true
+  notes: "Ten sam silnik co w BIP-ie Opola, treść dociągana skryptem. Dodatkowo strona główna serwuje wstrzyknięty spam hazardowy — podstrony są czyste, ale serwis jest naruszony."
 - key: bip_kluczbork
-  name: BIP Gminy Kluczbork — nieruchomości
-  scraper: generic_html
-  kind: wykaz
+  name: "BIP Gminy Kluczbork — nieruchomości"
+  scraper: bip
+  kind: przetarg
   category: bip
-  base_url: https://bip.kluczbork.pl
-  sprawdzono: 2026-09-19
+  base_url: https://bip.kluczbork.eu
+  enabled: true
+  interval_minutes: 720
   coverage: lokalny
-  enabled: false
-  verify: true
+  sprawdzono: 2026-09-20
+  notes: "Domena bip.kluczbork.pl oddaje niewykonany kod PHP z przekierowaniem; działa .eu."
+  config:
+    commune: "Kluczbork"
+    authority: "Urząd Miejski w Kluczborku"
+    sections:
+    - https://bip.kluczbork.eu/452,przetargi-na-sprzedaz-i-dzierzawe-nieruchomosci
+    - https://bip.kluczbork.eu/122,przetargi-nieruchomosci
+    - https://bip.kluczbork.eu/453,informacja-o-wykazach-nieruchomosci
 - key: bip_prudnik
-  name: BIP Gminy Prudnik — nieruchomości
-  scraper: generic_html
-  kind: wykaz
+  name: "BIP Gminy Prudnik — nieruchomości"
+  scraper: bip
+  kind: przetarg
   category: bip
   base_url: https://bip.prudnik.pl
+  enabled: true
+  interval_minutes: 720
   coverage: lokalny
-  enabled: false
-  verify: true
+  sprawdzono: 2026-09-20
+  config:
+    commune: "Prudnik"
+    authority: "Urząd Miejski w Prudniku"
+    sections:
+    - https://bip.prudnik.pl/gospodarka-przestrzenna/przetargi-na-zbycie-nieruchomosci-i-lokali
+    - https://bip.prudnik.pl/gospodarka-przestrzenna/przetargi-na-dzierzawe-nieruchomosci
+    - https://bip.prudnik.pl/gospodarka-przestrzenna/wykaz-nieruchomosci
 - key: bip_strzelce_opolskie
-  name: BIP Gminy Strzelce Opolskie — nieruchomości
-  scraper: generic_html
-  kind: wykaz
+  name: "BIP Gminy Strzelce Opolskie — nieruchomości"
+  scraper: bip
+  kind: przetarg
   category: bip
   base_url: https://bip.strzelceopolskie.pl
+  enabled: true
+  interval_minutes: 720
   coverage: lokalny
-  enabled: false
-  verify: true
+  sprawdzono: 2026-09-20
+  config:
+    commune: "Strzelce Opolskie"
+    authority: "Urząd Miejski w Strzelcach Opolskich"
+    sections:
+    - https://bip.strzelceopolskie.pl/przetargi/Dotyczace_sprzedazy_nieruchomosci.html
+    - https://bip.strzelceopolskie.pl/przetargi/Przetargi_dot_dzierzawy_gruntow.html
+    - https://bip.strzelceopolskie.pl/przetargi/Dotyczace_najmu_lokali_uzytkowych.html
+    - https://bip.strzelceopolskie.pl/komunikaty_i_wykazy/wykaz_nieruchomosci_gminnych_przeznaczonych_do_sprzedazy.html
 - key: bip_krapkowice
-  name: BIP Gminy Krapkowice — nieruchomości
-  scraper: generic_html
-  kind: wykaz
+  name: "BIP Gminy Krapkowice — nieruchomości"
+  scraper: bip
+  kind: przetarg
   category: bip
   base_url: https://bip.krapkowice.pl
+  enabled: true
+  interval_minutes: 720
   coverage: lokalny
-  enabled: false
-  verify: true
+  sprawdzono: 2026-09-20
+  notes: "Gmina publikuje ogłoszenia zbiorcze: jeden wpis obejmuje kilka nieruchomości, szczegóły w załączonym PDF-ie."
+  config:
+    commune: "Krapkowice"
+    authority: "Urząd Miasta i Gminy w Krapkowicach"
+    sections:
+    - https://bip.krapkowice.pl/2571/ogloszenia-o-przetargach-i-wykazach-nieruchomosci.html
 - key: bip_namyslow
   name: BIP Gminy Namysłów — nieruchomości
   scraper: generic_html
@@ -668,33 +719,55 @@ sources:
   enabled: false
   verify: true
 - key: bip_glubczyce
-  name: BIP Gminy Głubczyce — nieruchomości
-  scraper: generic_html
-  kind: wykaz
+  name: "BIP Gminy Głubczyce — nieruchomości"
+  scraper: bip
+  kind: przetarg
   category: bip
   base_url: https://bip.glubczyce.pl
+  enabled: true
+  interval_minutes: 720
   coverage: lokalny
-  enabled: false
-  verify: true
+  sprawdzono: 2026-09-20
+  config:
+    commune: "Głubczyce"
+    authority: "Urząd Miejski w Głubczycach"
+    sections:
+    - https://bip.glubczyce.pl/144/ogloszenia-burmistrza-glubczyc-o-przetargach-na-sprzedaz-nieruchomosci.html
+    - https://bip.glubczyce.pl/143/ogloszenia-o-przetargach-w-sprawie-oddania-w-dzierzawenajem-nieruchomosci.html
+    - https://bip.glubczyce.pl/146/wykazy-nieruchomosci-przeznaczonych-do-zbycia.html
+    - https://bip.glubczyce.pl/147/wykazy-nieruchomosci-przeznaczonych-do-oddania-w-najemdzierzawe.html
 - key: bip_olesno
-  name: BIP Gminy Olesno — nieruchomości
-  scraper: generic_html
-  kind: wykaz
+  name: "BIP Gminy Olesno — nieruchomości"
+  scraper: bip
+  kind: przetarg
   category: bip
   base_url: https://bip.olesno.pl
-  sprawdzono: 2026-09-19
+  enabled: true
+  interval_minutes: 720
   coverage: lokalny
-  enabled: false
-  verify: true
+  sprawdzono: 2026-09-20
+  notes: "Adresy sekcji zawierają rok — po zmianie roku trzeba dopisać nowe."
+  config:
+    commune: "Olesno"
+    authority: "Urząd Miejski w Oleśnie"
+    sections:
+    - https://bip.olesno.pl/12941/przetargi-na-sprzedaz-nieruchomosci-2026.html
+    - https://bip.olesno.pl/12945/przetargi-na-dzierzawe-gruntow-2026.html
+    - https://bip.olesno.pl/12946/przetargi-na-najem-lokali-2026.html
 - key: bip_opolskie_urzad_marszalkowski
-  name: BIP Urzędu Marszałkowskiego Woj. Opolskiego
-  scraper: generic_html
-  kind: wykaz
+  name: "BIP Województwa Opolskiego — przetargi nieruchomości"
+  scraper: bip
+  kind: przetarg
   category: bip
   base_url: https://bip.opolskie.pl
-  coverage: regionalny
-  enabled: false
-  verify: true
+  enabled: true
+  interval_minutes: 720
+  coverage: lokalny
+  sprawdzono: 2026-09-20
+  config:
+    authority: "Urząd Marszałkowski Województwa Opolskiego"
+    sections:
+    - https://bip.opolskie.pl/typy-tresci/przetargi-nieruchomosci/
 - key: bip_ouw
   name: BIP Opolskiego Urzędu Wojewódzkiego
   scraper: generic_html
