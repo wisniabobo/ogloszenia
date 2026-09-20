@@ -128,8 +128,12 @@ def normalize(
         place.get("district"),
         detect_opole_district(haystack) if (city or "").lower() == "opole" else None,
     )
-    street = _pick(clean(raw.street), extract_street(title), extract_street(raw.location_text or ""),
-                   extract_street(description[:600]))
+    street = _pick(
+        clean(raw.street),
+        extract_street(title),
+        extract_street(raw.location_text or ""),
+        extract_street(description[:600]) if raw.street_from_body else None,
+    )
     # Przedrostek „ul." przechowywany w bazie psuł geokodowanie (GUGiK zwraca
     # wtedy zero wyników), a w interfejsie i tak dokłada go szablon. Inne typy
     # — aleja, osiedle, plac — zostawiamy, bo zmieniają znaczenie adresu.

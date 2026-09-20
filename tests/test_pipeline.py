@@ -455,3 +455,22 @@ def test_zwrot_woj_opolskie_w_opisie_wystarczy():
         description="Nieruchomość położona w gminie Pakosławice, woj. opolskie.",
         kind=OfferKind.PRZETARG, price=None)
     assert normalize(raw) is not None
+
+
+def test_adres_urzedu_z_tresci_nie_staje_sie_adresem_nieruchomosci():
+    """Strona BIP-u zaczyna się od adresu urzędu, nie wystawianej działki.
+
+    65 przetargów z Kluczborka lądowało przez to pod ratuszem przy Katowickiej.
+    """
+    raw = make_raw(
+        title="Wykaz nieruchomości przeznaczonych do sprzedaży",
+        description="Urząd Miejski w Kluczborku, ul. Katowicka 1. Burmistrz ogłasza wykaz…",
+        city="Kluczbork", kind=OfferKind.PRZETARG, price=None, street_from_body=False)
+    assert normalize(raw).data["street"] is None
+
+    # Przy zwykłym ogłoszeniu z portalu ulica z treści nadal jest wskazówką.
+    portal = make_raw(
+        title="Mieszkanie na sprzedaż",
+        description="Mieszkanie przy ul. Katowickiej 1 w Kluczborku.",
+        city="Kluczbork", price=None)
+    assert normalize(portal).data["street"] == "Katowickiej"

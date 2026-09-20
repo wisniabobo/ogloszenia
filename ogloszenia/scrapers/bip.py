@@ -330,6 +330,7 @@ class BipScraper(BaseScraper):
             published_at=published,
             extra={"dzialki": clean(parcels.group(1))} if parcels else {},
             region_assured=True,
+            street_from_body=False,
         )
 
     def _attachments(self, tree: HTMLParser, page_url: str) -> list[str]:
@@ -443,4 +444,7 @@ class BipScraper(BaseScraper):
             extra={"dzialki": clean(parcels.group(1))} if parcels else {},
             # BIP gminy z Opolskiego publikuje wyłącznie swoje nieruchomości.
             region_assured=True,
+            # Strona urzędu zaczyna się od jego własnego adresu — bez tego
+            # 65 przetargów z Kluczborka lądowało pod ratuszem przy Katowickiej.
+            street_from_body=False,
         )

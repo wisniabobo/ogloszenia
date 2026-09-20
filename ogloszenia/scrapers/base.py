@@ -90,6 +90,11 @@ class RawListing:
     #: województwo). Wtedy brak rozpoznanego miasta nie jest powodem do
     #: odrzucenia oferty — portal sam zagwarantował, że jest z tego regionu.
     region_assured: bool = False
+    #: Czy wolno szukać ulicy w treści ogłoszenia. Na stronach urzędowych
+    #: treść zaczyna się od adresu urzędu — dla ogłoszenia z BIP-u Kluczborka
+    #: dawało to „ul. Katowicka", czyli siedzibę ratusza, a nie działkę
+    #: wystawioną na sprzedaż. Takie źródła ustawiają tu False.
+    street_from_body: bool = True
 
 
 class BaseScraper:
