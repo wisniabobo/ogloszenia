@@ -74,9 +74,13 @@ done
 systemctl daemon-reload
 
 say "Domykam schemat bazy i naprawiam dane sprzed zmiany"
+# Pakiet nie jest instalowany do środowiska, tylko uruchamiany z drzewa
+# źródeł (tak robi też systemd przez WorkingDirectory) — bez `cd` Python
+# nie ma go na ścieżce importów.
+cd "$NEW_DIR"
 sudo -u "$NEW_USER" "$NEW_DIR/.venv/bin/pip" install -q -r "$NEW_DIR/requirements.txt"
-sudo -u "$NEW_USER" "$NEW_DIR/.venv/bin/python" -m metruj.cli init-db
-sudo -u "$NEW_USER" "$NEW_DIR/.venv/bin/python" -m metruj.cli napraw
+sudo -u "$NEW_USER" env -C "$NEW_DIR" "$NEW_DIR/.venv/bin/python" -m metruj.cli init-db
+sudo -u "$NEW_USER" env -C "$NEW_DIR" "$NEW_DIR/.venv/bin/python" -m metruj.cli napraw
 
 say "Startuję"
 systemctl enable --now metruj-web metruj-scan.timer metruj-deep.timer metruj-kontakty.timer
