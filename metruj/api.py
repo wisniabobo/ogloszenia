@@ -439,11 +439,23 @@ def listing_to_dict(listing: Listing, *, reveal_phone: bool = False) -> dict[str
         "price_per_m2": listing.price_per_m2,
         "currency": listing.currency,
         "area": listing.area,
+        "plot_area": listing.plot_area,
         "rooms": listing.rooms,
         "floor": listing.floor,
         "floors_total": listing.floors_total,
         "year_built": listing.year_built,
         "market": listing.market,
+        # Cena tej oferty wobec mediany okolicy: 1,00 to dokładnie mediana,
+        # 0,70 znaczy „trzydzieści procent poniżej". `poziom` mówi, z czym
+        # porównujemy — bez tego liczba jest myląca.
+        "okazja": {
+            "wskaznik": listing.deal_ratio,
+            "poziom": listing.deal_level,
+            "roznica_proc": round((1 - listing.deal_ratio) * 100, 1)
+            if listing.deal_ratio else None,
+        }
+        if listing.deal_ratio
+        else None,
         "location": {
             "voivodeship": listing.voivodeship,
             "county": listing.county,
@@ -451,8 +463,10 @@ def listing_to_dict(listing: Listing, *, reveal_phone: bool = False) -> dict[str
             "city": listing.city,
             "district": listing.district,
             "street": listing.street,
+            "teryt": listing.teryt,
             "lat": listing.lat,
             "lon": listing.lon,
+            "precyzja": listing.geo_precision,
         },
         "seller": {
             "type": listing.seller_type.value,

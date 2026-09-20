@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import money, area, age, seller_tag, address %}
+{% from "_macros.html" import money, area, land, age, seller_tag, address, deal_badge %}
 {% block title %}{{ listing.title[:70] }}{% endblock %}
 {% block heading %}Szczegóły oferty{% endblock %}
 {% block actions %}
@@ -40,10 +40,11 @@
       {% if listing.initial_price and listing.initial_price != listing.price %}
         <div class="stat__hint">na starcie {{ money(listing.initial_price) }}</div>{% endif %}</div>
     {% if listing.price_per_m2 %}<div class="stat"><div class="stat__label">Za metr</div>
-      <div class="stat__value num">{{ money(listing.price_per_m2, 'zł') }}</div></div>{% endif %}
+      <div class="stat__value num">{{ money(listing.price_per_m2, 'zł') }}</div>
+      {% if listing.deal_ratio %}<div class="stat__hint">{{ deal_badge(listing) }}</div>{% endif %}</div>{% endif %}
     {% if listing.area %}<div class="stat"><div class="stat__label">Powierzchnia</div>
       <div class="stat__value num">{{ area(listing.area) }}</div>
-      {% if listing.plot_area %}<div class="stat__hint">działka {{ area(listing.plot_area) }}</div>{% endif %}</div>{% endif %}
+      {% if listing.plot_area %}<div class="stat__hint">działka {{ land(listing.plot_area) }}</div>{% endif %}</div>{% endif %}
     {% if listing.rooms %}<div class="stat"><div class="stat__label">Pokoje</div>
       <div class="stat__value num">{{ listing.rooms }}</div></div>{% endif %}
     {% if listing.floor is not none %}<div class="stat"><div class="stat__label">Piętro</div>
