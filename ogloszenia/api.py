@@ -441,12 +441,25 @@ def view_map(request: Request, db: DB):
 @app.get("/biura", response_class=HTMLResponse)
 def view_agencies(request: Request, db: DB):
     q = request.query_params.get("q")
-    stmt = select(Agency).order_by(desc(Agency.listings_count), Agency.name)
+    # Rejestr biur zasilamy też katalogami sąsiednich województw — wyłącznie po
+    # to, by mieć numer telefonu do pośrednika, który wystawia oferty
+    # w Opolskiem, a siedzibę ma za granicą województwa. Na liście pokazujemy
+    # jednak tylko biura, których ogłoszenia faktycznie mamy; inaczej strona
+    # obiecywałaby dwa i pół tysiąca biur, z których większość nic tu nie ma.
+    stmt = (
+        select(Agency)
+        .where(Agency.listings_count > 0)
+        .order_by(desc(Agency.listings_count), Agency.name)
+    )
     if q:
         stmt = stmt.where(Agency.name.ilike(f"%{q}%"))
     agencies = list(db.scalars(stmt.limit(500)))
+    registry_total = db.scalar(select(func.count(Agency.id))) or 0
     return templates.TemplateResponse(
-        request, "agencies.html", {"agencies": agencies, "q": q or "", "active": "biura"}
+        request,
+        "agencies.html",
+        {"agencies": agencies, "q": q or "", "registry_total": registry_total,
+         "active": "biura"},
     )
 
 

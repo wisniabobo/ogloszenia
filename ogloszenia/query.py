@@ -139,7 +139,11 @@ def apply_filters(stmt: Select, filters: dict[str, Any] | Filters) -> Select:
     if f.year_min is not None:
         clauses.append(Listing.year_built >= f.year_min)
 
-    if f.only_original:
+    # Filtrując po serwisie, użytkownik pyta „co jest na tym portalu" — a nie
+    # „co ten portal miał jako pierwszy". Bez tego wyjątku wybór Gratki dawał
+    # dwie oferty zamiast sześćdziesięciu, bo resztę przypisano portalowi,
+    # który wystawił je wcześniej.
+    if f.only_original and not f.source:
         clauses.append(Listing.is_original.is_(True))
     if f.only_active:
         clauses.append(Listing.status == ListingStatus.AKTYWNA)
@@ -155,7 +159,13 @@ def apply_filters(stmt: Select, filters: dict[str, Any] | Filters) -> Select:
         )
 
     if f.period and f.period in PERIODS:
-        clauses.append(Listing.first_seen_at >= utcnow() - timedelta(days=PERIODS[f.period]))
+        # „Dodane w tym tygodniu" znaczy: wystawione na portalu, a nie
+        # zauważone przez nas. Wcześniej liczyła się data pierwszego
+        # spotkania, więc tydzień po starcie serwisu każda oferta wyglądała
+        # na świeżą. Datę z portalu mamy przy 87% ogłoszeń; przy pozostałych
+        # zostaje moment, w którym je zobaczyliśmy.
+        since = utcnow() - timedelta(days=PERIODS[f.period])
+        clauses.append(func.coalesce(Listing.published_at, Listing.first_seen_at) >= since)
 
     now = utcnow()
     if f.days_on_market_min is not None:

@@ -240,7 +240,12 @@ sources:
 
     '
   config:
-    region_slug: opolskie
+    region_slugs:
+    - opolskie
+    - dolnoslaskie
+    - slaskie
+    - wielkopolskie
+    - lodzkie
     max_pages: 40
 - key: nto_ogloszenia
   name: NTO — Nowa Trybuna Opolska (ogłoszenia)

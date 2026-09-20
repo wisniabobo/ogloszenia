@@ -5,10 +5,16 @@
 {% block content %}
 
 <div class="note">
-  Lista pochodzi z katalogu, w którym pośrednicy <strong>sami się rejestrują</strong>,
-  i jest uzupełniana o biura rozpoznane w treści ogłoszeń. Kolumna
-  <strong>pokrycie</strong> mówi, jaką część ofert deklarowanych przez biuro
-  faktycznie mamy — dzięki temu widać, czy czegoś nie brakuje.
+  Tu są biura, których ogłoszenia mamy w bazie. Nazwy i telefony pochodzą
+  z katalogu, w którym pośrednicy <strong>sami się rejestrują</strong>,
+  uzupełnionego o biura rozpoznane w treści ogłoszeń.
+  Kolumna <strong>pokrycie</strong> mówi, jaką część ofert deklarowanych przez
+  biuro faktycznie u nas znajdziesz — po niej widać, czy czegoś nie brakuje.
+  <br>
+  W rejestrze trzymamy {{ '{:,}'.format(registry_total).replace(',', ' ') }} biur
+  z Opolszczyzny i województw ościennych. Te spoza tej listy nie mają u nas
+  ofert — ich numery przydają się tylko wtedy, gdy pośrednik spoza regionu
+  wystawi coś w Opolskiem.
 </div>
 
 <form class="filters" method="get">

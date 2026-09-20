@@ -10,6 +10,13 @@ czegoś brakuje.
 Zweryfikowane 19.09.2026: dla woj. opolskiego katalog Otodom zwraca
 **110 biur** z łącznie ~1950 aktywnymi ofertami.
 
+Biura z sąsiednich województw czytamy z tego samego powodu, dla którego
+w ogóle tu zaglądamy: telefon. Sporo pośredników wystawiających oferty
+w Opolskiem ma siedzibę po drugiej stronie granicy województwa i w katalogu
+opolskim ich nie ma. Zapis do rejestru dopasowuje nazwy rozmyte, więc taki
+wpis uzupełnia numer przy biurze, które znamy już z ogłoszeń, zamiast
+zakładać drugie.
+
 Ten scraper nie produkuje ogłoszeń — zasila rejestr biur (`agencies`).
 Dlatego zwraca `RawListing` w rodzaju `INNE` z kompletem danych w `extra`,
 a pipeline zamienia je na wpisy w rejestrze zamiast w ofertach.
@@ -42,11 +49,19 @@ class AgencyDirectoryScraper(BaseScraper):
     coverage = "krajowy"
 
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
-        region = self.config.get("region_slug", ctx.voivodeship or "opolskie")
+        regions = self.config.get("region_slugs") or [
+            self.config.get("region_slug", ctx.voivodeship or "opolskie")
+        ]
         seen: set[str] = set()
         # katalog ma 20 pozycji na stronę; idziemy aż przestaną przybywać nowe
         max_pages = max(ctx.max_pages, int(self.config.get("max_pages", 40)))
 
+        for region in regions:
+            async for item in self._region(region, max_pages, seen):
+                yield item
+
+    async def _region(self, region: str, max_pages: int,
+                      seen: set[str]) -> AsyncIterator[RawListing]:
         for page in range(1, max_pages + 1):
             url = f"{DIRECTORY}/{region}"
             try:
