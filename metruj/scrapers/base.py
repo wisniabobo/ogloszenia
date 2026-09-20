@@ -42,6 +42,10 @@ class ScrapeContext:
     #: tryb głęboki — przechodzimy wyniki do końca, a nie tylko pierwsze strony.
     #: Zwykły skan ma łapać nowości szybko; ten ma zebrać *wszystko*.
     deep: bool = False
+    #: Czy limity podał człowiek (`--limit`, `--pages`). Wtedy mają pierwszeństwo
+    #: przed tym, co źródło ustawia w konfiguracji — kto wpisuje limit w komendzie,
+    #: chce zobaczyć próbkę, a nie osiem tysięcy ofert.
+    limits_explicit: bool = False
 
     @property
     def regions(self) -> list[dict]:

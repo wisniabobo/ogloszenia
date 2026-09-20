@@ -233,6 +233,8 @@ def _source_context(source: Source, ctx: ScrapeContext) -> ScrapeContext:
     kategorii — przy takim limicie skan nie docierał poza pierwszy region.
     Dlatego źródło może podnieść swój limit w `config/sources.yaml`.
     """
+    if ctx.limits_explicit:
+        return ctx
     config = source.config or {}
     prefix = "deep_" if ctx.deep else ""
     pages = config.get(f"{prefix}max_pages", config.get("max_pages"))
@@ -267,6 +269,7 @@ async def _collect(source: Source, client: HttpClient, ctx: ScrapeContext) -> tu
 def _persist(source_key: str, items: list[RawListing], error: str,
              scope: list[str] | None = None,
              complete_pass: bool = False) -> tuple[SourceResult, list[int]]:
+    """Zapisuje wynik jednego źródła. Wywoływane w osobnym wątku."""
     result = SourceResult(source_key=source_key, fetched=len(items), ok=not error, message=error)
     new_ids: list[int] = []
 
@@ -439,20 +442,34 @@ async def run_scan(
         max_items=max_items or int(defaults.get("deep_max_items" if deep else "max_items", 20000 if deep else 400)),
         fetch_details=fetch_details,
         deep=deep,
+        limits_explicit=bool(max_pages or max_items),
     )
 
+    # Każde źródło zapisujemy **gdy tylko skończy**, a nie po zakończeniu
+    # wszystkich. Przy jednym województwie różnica była niewidoczna; przy
+    # zasięgu krajowym zbierane pozycje leżały w pamięci godzinami, czekając
+    # na najwolniejszy BIP, a przerwany przebieg nie zostawiał po sobie nic.
+    # Zapis idzie do osobnego wątku, żeby nie blokować pobierania.
     result = ScanResult()
     async with HttpClient() as client:
-        collected = await asyncio.gather(
-            *(_collect(source, client, ctx) for source in sources), return_exceptions=False
-        )
 
-    for source, (items, error) in zip(sources, collected, strict=True):
-        source_result, new_ids = _persist(
-            source.key, items, error, scope, complete_pass=deep
-        )
-        result.sources.append(source_result)
-        result.new_listing_ids.extend(new_ids)
+        async def collect_one(source: Source):
+            items, error = await _collect(source, client, ctx)
+            return source, items, error
+
+        tasks = [asyncio.create_task(collect_one(source)) for source in sources]
+        for finished in asyncio.as_completed(tasks):
+            source, items, error = await finished
+            source_result, new_ids = await asyncio.to_thread(
+                _persist, source.key, items, error, scope, deep
+            )
+            result.sources.append(source_result)
+            result.new_listing_ids.extend(new_ids)
+            items.clear()   # pozycje są już w bazie — nie trzymamy ich w pamięci
+            log.info(
+                "Źródło %s: pobrane %s, nowe %s, błędy %s",
+                source.key, source_result.fetched, source_result.new, source_result.errors,
+            )
 
     with session_scope() as session:
         recount_agencies(session)
