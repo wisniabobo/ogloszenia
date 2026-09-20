@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 {% from "_macros.html" import offer_card, money %}
-{% block title %}Ogłoszenia nieruchomości z woj. opolskiego — wszystkie portale naraz{% endblock %}
-{% block heading %}Wszystkie ogłoszenia z Opolszczyzny w jednym miejscu{% endblock %}
+{% block title %}Metruj — wszystkie ogłoszenia nieruchomości z Polski w jednym miejscu{% endblock %}
+{% block heading %}Wszystkie ogłoszenia nieruchomości z Polski{% endblock %}
 {% block subhead %}
 <p class="lede">
   Zbieramy oferty z portali, ze stron biur nieruchomości, z licytacji komorniczych
-  i z przetargów gminnych — i pokazujemy je razem, bez konta i bez limitu wyszukiwań.
-  Gdy ta sama nieruchomość wisi na kilku portalach, sklejamy ją w jeden wpis.
+  i z przetargów gminnych — z całego kraju, bez konta i bez limitu wyszukiwań.
+  Gdy ta sama nieruchomość wisi na kilku portalach, sklejamy ją w jeden wpis
+  i porównujemy jej cenę z medianą okolicy.
 </p>
 {% endblock %}
 {% block content %}
@@ -34,7 +35,7 @@
     </div>
     <div class="field">
       <label for="h-city">Gdzie</label>
-      <input id="h-city" name="city" list="cities" placeholder="np. Opole, Nysa, Kędzierzyn-Koźle">
+      <input id="h-city" name="city" list="cities" placeholder="np. Warszawa, Kraków, Nysa" autocomplete="off">
       <datalist id="cities">{% for c in cities %}<option value="{{ c }}">{% endfor %}</datalist>
     </div>
     <div class="field">
@@ -47,7 +48,8 @@
 
 <div class="chips">
   <span class="chips__label">Na skróty:</span>
-  <a class="chip" href="/nieruchomosci?property_type=mieszkanie&city=Opole">mieszkania w Opolu</a>
+  <a class="chip" href="/okazje">okazje poniżej mediany</a>
+  <a class="chip" href="/nieruchomosci?property_type=mieszkanie">mieszkania</a>
   <a class="chip" href="/nieruchomosci?property_type=dom&price_max=600000">domy do 600 tys.</a>
   <a class="chip" href="/nieruchomosci?property_type=dzialka">działki</a>
   <a class="chip" href="/nieruchomosci?transaction=wynajem&property_type=mieszkanie">mieszkania do wynajęcia</a>
@@ -69,21 +71,22 @@
     <div class="card__num num">{{ '{:,}'.format(stats.original).replace(',', ' ') }}</div>
     <div class="card__head">ogłoszeń nieruchomości</div>
     <p class="card__text">Z portali ogólnopolskich, serwisów lokalnych i ze stron
-      {{ stats.agencies }} biur nieruchomości z regionu. Powtórki z różnych portali
-      są sklejone, więc jedna nieruchomość to jeden wpis.</p>
+      {{ '{:,}'.format(stats.agencies).replace(',', ' ') }} biur nieruchomości z całego kraju.
+      Powtórki z różnych portali są sklejone, więc jedna nieruchomość to jeden wpis.</p>
+  </a>
+  <a class="card card--pad card--link" href="/okazje">
+    <div class="card__num num">{{ '{:,}'.format(stats.bargains).replace(',', ' ') }}</div>
+    <div class="card__head">ofert poniżej mediany okolicy</div>
+    <p class="card__text">Cenę za metr każdej oferty porównujemy z medianą ofert
+      tego samego rodzaju w tej samej miejscowości. Widać od razu, co odstaje
+      — i w którą stronę.</p>
   </a>
   <a class="card card--pad card--link" href="/licytacje">
-    <div class="card__num num">{{ stats.auctions }}</div>
-    <div class="card__head">licytacji</div>
-    <p class="card__text">Komornicze, skarbowe i z postępowań upadłościowych.
-      Z ceną wywołania, sumą oszacowania i terminem licytacji.</p>
-  </a>
-  <a class="card card--pad card--link" href="/przetargi">
-    <div class="card__num num">{{ stats.tenders }}</div>
-    <div class="card__head">przetargów i wykazów</div>
-    <p class="card__text">Gminy i powiaty ogłaszają sprzedaż swoich nieruchomości
-      wyłącznie w Biuletynach Informacji Publicznej. Tych ogłoszeń nie ma
-      na żadnym portalu.</p>
+    <div class="card__num num">{{ '{:,}'.format(stats.auctions + stats.tenders).replace(',', ' ') }}</div>
+    <div class="card__head">licytacji i przetargów</div>
+    <p class="card__text">Komornicze, skarbowe i z postępowań upadłościowych,
+      a do tego sprzedaż nieruchomości gminnych — tę ostatnią urzędy ogłaszają
+      wyłącznie w Biuletynach Informacji Publicznej i nie ma jej na żadnym portalu.</p>
   </a>
 </div>
 
@@ -94,7 +97,7 @@
       <tbody>
       {% for row in stats.by_city[:8] %}
         <tr><td><a href="/nieruchomosci?city={{ row.city }}">{{ row.city }}</a></td>
-            <td class="num">{{ row.count }}</td></tr>
+            <td class="num">{{ '{:,}'.format(row.count).replace(',', ' ') }}</td></tr>
       {% else %}
         <tr><td class="muted">Brak danych — zbieranie dopiero rusza.</td></tr>
       {% endfor %}
@@ -104,7 +107,7 @@
   <div class="card card--pad">
     <div class="section-title" style="margin-top:0">Ile kosztuje metr</div>
     <p class="card__text">Średnia cena metra mieszkania wystawionego na sprzedaż
-      w województwie to <strong class="num">{{ money(stats.avg_price_m2, 'zł') }}</strong>.
+      w Polsce to <strong class="num">{{ money(stats.avg_price_m2, 'zł') }}</strong>.
       To cena ofertowa — tyle sprzedający chcą dostać, nie tyle, za ile faktycznie
       sprzedają.</p>
     <p class="card__text">Dzisiaj przybyło {{ stats.today }} ogłoszeń, przez tydzień

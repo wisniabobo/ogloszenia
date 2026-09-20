@@ -2,10 +2,13 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "ogloszenia-web",
-      "runtimeExecutable": ".venv/bin/python",
-      "runtimeArgs": ["-m", "uvicorn", "ogloszenia.api:app", "--host", "127.0.0.1", "--port", "8931"],
-      "port": 8931
+      "name": "metruj",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "OGL_DATABASE_URL=sqlite:///$PWD/data/metruj-test.db .venv/bin/python -m uvicorn metruj.api:app --host 127.0.0.1 --port 8011 --reload"
+      ],
+      "port": 8011
     }
   ]
 }

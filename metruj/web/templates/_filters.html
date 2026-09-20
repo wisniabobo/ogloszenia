@@ -4,11 +4,7 @@
    w rozwijanej sekcji, która otwiera się sama, gdy któryś z jej filtrów jest
    ustawiony. Inaczej po odświeżeniu strony nie było widać, czemu wyników
    jest tak mało. #}
-{% set more_open = filters.voivodeship or filters.county or filters.district or filters.street
-   or filters.price_m2_min or filters.price_m2_max or filters.rooms_min or filters.rooms_max
-   or filters.floor_min or filters.floor_max or filters.plot_area_min or filters.plot_area_max
-   or filters.seller_type or filters.source or filters.period or filters.market
-   or filters.days_on_market_min or filters.days_on_market_max or filters.q or filters.deal_max %}
+{% set more_open = more_open | default(false) %}
 
 <form class="filters" method="get" action="{{ form_action | default('') }}">
   {% if filters.sort and filters.sort != 'najnowsze' %}

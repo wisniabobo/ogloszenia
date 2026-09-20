@@ -351,6 +351,16 @@ def dashboard_stats(session) -> dict[str, Any]:
             or_(Listing.phones.any(), Listing.agency.has(Agency.phones != [])),
         ),
         "agencies": int(session.scalar(select(func.count(Agency.id))) or 0),
+        # „Okazja" to oferta co najmniej 15% tańsza za metr od mediany swojej
+        # miejscowości albo powiatu. Odniesienia do całego województwa tu nie
+        # liczymy — mieszkanie we wsi zestawione z medianą województwa zawsze
+        # wygląda na okazję i nigdy nią nie jest.
+        "bargains": count(
+            active, original,
+            Listing.deal_ratio.is_not(None),
+            Listing.deal_ratio <= 0.85,
+            Listing.deal_level.in_(["miasto", "powiat"]),
+        ),
         "avg_price_m2": round(median_price_m2, 0) if median_price_m2 else None,
         "by_kind": {k.value if hasattr(k, "value") else str(k): v for k, v in by_kind.items()},
         "by_seller": {k.value if hasattr(k, "value") else str(k): v for k, v in by_seller.items()},

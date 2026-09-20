@@ -294,11 +294,24 @@ def suggest_cities(db: Session, limit: int = 400) -> list[str]:
     return found or town_names()[:limit]
 
 
+#: Filtry schowane w rozwijanej sekcji. Sekcja otwiera się, gdy użytkownik
+#: ustawił którykolwiek z nich — ale tylko wtedy, gdy zrobił to sam. Wartości
+#: domyślne strony (np. próg okazji na „/okazje") nie mogą rozwijać całego
+#: formularza i spychać wyników pod zgięcie.
+ADVANCED_FILTERS = (
+    "voivodeship", "county", "district", "street", "price_m2_min", "price_m2_max",
+    "rooms_min", "rooms_max", "floor_min", "floor_max", "plot_area_min",
+    "plot_area_max", "seller_type", "source", "period", "market", "year_min",
+    "days_on_market_min", "days_on_market_max", "q", "deal_max",
+)
+
+
 def filter_context(db: Session, request: Request) -> dict[str, Any]:
     """Dane, których potrzebuje panel filtrów — na każdej stronie te same."""
     from .geo import voivodeships
 
     return {
+        "more_open": any(request.query_params.get(key) for key in ADVANCED_FILTERS),
         "cities": suggest_cities(db),
         "counties": counties(),
         "voivodeships": voivodeships(),

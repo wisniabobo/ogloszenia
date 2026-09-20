@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Mapa ofert — woj. opolskie{% endblock %}
+{% block title %}Mapa ofert nieruchomości w Polsce — Metruj{% endblock %}
 {% block heading %}Mapa{% endblock %}
-{% block subhead %}<span class="page__count" id="map-count">wczytywanie…</span>{% endblock %}
+{% block subhead %}<p class="lede">Wszystkie zebrane oferty z Polski na jednej mapie. Kolor pinezki pokazuje cenę za metr.</p>{% endblock %}
 {% block actions %}<a class="btn btn--quiet btn--sm" href="/nieruchomosci?{{ query_string }}">Pokaż listą</a>{% endblock %}
 {% block content %}
 
@@ -9,63 +9,13 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.css">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.css">
 
-<form class="filters" method="get">
-  <div class="filters__grid">
-    <div class="field"><label for="m-pt">Czego szukasz</label>
-      <select id="m-pt" name="property_type">
-        <option value="">wszystko</option>
-        {% for value, label in [('mieszkanie','Mieszkania'),('dom','Domy'),('dzialka','Działki'),
-                                ('lokal','Lokale'),('hala','Hale'),('garaz','Garaże'),
-                                ('gospodarstwo','Gospodarstwa')] %}
-          <option value="{{ value }}" {{ 'selected' if filters.property_type == value }}>{{ label }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="field"><label for="m-tr">Sprzedaż czy wynajem</label>
-      <select id="m-tr" name="transaction">
-        <option value="sprzedaz" {{ 'selected' if filters.transaction == 'sprzedaz' }}>na sprzedaż</option>
-        <option value="wynajem"  {{ 'selected' if filters.transaction == 'wynajem' }}>do wynajęcia</option>
-        <option value="wszystkie" {{ 'selected' if not filters.transaction }}>wszystko razem</option>
-      </select>
-    </div>
-    <div class="field"><label for="m-kind">Rodzaj</label>
-      <select id="m-kind" name="kind">
-        <option value="">wszystko</option>
-        <option value="nieruchomosc" {{ 'selected' if filters.kind == 'nieruchomosc' }}>zwykłe ogłoszenia</option>
-        <option value="licytacja"    {{ 'selected' if filters.kind == 'licytacja' }}>licytacje</option>
-        <option value="przetarg"     {{ 'selected' if filters.kind == 'przetarg' }}>przetargi</option>
-      </select>
-    </div>
-    <div class="field"><label>Cena [zł]</label>
-      <div class="field__pair">
-        <input name="price_min" value="{{ filters.price_min or '' }}" placeholder="od" inputmode="numeric" aria-label="Cena od">
-        <input name="price_max" value="{{ filters.price_max or '' }}" placeholder="do" inputmode="numeric" aria-label="Cena do">
-      </div>
-    </div>
-    <div class="field"><label>Powierzchnia [m²]</label>
-      <div class="field__pair">
-        <input name="area_min" value="{{ filters.area_min or '' }}" placeholder="od" inputmode="numeric" aria-label="Powierzchnia od">
-        <input name="area_max" value="{{ filters.area_max or '' }}" placeholder="do" inputmode="numeric" aria-label="Powierzchnia do">
-      </div>
-    </div>
-    <div class="field"><label>Pokoje</label>
-      <div class="field__pair">
-        <input name="rooms_min" value="{{ filters.rooms_min or '' }}" placeholder="od" inputmode="numeric" aria-label="Pokoje od">
-        <input name="rooms_max" value="{{ filters.rooms_max or '' }}" placeholder="do" inputmode="numeric" aria-label="Pokoje do">
-      </div>
-    </div>
-    <div class="field"><label for="m-city">Miejscowość</label>
-      <input id="m-city" name="city" list="cities" value="{{ filters.city or '' }}" placeholder="np. Opole">
-      <datalist id="cities">{% for c in cities %}<option value="{{ c }}">{% endfor %}</datalist>
-    </div>
-  </div>
-  <div class="filters__actions">
-    <button class="btn" type="submit">Pokaż na mapie</button>
-    <a class="btn btn--quiet" href="/mapa">Wyczyść</a>
-    <button class="btn btn--quiet btn--sm" type="button" id="btn-radius">Szukaj w promieniu</button>
-    <button class="btn btn--quiet btn--sm" type="button" id="btn-stats">Ceny w tym widoku</button>
-  </div>
-</form>
+{% include "_filters.html" %}
+
+<div class="maptools">
+  <button class="btn btn--quiet btn--sm" type="button" id="btn-radius">Szukaj w promieniu</button>
+  <button class="btn btn--quiet btn--sm" type="button" id="btn-stats">Ceny w tym widoku</button>
+  <span class="muted" id="map-count">wczytywanie…</span>
+</div>
 
 <div id="map"></div>
 
@@ -79,7 +29,8 @@
 </div>
 
 <style>
-  #map { height: calc(100vh - 330px); min-height: 430px; margin-top: 16px;
+  .maptools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+  #map { height: calc(100vh - 330px); min-height: 480px; margin-top: 12px;
          border: 1px solid var(--line); border-radius: var(--radius); z-index: 1; }
   #legend { display: flex; gap: 0; margin-top: 7px; border-radius: 6px; overflow: hidden; }
   #legend span { flex: 1; padding: 4px 5px; font-size: 11.5px; text-align: center;

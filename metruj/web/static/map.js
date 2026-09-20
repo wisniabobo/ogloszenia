@@ -1,7 +1,11 @@
 /* Mapa ofert — Leaflet + klastrowanie.
    Cały stan siedzi w adresie URL, więc widok da się wysłać linkiem. */
 
-const OPOLE = [50.6751, 17.9213];
+/* Środek Polski i zoom, przy którym widać cały kraj. Mapa startuje stąd,
+   a po wczytaniu punktów dopasowuje się do nich — ale zanim to nastąpi,
+   użytkownik ma widzieć Polskę, a nie jedno województwo. */
+const POLAND = [52.05, 19.35];
+const POLAND_ZOOM = 6;
 
 // progi ceny za m² (zł) i barwy — od najtańszych do najdroższych
 const SCALE = [
@@ -53,7 +57,7 @@ function popupHtml(p) {
 }
 
 async function initMap(query) {
-  const map = L.map('map', { preferCanvas: true }).setView(OPOLE, 9);
+  const map = L.map('map', { preferCanvas: true }).setView(POLAND, POLAND_ZOOM);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
