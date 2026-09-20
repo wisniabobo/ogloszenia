@@ -474,3 +474,23 @@ def test_adres_urzedu_z_tresci_nie_staje_sie_adresem_nieruchomosci():
         description="Mieszkanie przy ul. Katowickiej 1 w Kluczborku.",
         city="Kluczbork", price=None)
     assert normalize(portal).data["street"] == "Katowickiej"
+
+
+def test_zrodlo_moze_swiadomie_wyczyscic_ulice():
+    """Poprawka „ta ulica to adres urzędu" musi dojść do już zapisanej oferty.
+
+    Zapis z zasady nie nadpisuje pola pustą wartością — portal potrafi raz nie
+    oddać pola i to nie znaczy, że dane zniknęły. Ale gdy źródło *ustala*,
+    że ulicy nie zna, stara wartość musi ustąpić.
+    """
+    z_ulica = normalize(make_raw(
+        title="Wykaz nieruchomości", description="Urząd Miejski, ul. Katowicka 1",
+        city="Kluczbork", kind=OfferKind.PRZETARG, price=None))
+    assert z_ulica.data["street"] == "Katowicka"
+    assert z_ulica.cleared == ()
+
+    bez_ulicy = normalize(make_raw(
+        title="Wykaz nieruchomości", description="Urząd Miejski, ul. Katowicka 1",
+        city="Kluczbork", kind=OfferKind.PRZETARG, price=None, street_from_body=False))
+    assert bez_ulicy.data["street"] is None
+    assert bez_ulicy.cleared == ("street",)

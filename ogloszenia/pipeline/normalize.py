@@ -77,6 +77,10 @@ class NormalizedListing:
     data: dict
     phones: list[PhoneNumber] = field(default_factory=list)
     raw: RawListing | None = None
+    #: Pola, które źródło świadomie zostawiło puste — to informacja, a nie brak
+    #: danych. Zapis nadpisuje nimi wcześniejszą wartość; bez tego poprawka
+    #: typu „ta ulica to adres urzędu, nie nieruchomości" nie doszłaby do bazy.
+    cleared: tuple[str, ...] = ()
 
     @property
     def external_key(self) -> tuple[str, str]:
@@ -277,4 +281,7 @@ def normalize(
         "extra": raw.extra or {},
         "raw": raw.raw if isinstance(raw.raw, dict) else {},
     }
-    return NormalizedListing(data=data, phones=phones, raw=raw)
+    # Źródło, które nie pozwala szukać ulicy w treści (bo treść zaczyna się od
+    # adresu instytucji), zgłasza brak ulicy jako ustalenie, nie jako niewiedzę.
+    cleared = () if (street or raw.street_from_body) else ("street",)
+    return NormalizedListing(data=data, phones=phones, raw=raw, cleared=cleared)

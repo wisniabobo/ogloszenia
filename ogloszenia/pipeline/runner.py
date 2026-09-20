@@ -154,7 +154,8 @@ def _sync_phones(session: Session, listing: Listing, phones: list[PhoneNumber]) 
 
 
 def upsert_listing(
-    session: Session, data: dict, phones: list[PhoneNumber], source: Source
+    session: Session, data: dict, phones: list[PhoneNumber], source: Source,
+    cleared: tuple[str, ...] = (),
 ) -> tuple[Listing, str, bool]:
     """Wstawia albo aktualizuje ofertę.
 
@@ -185,7 +186,12 @@ def upsert_listing(
     for key, value in data.items():
         if key in {"raw", "extra", "first_seen_at"}:
             continue
-        if value in (None, "", [], {}):
+        # Pustej wartości nie wpisujemy w miejsce istniejącej: portal potrafi
+        # raz nie oddać pola, a to nie znaczy, że dane zniknęły. Wyjątkiem są
+        # pola, które źródło świadomie wyczyściło — wtedy scraper podaje je
+        # w `data["wyczyszczone"]`. Bez tego poprawka typu „ta ulica to adres
+        # urzędu, nie nieruchomości" nie miała jak dojść do bazy.
+        if value in (None, "", [], {}) and key not in cleared:
             continue
         if getattr(listing, key, None) != value:
             setattr(listing, key, value)
@@ -285,7 +291,7 @@ def _persist(source_key: str, items: list[RawListing], error: str,
                 continue
             try:
                 listing, action, price_changed = upsert_listing(
-                    session, normalized.data, normalized.phones, source
+                    session, normalized.data, normalized.phones, source, normalized.cleared
                 )
             except Exception as exc:
                 session.rollback()
