@@ -52,7 +52,7 @@
       <thead><tr><th>Serwis</th><th class="num">Ofert</th></tr></thead>
       <tbody>
       {% for row in stats.by_source[:12] %}
-        <tr><td><a href="/nieruchomosci?source={{ row.source }}">{{ row.source }}</a></td>
+        <tr><td><a href="/nieruchomosci?source={{ row.source }}">{{ source_name(row.source) }}</a></td>
             <td class="num">{{ row.count }}</td></tr>
       {% else %}
         <tr><td colspan="2" class="muted">Brak danych.</td></tr>

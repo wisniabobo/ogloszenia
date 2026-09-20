@@ -16,6 +16,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from functools import lru_cache
 from urllib.parse import parse_qsl, urlencode
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
@@ -23,7 +24,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from . import __version__
 from .contacts import contacts_for
-from .db import get_session_factory, init_db
+from .db import get_session_factory, init_db, session_scope
 from .models import (
     Agency,
     DuplicateLink,
@@ -84,6 +85,27 @@ def _replace_param(query_string: str, name: str, value: str = "") -> str:
     return urlencode(params)
 
 
+@lru_cache(maxsize=1)
+def _source_names() -> dict[str, str]:
+    """Klucz źródła -> nazwa czytelna dla człowieka.
+
+    Na kartach ofert widać, skąd pochodzi ogłoszenie. „bip_strzelce_opolskie"
+    nikomu nic nie mówi — ma tam stać nazwa urzędu albo portalu.
+    """
+    with session_scope() as session:
+        return {s.key: s.name for s in session.scalars(select(Source))}
+
+
+def source_name(key: str) -> str:
+    name = _source_names().get(key)
+    if name:
+        # Nazwy w konfiguracji bywają opisowe („BIP Gminy Nysa — nieruchomości");
+        # na kartę wystarczy część przed myślnikiem.
+        return name.split(" — ")[0]
+    return key.replace("_", " ")
+
+
+templates.env.globals["source_name"] = source_name
 templates.env.filters["replace_param"] = _replace_param
 templates.env.globals["asset"] = asset
 # Szablon karty oferty sam pyta o numery kontaktowe — inaczej każdy widok

@@ -101,7 +101,8 @@ a wyniki (łącznie z porażkami) zapisane w `config/sources.yaml`.
 | **licytacje.komornik.pl** | licytacje komornicze | cena wywoławcza, oszacowanie, rękojmia, termin, adres |
 | **eLicytacje KAS** | licytacje urzędów skarbowych | publiczne API; także **etap przed licytacją** (opis i oszacowanie) |
 | **Monitor Sądowy i Gospodarczy** | sprzedaż z mas upadłości | publiczne API wyszukiwarki MSiG |
-| **e-Zamówienia / BZP** | przetargi publiczne | publiczne API, filtr CPV 45/70/71, województwo `PL16` |
+| **BIP gmin i powiatów** | przetargi i wykazy nieruchomości komunalnych | 10 biuletynów; cena wywoławcza czytana z załączonego PDF-u |
+| **Agencja Mienia Wojskowego** | mieszkania, lokale i grunty po wojsku | jedna lista wyników, województwo podane wprost na karcie |
 | **PKP S.A.** | dworce, grunty kolejowe | `pkp.pl/pl/sprzedaz` |
 | **Katalog biur** | 505 pośredników z telefonami i liczbą ofert | `__NEXT_DATA__` katalogu Otodom |
 | **Strony biur** | oferty, które nie trafiają na portale | sitemap + dane strukturalne |
@@ -127,20 +128,38 @@ portale lokalne (6)         NTO · Opole NaszeMiasto · KedzierzynKozle.info
 licytacje (8)               licytacje.komornik.pl · e-Licytacje · eLicytacje KAS
                             MSiG · KRZ · iMSiG · portale syndyków · KAS
 
-przetargi (2)               e-Zamówienia · BZP
-
 instytucje (8)              KOWR · AMW · ZUS · PKP · Lasy Państwowe · KZN
                             Poczta Polska · KAS
 
-BIP gmin i powiatów (14)    Opole (miasto i powiat) · Nysa · Kędzierzyn-Koźle
-                            Brzeg · Kluczbork · Prudnik · Strzelce Opolskie
-                            Krapkowice · Namysłów · Głubczyce · Olesno
-                            Urząd Marszałkowski · Opolski Urząd Wojewódzki
+BIP gmin i powiatów (10)    Nysa · Kluczbork · Prudnik · Strzelce Opolskie
+                            Krapkowice · Głubczyce · Olesno · Kędzierzyn-Koźle
+                            powiat opolski · Urząd Marszałkowski
 ```
 
 BIP-y nie są tu przypadkiem: gminy mają **ustawowy obowiązek** publikować wykazy
 nieruchomości przeznaczonych do sprzedaży (art. 35 ustawy o gospodarce
 nieruchomościami). Tych ogłoszeń nie ma na żadnym portalu.
+
+Każdy biuletyn stoi na innym silniku i żaden nie ma API, więc scraper rozpoznaje
+ogłoszenia po treści: odsiewa rozstrzygnięcia przetargów, protokoły, druki do
+wypełnienia i pozycje nawigacji. Warunki przetargu urzędy publikują w PDF-ie,
+nie na stronie — czytamy więc załączniki i wyciągamy z nich cenę wywoławczą.
+Przy skanach bez warstwy tekstowej się nie da i wtedy pozycja zostaje bez ceny,
+z odnośnikiem do oryginału.
+
+Sekcje biuletynów mieszają bieżące ogłoszenia z archiwum sięgającym 2014 roku.
+Datę bierzemy ze stopki redakcyjnej, a gdy jej nie ma — z roku w sygnaturze
+sprawy, i pomijamy ogłoszenia starsze niż dwa lata.
+
+**Czego tu nie ma i dlaczego.** e-Zamówienia (BZP) wypadły z serwisu: to
+platforma zamówień publicznych, na której gminy ogłaszają, co chcą *kupić*,
+a nie co sprzedają. Na 200 sprawdzonych ogłoszeniach z kraju nie było ani
+jednego z CPV 70 (usługi w zakresie nieruchomości), a z opolskiego przychodziły
+remonty dróg i ubezpieczenie szpitala. Sprzedaż mienia komunalnego ogłasza się
+w BIP-ie gminy i stamtąd ją bierzemy.
+
+BIP-y Opola i Brzegu są wyłączone — oba stoją na silniku, który listę ogłoszeń
+dociąga skryptem, i w HTML-u zostaje samo „Proszę czekać".
 
 ```bash
 ogl sources              # co jest skonfigurowane i w jakim stanie
@@ -160,7 +179,7 @@ Każda sprawdzona na żywo 19.09.2026.
 | **GUGiK ULDK** | działka ewidencyjna po współrzędnych lub identyfikatorze, z geometrią | nie |
 | **Nominatim (OSM)** | zapasowy geokoder | nie |
 | **Overpass (OSM)** | co jest w okolicy: szkoły, sklepy, przystanki, parki | nie |
-| **e-Zamówienia** | przetargi publiczne | nie |
+| **BIP gmin** | przetargi i wykazy nieruchomości | nie |
 | **eLicytacje KAS** | licytacje skarbowe | nie |
 | **MSiG** | obwieszczenia syndyków | nie |
 | **OpenStreetMap** | kafelki mapy | nie |
@@ -475,7 +494,7 @@ ogl geocode --region dolnoslaskie
 ```
 
 Trzeba dodać słownik administracyjny (`config/regions_<woj>.yaml`) i poprawić
-parametry regionu w `sources.yaml`. Mapy kodów (OLX, e-Zamówienia, TERYT) mają
+parametry regionu w `sources.yaml`. Mapy kodów (OLX, TERYT) mają
 już wszystkie 16 województw.
 
 ---

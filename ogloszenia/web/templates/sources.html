@@ -59,7 +59,7 @@
   <tbody>
   {% for run in recent %}
   <tr>
-    <td>{{ run.source_key }}</td>
+    <td>{{ source_name(run.source_key) }}</td>
     <td class="nowrap muted">{{ run.started_at.strftime('%d.%m, %H:%M') }}</td>
     <td class="num">{{ run.fetched }}</td>
     <td class="num">{{ run.new }}</td>

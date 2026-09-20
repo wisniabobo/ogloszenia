@@ -79,7 +79,7 @@
         <span class="tag tag--drop">taniej o {{ (100 * (listing.initial_price - listing.price) / listing.initial_price) | round(0) | int }}%</span>
       {% endif %}
       {% if listing.status.value != 'aktywna' %}<span class="tag tag--gone">już nieaktualna</span>{% endif %}
-      <span class="tag tag--source">{{ listing.source_key }}</span>
+      <span class="tag tag--source">{{ source_name(listing.source_key) }}</span>
     </div>
 
     <h3 class="offer__title">
@@ -109,7 +109,11 @@
       {% if listing.year_built %}<span class="spec">rok {{ listing.year_built }}</span>{% endif %}
       {% if listing.building_type %}<span class="spec">{{ listing.building_type }}</span>{% endif %}
       {% if listing.market %}<span class="spec">rynek {{ listing.market }}</span>{% endif %}
-      {% if listing.transaction.value != 'sprzedaz' %}<span class="spec"><strong>{{ listing.transaction.value }}</strong></span>{% endif %}
+      {% if listing.transaction.value != 'sprzedaz' %}
+        <span class="spec"><strong>{{ {'wynajem': 'do wynajęcia', 'dzierzawa': 'dzierżawa',
+                                       'zamiana': 'zamiana'}.get(listing.transaction.value,
+                                       listing.transaction.value) }}</strong></span>
+      {% endif %}
     </div>
 
     {% if kind in ('licytacja', 'przetarg', 'wykaz') %}
@@ -139,7 +143,7 @@
         <span class="contact__origin">{{ first.label }}</span>
       </div>
     {% else %}
-      <div class="contact--none">numeru brak w ogłoszeniu</div>
+      <div class="contact--none">w ogłoszeniu nie ma numeru</div>
     {% endif %}
     <a class="btn btn--ghost btn--sm" href="/oferta/{{ listing.id }}">Szczegóły oferty</a>
     <button class="btn btn--quiet btn--sm" data-on="0"
