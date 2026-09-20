@@ -12,7 +12,13 @@ from dataclasses import dataclass, field
 
 from ..models import OfferKind, PropertyType, SellerType, TransactionType
 from ..scrapers.base import RawListing
-from ..utils.geo import detect_location, detect_opole_district, extract_street, resolve_place
+from ..utils.geo import (
+    detect_location,
+    detect_opole_district,
+    extract_street,
+    region_phrase,
+    resolve_place,
+)
 from ..utils.phones import PhoneNumber, extract_phones, parse_phone
 from ..utils.text import (
     clean,
@@ -130,7 +136,17 @@ def normalize(
     if street:
         street = re.sub(r"^\s*(?:ul\.?|ulica)\s+", "", street, flags=re.I).strip(" .,") or None
 
-    in_region = bool(place) or voivodeship.lower() in haystack.lower()
+    # Samo słowo „opolskie" gdziekolwiek w treści to za słaba przesłanka.
+    # Strony ogólnopolskie (PKP, AMW) wypisują w stopce listę wszystkich
+    # województw, przez co do wyników wchodziły działki z Leszna, Kalisza
+    # i Lubania. Nazwy województwa szukamy więc tylko w polach opisujących
+    # adres, a w pełnym opisie — wyłącznie w zwrocie „woj. opolskie".
+    address_fields = f"{title} {raw.location_text or ''} {raw.city or ''}"
+    in_region = (
+        bool(place)
+        or voivodeship.lower() in address_fields.lower()
+        or bool(region_phrase(voivodeship).search(description))
+    )
     if raw.region_assured:
         # Źródło zostało odpytane pod adresem zawężonym do województwa —
         # portal sam zagwarantował region, nawet jeśli w treści nie ma nazwy

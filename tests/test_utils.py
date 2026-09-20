@@ -39,6 +39,17 @@ class TestLiczby:
     def test_brak_liczby(self):
         assert parse_number("cena do negocjacji") is None
 
+    def test_hektary_z_czterema_miejscami(self):
+        """Areał działek podaje się w hektarach z dokładnością do metra.
+
+        „0,0436 ha" to 436 m². Czytane jako separator tysięcy dawało 436 ha.
+        """
+        assert parse_number("0,0436") == 0.0436
+        assert parse_number("0,5981 ha") == 0.5981
+
+    def test_zapis_angielski_z_dwoma_przecinkami(self):
+        assert parse_number("1,250,000") == 1250000.0
+
 
 class TestParametry:
     def test_powierzchnia(self):

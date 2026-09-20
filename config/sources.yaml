@@ -467,15 +467,12 @@ sources:
   enabled: true
   interval_minutes: 360
   coverage: krajowy
-  sprawdzono: 2026-09-19
-  notes: 'Mieszkania, lokale i grunty po wojsku. Właściwa lista jest pod /pl/nieruchomosci/przetargi-nieruchomosci
-    — selektory do dostrojenia po pierwszym przebiegu.
+  sprawdzono: 2026-09-20
+  notes: 'Mieszkania, lokale i grunty po wojsku. Cała lista przetargów mieści się
+    na jednej stronie wyników (ok. 80 pozycji z kraju), a każda karta podaje wprost
+    województwo, powiat i gminę — region filtrujemy po tym polu.
 
     '
-  config:
-    urls:
-    - https://amw.com.pl/pl/nieruchomosci/przetargi-nieruchomosci
-    - https://amw.com.pl/pl/nieruchomosci/nieruchomosci-amw
 - key: zus
   name: ZUS — sprzedaż i najem nieruchomości
   scraper: zus

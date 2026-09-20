@@ -93,9 +93,14 @@ def parse_number(value: str | float | int | None) -> float | None:
     # Rozróżnienie separatora dziesiętnego od tysięcznego
     if "," in raw and "." in raw:
         raw = raw.replace(".", "").replace(",", ".")
+    elif raw.count(",") > 1:
+        raw = raw.replace(",", "")  # 1,250,000 — zapis angielski
     elif "," in raw:
-        # 75,28 -> dziesiętny; 1,250,000 -> tysięczny
-        raw = raw.replace(",", ".") if raw.count(",") == 1 and len(raw.split(",")[-1]) <= 2 else raw.replace(",", "")
+        # Polskie ogłoszenia oddzielają tysiące spacją, a przecinek jest
+        # zawsze dziesiętny. Wcześniej uznawaliśmy go za tysięczny, gdy po
+        # przecinku stały więcej niż dwie cyfry, przez co areał „0,0436 ha"
+        # (436 m²) czytaliśmy jako 436 hektarów.
+        raw = raw.replace(",", ".")
     elif raw.count(".") == 1 and len(raw.split(".")[-1]) == 3 and len(raw.split(".")[0]) <= 3:
         raw = raw.replace(".", "")  # 629.000
     elif raw.count(".") > 1:

@@ -431,3 +431,27 @@ class TestWygaszanieOfert:
         assert _mark_missing(session, source) == 1
         assert listing.status == ListingStatus.NIEAKTYWNA
         assert listing.removed_at is not None
+
+
+def test_nazwa_wojewodztwa_w_stopce_nie_wpuszcza_ofert_spoza_regionu():
+    """Portale ogólnopolskie wypisują w stopce wszystkie województwa.
+
+    Działki z Leszna i Kalisza trafiały przez to na listę ofert z Opolskiego.
+    """
+    stopka = "Województwa: dolnośląskie kujawsko-pomorskie lubelskie opolskie podkarpackie"
+    obca = make_raw(title="Leszno ul. Towarowa działki", description=stopka,
+                    kind=OfferKind.PRZETARG, price=None)
+    assert normalize(obca) is None
+
+    swoja = make_raw(title="Nysa, ul. Kolejowa 8 — działka", description=stopka,
+                     kind=OfferKind.PRZETARG, price=None)
+    assert normalize(swoja) is not None
+
+
+def test_zwrot_woj_opolskie_w_opisie_wystarczy():
+    """Wsi spoza słownika miejscowości nie wolno gubić."""
+    raw = make_raw(
+        title="Sprzedaż działki nr 118/2",
+        description="Nieruchomość położona w gminie Pakosławice, woj. opolskie.",
+        kind=OfferKind.PRZETARG, price=None)
+    assert normalize(raw) is not None

@@ -53,6 +53,19 @@ def all_cities() -> list[str]:
     return sorted({v["city"] for v in region_index().values()})
 
 
+@functools.lru_cache(maxsize=8)
+def region_phrase(voivodeship: str = VOIVODESHIP) -> re.Pattern[str]:
+    """Wzorzec „woj. opolskie" / „w województwie opolskim" i odmiany.
+
+    Wymagamy, żeby nazwa województwa stała tuż po skrócie „woj.", bo w
+    stopkach portali ogólnopolskich nazwy wszystkich szesnastu województw
+    wypisane są jednym ciągiem i zwykłe wyszukanie słowa dawało fałszywe
+    trafienia.
+    """
+    stem = re.sub(r"(ie|ego|im)$", "", voivodeship.strip().lower())
+    return re.compile(rf"woj(?:\.|ewódz\w*)\s*{re.escape(stem)}\w*", re.I)
+
+
 def resolve_place(name: str | None) -> dict | None:
     """Dopasowuje nazwę miejscowości do słownika woj. opolskiego."""
     if not name:
