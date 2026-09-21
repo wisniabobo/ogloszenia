@@ -76,6 +76,28 @@ LAND_TYPES = {PropertyType.DZIALKA, PropertyType.GOSPODARSTWO}
 #: wrzucony do złej kategorii portalu (albo cena „do negocjacji" wpisana jako 1).
 MIN_SALE_PRICE = 15000
 
+#: Powyżej tej kwoty pojedyncze ogłoszenie w Polsce nie istnieje. Najdroższe
+#: nieruchomości w kraju to pojedyncze setki milionów; wyższa liczba to zawsze
+#: albo pomyłka, albo żart sprzedającego.
+MAX_PRICE = 300_000_000
+
+#: Ceny-zaślepki: „1234567890", „11111111". Ludzie wpisują je, gdy portal
+#: wymaga ceny, a oni chcą ją podać dopiero przez telefon. Zostawione w bazie
+#: psują sortowanie i medianę całego miasta.
+#:
+#: Wzorzec jest celowo wąski. „999 999 zł" to popularna cena tuż pod milionem,
+#: a „1 000 000 zł" to po prostu milion — odrzucanie okrągłych i prawie
+#: okrągłych kwot zabierałoby prawdziwe oferty.
+PLACEHOLDER_PRICE = re.compile(r"^(?:1234567890|123456789|(\d)\1{7,})$")
+
+
+def _plausible_price(price: float | None) -> bool:
+    if price is None:
+        return True
+    if price <= 0 or price > MAX_PRICE:
+        return False
+    return not PLACEHOLDER_PRICE.match(f"{int(price)}") if price == int(price) else True
+
 #: Tytuł mówiący wprost o wynajmie bije kategorię portalu — ogłoszeniodawcy
 #: notorycznie wrzucają wynajem do działu sprzedaży.
 RENT_IN_TITLE = re.compile(
@@ -192,8 +214,10 @@ def normalize(
     year_built = _pick(raw.year_built, extract_year(description[:3000]))
 
     price = raw.price
-    if price is not None and price <= 0:
-        price = None   # „0 zł" znaczy „nie podano", a nie „za darmo"
+    if not _plausible_price(price):
+        # „0 zł" znaczy „nie podano", a nie „za darmo"; „1234567890 zł" znaczy
+        # „zapytaj o cenę". Jedno i drugie zostawiamy puste.
+        price = None
 
     market = raw.market
     if not market:

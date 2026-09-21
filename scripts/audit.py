@@ -175,6 +175,130 @@ def audit_filters(client: TestClient) -> None:
           f"filtr {with_phone} vs licznik {stats.get('with_phone')}")
 
 
+#: Tak wygląda zapytanie wysłane przez formularz: wszystkie pola, także puste.
+#: Pusta wartość w polu wielokrotnego wyboru potrafiła wyzerować wyniki, więc
+#: każdy filtr sprawdzamy również w tym kształcie.
+FORM_FIELDS = (
+    "city", "voivodeship", "county", "district", "street", "source", "market",
+    "period", "seller_type", "q", "price_min", "price_max", "area_min", "area_max",
+    "price_m2_min", "price_m2_max", "plot_area_min", "plot_area_max",
+    "rooms_min", "rooms_max", "floor_min", "floor_max", "year_min", "deal_max",
+    "days_on_market_min", "days_on_market_max",
+)
+
+
+def _form_query(**values: str) -> str:
+    """Zapytanie w kształcie, jaki wysyła formularz — z pustymi polami."""
+    parts = [f"{name}={values.pop(name, '')}" for name in FORM_FIELDS]
+    parts += ["only_original=0", "only_original=1", "only_active=0", "only_active=1",
+              "with_phone=0", "price_dropped=0"]
+    parts += [f"{k}={v}" for k, v in values.items()]
+    return "&".join(parts)
+
+
+def audit_form_shape(client: TestClient) -> None:
+    """Każdy filtr przez formularz: puste pola nie mogą zmieniać wyniku."""
+    print("\n=== Filtry w kształcie formularza ===")
+    plain = (get(client, "/api/listings?per_page=1") or {}).get("total", 0)
+    empty = (get(client, f"/api/listings?per_page=1&{_form_query()}") or {}).get("total", 0)
+    check("puste pola formularza nie zmieniają wyniku", plain == empty, f"{plain} vs {empty}")
+
+    for field, value in (
+        ("city", "Warszawa"), ("voivodeship", "opolskie"), ("county", "nyski"),
+        ("property_type", "mieszkanie"), ("transaction", "sprzedaz"),
+        ("seller_type", "prywatna"), ("market", "wtorny"), ("period", "30dni"),
+        ("price_min", "200000"), ("price_max", "400000"),
+        ("area_min", "40"), ("area_max", "80"), ("rooms_min", "2"), ("rooms_max", "3"),
+        ("floor_min", "1"), ("floor_max", "5"), ("year_min", "1990"),
+        ("price_m2_min", "3000"), ("price_m2_max", "12000"),
+        ("plot_area_min", "500"), ("plot_area_max", "5000"),
+        ("days_on_market_min", "1"), ("days_on_market_max", "400"),
+        ("deal_max", "0.9"), ("q", "balkon"),
+    ):
+        query = _form_query(**{field: value})
+        narrowed = get(client, f"/api/listings?per_page=1&{query}")
+        if "__status" in narrowed:
+            check(f"formularz: {field}={value}", False, str(narrowed)[:110])
+            continue
+        total = narrowed.get("total", 0)
+        check(f"formularz: {field}={value}", total > 0,
+              f"zero wyników (bez filtra byłoby {plain})")
+
+    # sortowanie w kształcie formularza — z zachowaniem pozostałych filtrów
+    for sort in SORTS:
+        query = _form_query(city="Warszawa") + f"&sort={sort}"
+        data = get(client, f"/api/listings?per_page=5&{query}")
+        check(f"formularz: sort={sort}", bool(data.get("items")), str(data)[:110])
+
+
+def audit_completeness(client: TestClient) -> None:
+    """Czy z ofert czytamy komplet danych, czy karta świeci pustkami."""
+    print("\n=== Kompletność danych ===")
+    from sqlalchemy import case, func, select
+
+    from metruj.db import session_scope
+    from metruj.models import Listing, ListingStatus
+
+    def share(column) -> object:
+        return func.round(100.0 * func.sum(case((column.is_not(None), 1), else_=0))
+                          / func.count(Listing.id), 0)
+
+    with session_scope() as session:
+        rows = session.execute(
+            select(
+                Listing.source_key,
+                func.count(Listing.id),
+                share(Listing.price), share(Listing.area), share(Listing.rooms),
+                share(Listing.description), share(Listing.city),
+                func.round(100.0 * func.sum(case((func.json_array_length(Listing.images) > 0, 1),
+                                                 else_=0)) / func.count(Listing.id), 0),
+            )
+            .where(Listing.status == ListingStatus.AKTYWNA)
+            .group_by(Listing.source_key)
+            .order_by(func.count(Listing.id).desc())
+            .limit(12)
+        ).all()
+
+        print(f"  {'źródło':24s} {'ofert':>7s} {'cena':>6s} {'metraż':>7s} {'pokoje':>7s} "
+              f"{'opis':>6s} {'miasto':>7s} {'zdjęcia':>8s}")
+        for key, total, price, area, rooms, desc, city, images in rows:
+            print(f"  {key[:24]:24s} {total:>7} {price or 0:>5.0f}% {area or 0:>6.0f}% "
+                  f"{rooms or 0:>6.0f}% {desc or 0:>5.0f}% {city or 0:>6.0f}% {images or 0:>7.0f}%")
+            # Oferta bez ceny i bez metrażu jest na liście bezużyteczna.
+            if total >= 50:
+                check(f"{key}: cena przy większości ofert", (price or 0) >= 50, f"{price}%")
+                check(f"{key}: miejscowość przy wszystkich", (city or 0) >= 99, f"{city}%")
+
+
+def audit_presentation() -> None:
+    """Czy dane nadają się do pokazania — bez znaczników i śmieci w treści."""
+    print("\n=== Jak to wygląda na karcie ===")
+    from sqlalchemy import func, select
+
+    from metruj.db import session_scope
+    from metruj.models import Listing, ListingStatus
+
+    with session_scope() as session:
+        def count(*where) -> int:
+            return int(session.scalar(
+                select(func.count(Listing.id)).where(Listing.status == ListingStatus.AKTYWNA, *where)
+            ) or 0)
+
+        check("opisy bez znaczników HTML",
+              count(Listing.description.like("%<%>%")) == 0,
+              f"{count(Listing.description.like('%<%>%'))} ofert")
+        check("tytuły niepuste", count(Listing.title == "") == 0, "puste tytuły")
+        check("tytuły bez encji HTML",
+              count(Listing.title.like("%&amp;%") | Listing.title.like("%&nbsp;%")) == 0,
+              f"{count(Listing.title.like('%&amp;%'))} tytułów")
+        absurd = count(Listing.price > 500_000_000)
+        check("brak absurdalnych cen", absurd == 0, f"{absurd} ofert powyżej 500 mln")
+        no_photo = count(func.json_array_length(Listing.images) == 0)
+        total = count()
+        check("zdjęcia przy większości ofert", no_photo < total * 0.5,
+              f"{no_photo} z {total} bez zdjęcia")
+
+
 def audit_data_quality() -> None:
     print("\n=== Jakość danych ===")
     from sqlalchemy import func, select
@@ -214,6 +338,9 @@ def main() -> int:
         audit_api(client)
         audit_sorting(client)
         audit_filters(client)
+        audit_form_shape(client)
+        audit_completeness(client)
+    audit_presentation()
     audit_data_quality()
 
     print("\n" + "=" * 70)

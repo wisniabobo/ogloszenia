@@ -380,9 +380,11 @@ class OtodomScraper(BaseScraper):
         out: dict[str, Any] = {
             "phones_raw": phones,
             "description": clean(ad.get("description") or "") or None,
-            "year_built": parse_number(target.get("Build_year")),
+            # Rok i liczba pięter to liczby całkowite — bez tego w bazie
+            # lądowało „1930.0", a szablon pokazywał „rok 1930.0".
+            "year_built": _as_int(target.get("Build_year")),
             "floor": floor,
-            "floors_total": parse_number(target.get("Building_floors_num")),
+            "floors_total": _as_int(target.get("Building_floors_num")),
             "building_type": clean((target.get("Building_type") or [""])[0]) or None,
             "plot_area": parse_number(target.get("Terrain_area")),
             "lat": self.dig(location, "coordinates", "latitude"),
@@ -399,3 +401,8 @@ class OtodomScraper(BaseScraper):
             or None,
         }
         return {k: v for k, v in out.items() if v not in (None, "", [])}
+
+
+def _as_int(value: Any) -> int | None:
+    number = parse_number(value)
+    return int(number) if number is not None else None

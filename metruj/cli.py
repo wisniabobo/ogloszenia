@@ -319,7 +319,8 @@ def cmd_details(
     )
     console.print(
         f"[green]Karty ofert:[/] sprawdzone {stats.checked}, pobrane {stats.fetched}, "
-        f"z numerem {stats.with_phone}, nieudane {stats.failed}"
+        f"z numerem {stats.with_phone}, uzupełnionych pól {stats.enriched}, "
+        f"nieudane {stats.failed}"
     )
 
 

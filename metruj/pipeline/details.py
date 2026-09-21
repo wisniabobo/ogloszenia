@@ -22,10 +22,10 @@ import asyncio
 import logging
 from dataclasses import dataclass
 
-from sqlalchemy import desc, select
+from sqlalchemy import case, desc, or_, select
 
 from ..db import session_scope
-from ..models import Agency, Listing, ListingStatus, Phone, utcnow
+from ..models import Agency, Listing, ListingStatus, Phone, PropertyType, utcnow
 from ..settings import get_settings
 from ..utils.http import HttpClient
 from ..utils.phones import parse_phone
@@ -52,12 +52,14 @@ class DetailStats:
     checked: int = 0
     fetched: int = 0
     with_phone: int = 0
+    enriched: int = 0
     failed: int = 0
 
     def __str__(self) -> str:
         return (
             f"sprawdzone={self.checked} pobrane={self.fetched} "
-            f"z_numerem={self.with_phone} nieudane={self.failed}"
+            f"z_numerem={self.with_phone} uzupełnione_pola={self.enriched} "
+            f"nieudane={self.failed}"
         )
 
 
@@ -71,32 +73,56 @@ def _scraper_for(source_key: str, client: HttpClient):
 
 
 def _pending(limit: int, sources: list[str]) -> list[tuple[int, str, str]]:
-    """Oferty bez kontaktu, od najnowszych. Zwraca (id, klucz źródła, adres)."""
+    """Oferty, którym karta coś dołoży — od najnowszych.
+
+    Nie chodzi już tylko o telefon. Lista wyników Otodomu nie podaje piętra
+    (było przy 19% mieszkań), roku budowy ani pełnego opisu — wszystko to
+    stoi na karcie oferty. Skoro i tak po nią sięgamy, bierzemy też oferty,
+    którym brakuje tych pól, a nie wyłącznie te bez kontaktu.
+    """
     with session_scope() as session:
+        incomplete = or_(
+            ~Listing.phones.any(),
+            Listing.floor.is_(None),
+            Listing.year_built.is_(None),
+            Listing.description.is_(None),
+        )
         stmt = (
             select(Listing.id, Listing.source_key, Listing.url)
             .where(
                 Listing.source_key.in_(sources),
                 Listing.status == ListingStatus.AKTYWNA,
-                ~Listing.phones.any(),
-                # Numer biura z rejestru jest tylko zastępnikiem — numer agenta
-                # przy tej konkretnej ofercie jest wart osobnego zapytania.
+                incomplete,
+                # Karta jest jedna: gdy już ją pobraliśmy, nie wracamy po to,
+                # czego w niej nie było.
                 Listing.detail_fetched_at.is_(None),
             )
-            .order_by(desc(Listing.first_seen_at))
+            # Najpierw mieszkania i domy: przy garażu czy hali „piętro" i „rok
+            # budowy" nie istnieją, więc dociąganie ich karty niczego nie doda
+            # poza numerem telefonu. Budżet przebiegu jest ograniczony i ma iść
+            # tam, gdzie brakuje czegoś, co ktoś naprawdę czyta.
+            .order_by(
+                case(
+                    (Listing.property_type.in_(
+                        [PropertyType.MIESZKANIE, PropertyType.DOM]), 0),
+                    else_=1,
+                ),
+                desc(Listing.first_seen_at),
+            )
             .limit(limit)
         )
         return [(row.id, row.source_key, row.url) for row in session.execute(stmt)]
 
 
-def _apply(listing_id: int, updates: dict) -> bool:
-    """Zapisuje dane z karty. Zwraca True, gdy doszedł numer telefonu."""
+def _apply(listing_id: int, updates: dict) -> tuple[bool, int]:
+    """Zapisuje dane z karty. Zwraca (czy doszedł numer, ile pól uzupełniono)."""
     settings = get_settings()
     got_phone = False
+    filled = 0
     with session_scope() as session:
         listing = session.get(Listing, listing_id)
         if listing is None:
-            return False
+            return False, 0
         listing.detail_fetched_at = utcnow()
 
         for field in UPDATABLE:
@@ -105,6 +131,7 @@ def _apply(listing_id: int, updates: dict) -> bool:
                 continue
             if getattr(listing, field, None) in (None, "", []):
                 setattr(listing, field, value)
+                filled += 1
         if updates.get("lat") and updates.get("lon") and listing.geo_precision != "address":
             listing.geo_precision = "portal"
             listing.geo_source = "portal"
@@ -131,7 +158,7 @@ def _apply(listing_id: int, updates: dict) -> bool:
                 if agency is not None:
                     value = phone.masked if settings.mask_phones else phone.e164
                     agency.phones = sorted(set((agency.phones or []) + [value]))[:10]
-    return got_phone
+    return got_phone, filled
 
 
 async def enrich_details(
@@ -168,8 +195,9 @@ async def enrich_details(
                 _apply(listing_id, {})
                 return
             stats.fetched += 1
-            if _apply(listing_id, updates):
-                stats.with_phone += 1
+            got_phone, filled = _apply(listing_id, updates)
+            stats.with_phone += int(got_phone)
+            stats.enriched += filled
 
         await asyncio.gather(*(one(entry) for entry in pending))
 
