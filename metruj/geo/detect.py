@@ -56,6 +56,11 @@ def is_ambiguous(name: str) -> bool:
     return deaccent(name).lower() in ambiguous_names()
 
 
+#: Ile dokłada każde kolejne wystąpienie tej samej nazwy w tekście.
+#: Nazwa powtórzona to przesłanka, nie zbieg okoliczności.
+REPEAT_BONUS = 12
+
+
 @dataclass
 class Detected:
     """Co udało się odczytać z tekstu."""
@@ -147,6 +152,13 @@ def detect_location(
 
     # --- 3. miejscowość ---
     best: tuple[int, Unit] | None = None
+    # Punktujemy **jednostki**, nie pojedyncze trafienia: nazwa powtórzona
+    # w ogłoszeniu kilka razy jest mocniejszą przesłanką niż wspomniana raz.
+    # Bez tego tytuł „mieszkanie w Starogardzie Gdańskim: Starogard Gdański:
+    # Gdańska" trafiał do Gdańska — bo nazwa ulicy „Gdańska" dopasowywała się
+    # do miasta o wyższej randze, a ranga ważyła więcej niż dwa wystąpienia
+    # nazwy właściwej.
+    scores: dict[str, tuple[int, Unit, str]] = {}
     for match in matches:
         unit = match.unit
         if unit.kind == "powiat":
@@ -167,7 +179,9 @@ def detect_location(
         if not match.capitalized and not cued:
             continue
 
-        score = unit.rank if town else min(unit.rank, 30)
+        # Ranga ma rozstrzygać remisy między miejscami o tej samej nazwie,
+        # a nie przebijać to, co w tekście stoi wprost — stąd dzielona.
+        score = (unit.rank if town else min(unit.rank, 30)) // 5
         if cued:
             score += 60
         if agrees_county:
@@ -178,10 +192,20 @@ def detect_location(
             score += 10
         if match.start < 60:
             score += 5          # nazwa w tytule, a nie w połowie opisu
-        if best is None or score > best[0]:
-            best = (score, unit)
-            basis = "wskazówka" if cued else ("miasto" if town else "zgodność z regionem")
-            result.basis = basis
+        basis = "wskazówka" if cued else ("miasto" if town else "zgodność z regionem")
+
+        key = unit.teryt
+        previous = scores.get(key)
+        if previous is None:
+            scores[key] = (score, unit, basis)
+        else:
+            # kolejne wystąpienie tej samej nazwy dokłada pewności
+            scores[key] = (max(previous[0], score) + REPEAT_BONUS, unit, previous[2])
+
+    if scores:
+        score, unit, basis = max(scores.values(), key=lambda entry: entry[0])
+        best = (score, unit)
+        result.basis = basis
 
     if best is not None:
         unit = best[1]

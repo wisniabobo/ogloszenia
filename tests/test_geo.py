@@ -171,6 +171,22 @@ class TestBledyZProdukcji:
         assert hit.city == "Starogard Gdański"
         assert hit.county == "starogardzki"
 
+    def test_ulica_o_nazwie_miasta_nie_przenosi_oferty(self):
+        """„ul. Gdańska" w Starogardzie nie czyni z oferty oferty z Gdańska.
+
+        Ranga miejsca ma rozstrzygać remisy między miejscowościami o tej samej
+        nazwie, a nie przebijać to, co w tekście stoi wprost. Tu nazwa
+        właściwa pada dwa razy, a nazwa ulicy raz.
+        """
+        hit = detect_location(
+            "Sprzedam jasne 3-pokojowe mieszkanie 55 m² w Starogardzie Gdańskim: "
+            "Starogard Gdański: Gdańska"
+        )
+        assert hit.city == "Starogard Gdański"
+
+    def test_sopot_przy_ulicy_gdanskiej(self):
+        assert detect_location("Dom w Sopocie przy ul. Gdańskiej").city == "Sopot"
+
     def test_opis_bez_lokalizacji(self):
         assert detect_location("mieszkanie z balkonem i piwnicą, do wprowadzenia").city is None
 
