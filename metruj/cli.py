@@ -253,8 +253,10 @@ def cmd_repair(
     console.print(
         f"[green]Naprawa:[/] ceny {stats.prices}, cena za m² {stats.price_per_m2}, "
         f"powierzchnia gruntu {stats.land_area}, regiony {stats.regions}, "
-        f"poprawione lokalizacje {stats.relocated}, wygaszone śmieci {stats.navigation}, "
-        f"rozpięte kopie {stats.unlinked}, do przeliczenia na mapie {stats.regeocode}"
+        f"poprawione lokalizacje {stats.relocated}, powiat w polu miasta "
+        f"{stats.counties_as_cities}, nieaktualne punkty {stats.stale_points}, "
+        f"wygaszone śmieci {stats.navigation}, rozpięte kopie {stats.unlinked}, "
+        f"do przeliczenia na mapie {stats.regeocode}"
     )
     console.print(f"[green]Odniesienie rynkowe:[/] {market}")
 

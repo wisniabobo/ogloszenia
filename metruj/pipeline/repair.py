@@ -47,6 +47,8 @@ class RepairStats:
     price_per_m2: int = 0
     land_area: int = 0
     regions: int = 0
+    counties_as_cities: int = 0
+    stale_points: int = 0
     relocated: int = 0
     navigation: int = 0
     unlinked: int = 0
@@ -56,7 +58,8 @@ class RepairStats:
         return (
             f"ceny={self.prices} cena_za_m2={self.price_per_m2} "
             f"powierzchnia_gruntu={self.land_area} regiony={self.regions} "
-            f"lokalizacje={self.relocated} śmieci={self.navigation} "
+            f"lokalizacje={self.relocated} powiat_jako_miasto={self.counties_as_cities} "
+            f"nieaktualne_punkty={self.stale_points} śmieci={self.navigation} "
             f"rozpięte_kopie={self.unlinked} do_przeliczenia={self.regeocode}"
         )
 
@@ -273,6 +276,81 @@ def _recheck_duplicates(session: Session) -> int:
     return removed
 
 
+def _county_as_city(session: Session) -> int:
+    """Przenosi nazwę powiatu z pola miejscowości tam, gdzie jej miejsce.
+
+    Karty części portali opisują lokalizację samym powiatem („świecki,
+    kujawsko-pomorskie"). Parser czytał to po pozycji i wstawiał powiat
+    w pole miasta, a wtedy wszystkie oferty z powiatu trafiały na mapie
+    w jeden punkt.
+    """
+    rows = session.execute(
+        select(Listing.id, Listing.city, Listing.county).where(Listing.city.is_not(None))
+    ).all()
+
+    changed = 0
+    for row in rows:
+        units = lookup(row.city)
+        if not units or any(unit.kind == "gmina" for unit in units):
+            continue          # nazwa jest też miejscowością — nie ruszamy
+        session.execute(
+            update(Listing).where(Listing.id == row.id).values(
+                city=None, county=row.county or row.city,
+                lat=None, lon=None, geo_precision=None, geo_source=None,
+            )
+        )
+        changed += 1
+    return changed
+
+
+def _recheck_coordinates(session: Session) -> int:
+    """Kasuje punkty, które nie pasują już do adresu oferty.
+
+    Po poprawieniu miejscowości współrzędne zostawały te sprzed poprawki —
+    oferta z Opola stała tam, gdzie kiedyś rozpoznano ją jako Kamienicę.
+    Efekt widać było na mapie: jedna pinezka zbierała oferty z kilku różnych
+    miejscowości, odległych od siebie o kilkadziesiąt kilometrów.
+
+    Porównujemy punkt oferty z tym, co geokoder zapisał dla **jej dzisiejszego**
+    adresu. Gdy w cache'u nie ma takiego adresu albo punkt jest inny, punkt
+    kasujemy i geokoder policzy go od nowa.
+    """
+    from ..geo.streets import split_house_number
+    from ..models import GeocodeCache
+    from ..utils.text import clean, sha1
+
+    cache = {
+        row.query_hash: (row.lat, row.lon)
+        for row in session.scalars(select(GeocodeCache))
+        if row.lat is not None
+    }
+
+    rows = session.execute(
+        select(Listing.id, Listing.city, Listing.street, Listing.district,
+               Listing.voivodeship, Listing.lat, Listing.lon)
+        .where(Listing.lat.is_not(None), Listing.geo_precision.notin_(["portal"]))
+    ).all()
+
+    stale: list[int] = []
+    for row in rows:
+        name, number = split_house_number(row.street or row.district)
+        query = ", ".join(x for x in (clean(row.city), clean(name), clean(number)) if x)
+        point = cache.get(sha1(query.lower(), row.voivodeship or "pl"))
+        if point is None:
+            stale.append(row.id)
+            continue
+        if abs(point[0] - row.lat) > 0.002 or abs(point[1] - row.lon) > 0.002:
+            stale.append(row.id)
+
+    for start in range(0, len(stale), 500):
+        session.execute(
+            update(Listing).where(Listing.id.in_(stale[start : start + 500])).values(
+                lat=None, lon=None, geo_precision=None, geo_source=None
+            )
+        )
+    return len(stale)
+
+
 def repair(session: Session, *, regeocode_all: bool = False) -> RepairStats:
     """Przelicza pola, które dało się policzyć źle, i czyści nieprawdziwe."""
     stats = RepairStats()
@@ -280,7 +358,9 @@ def repair(session: Session, *, regeocode_all: bool = False) -> RepairStats:
     stats.land_area = _fix_land_area(session)
     stats.navigation = _deactivate_navigation(session)
     stats.relocated = _relocate_text_sources(session)
+    stats.counties_as_cities = _county_as_city(session)
     stats.regions = _fix_regions(session)
+    stats.stale_points = _recheck_coordinates(session)
     stats.unlinked = _recheck_duplicates(session)
     stats.regeocode = _mark_for_regeocode(session, suspicious_only=not regeocode_all)
     log.info("Naprawa danych: %s", stats)

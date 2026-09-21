@@ -552,6 +552,36 @@ class TestWygaszanieOfert:
         assert listing.removed_at is not None
 
 
+def test_zmiana_adresu_uniewaznia_punkt_na_mapie(session):
+    """Poprawiona miejscowość nie może zostać ze współrzędnymi sprzed poprawki.
+
+    Z produkcji: jedna pinezka pod Kłodzkiem zbierała oferty z Opola, Brzegu
+    i Głuchołaz — wszystkie rozpoznano kiedyś jako Kamienicę, a po poprawieniu
+    miejscowości stary punkt został.
+    """
+    from metruj.models import Source
+    from metruj.pipeline.runner import upsert_listing
+
+    source = Source(key="test", name="Test")
+    session.add(source)
+    session.flush()
+
+    first = normalize(make_raw(title="Mieszkanie w Kamienicy", city="Kamienica"))
+    listing, action, _ = upsert_listing(session, first.data, first.phones, source)
+    session.flush()
+    listing.lat, listing.lon = 50.4494, 16.9510
+    listing.geo_precision, listing.geo_source = "city", "gugik"
+    session.flush()
+
+    corrected = normalize(make_raw(title="Mieszkanie w centrum Opola", city="Opole"))
+    listing, action, _ = upsert_listing(session, corrected.data, corrected.phones, source)
+    session.flush()
+
+    assert listing.city == "Opole"
+    assert listing.lat is None, "stary punkt został przy nowym adresie"
+    assert listing.geo_source is None
+
+
 def test_stopka_z_lista_wojewodztw_nie_przestawia_lokalizacji():
     """Portale ogólnopolskie wypisują w stopce wszystkie województwa naraz.
 

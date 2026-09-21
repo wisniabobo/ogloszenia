@@ -184,6 +184,7 @@ def upsert_listing(
 
     changed = False
     old_price = listing.price
+    old_address = (listing.city, listing.street, listing.district, listing.voivodeship)
     for key, value in data.items():
         if key in {"raw", "extra", "first_seen_at"}:
             continue
@@ -197,6 +198,17 @@ def upsert_listing(
         if getattr(listing, key, None) != value:
             setattr(listing, key, value)
             changed = True
+
+    # Zmiana adresu unieważnia punkt na mapie. Bez tego poprawiona lokalizacja
+    # zostawała ze współrzędnymi sprzed poprawki: oferta z Opola stała na mapie
+    # tam, gdzie kiedyś rozpoznano ją jako Kamienicę, a jedna pinezka zbierała
+    # oferty z kilku różnych miejscowości.
+    if (listing.city, listing.street, listing.district, listing.voivodeship) != old_address:
+        if listing.geo_precision != "portal" or data.get("lat"):
+            listing.lat = data.get("lat")
+            listing.lon = data.get("lon")
+            listing.geo_precision = data.get("geo_precision")
+            listing.geo_source = "portal" if data.get("lat") else None
 
     if data.get("price") and old_price and abs(data["price"] - old_price) > 0.5:
         session.add(
