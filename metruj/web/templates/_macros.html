@@ -126,7 +126,7 @@
 
     <div class="offer__where">
       {% if listing.street %}<strong>{{ address(listing.street) }}</strong>{% if listing.district or listing.city %}, {% endif %}{% endif %}
-      {% if listing.district %}{{ listing.district }}, {% endif %}{{ listing.city or '—' }}
+      {% if listing.district and listing.district != listing.city %}{{ listing.district }}, {% endif %}{{ listing.city or ('gm. ' ~ listing.commune if listing.commune else '—') }}
       {%- if listing.county and listing.county != listing.city %} <span class="muted">· pow. {{ listing.county }}</span>{% endif %}
       {%- if listing.voivodeship %} <span class="muted">· {{ listing.voivodeship }}</span>{% endif %}
     </div>

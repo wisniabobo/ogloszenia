@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
@@ -40,6 +41,22 @@ def clean(text: object | None) -> str:
         text = str(text)
     text = text.replace(" ", " ").replace("​", "")
     return _WS.sub(" ", text).strip()
+
+
+def unescape_html(text: str | None) -> str:
+    """„Garden &amp; Villa" → „Garden & Villa".
+
+    Część portali koduje tekst dwa razy („&amp;amp;"), więc dekodujemy do
+    skutku. Szablon i tak zabezpiecza wynik przy wyświetlaniu — surowe
+    „&amp;" w bazie pokazywało się na stronie dosłownie.
+    """
+    text = text or ""
+    for _ in range(3):
+        decoded = html.unescape(text)
+        if decoded == text:
+            break
+        text = decoded
+    return text
 
 
 def strip_html(text: str | None) -> str:

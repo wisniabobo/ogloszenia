@@ -177,6 +177,9 @@ def upsert_listing(
         listing = Listing(**data, source_id=source.id, initial_price=data.get("price"))
         listing.first_seen_at = listing.first_seen_at or utcnow()
         listing.listed_at = listing.published_at or listing.first_seen_at
+        if listing.concluded:
+            listing.status = ListingStatus.NIEAKTYWNA
+            listing.removed_at = utcnow()
         session.add(listing)
         session.flush()
         _sync_phones(session, listing, phones)
@@ -224,8 +227,13 @@ def upsert_listing(
 
     listing.listed_at = listing.published_at or listing.first_seen_at
     listing.last_seen_at = utcnow()
-    listing.status = ListingStatus.AKTYWNA
-    listing.removed_at = None
+    if listing.concluded:
+        # po terminie — źródło wciąż je pokazuje, ale to już nie oferta
+        listing.status = ListingStatus.NIEAKTYWNA
+        listing.removed_at = listing.removed_at or utcnow()
+    else:
+        listing.status = ListingStatus.AKTYWNA
+        listing.removed_at = None
     _sync_phones(session, listing, phones)
     return listing, ("updated" if changed else "unchanged"), price_changed
 

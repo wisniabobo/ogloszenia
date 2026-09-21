@@ -687,3 +687,56 @@ def test_zrodlo_moze_swiadomie_wyczyscic_ulice():
         city="Kluczbork", kind=OfferKind.PRZETARG, price=None, street_from_body=False))
     assert bez_ulicy.data["street"] is None
     assert bez_ulicy.cleared == ("street",)
+
+
+def test_licytacja_po_terminie_nie_wraca_do_aktywnych(session):
+    """Komornicy i BIP-y nie zdejmują ogłoszeń od razu po licytacji — zbieracz
+    przywracał je do aktywnych przy każdym przejściu."""
+    from metruj.models import ListingStatus, Source
+    from metruj.pipeline.runner import upsert_listing
+
+    source = Source(key="test-po-terminie", name="Test")
+    session.add(source)
+    session.flush()
+
+    def licytacja(external_id: str, days: int):
+        return normalize(make_raw(
+            external_id=external_id, url=f"https://x.pl/{external_id}",
+            source_key="test-po-terminie", kind=OfferKind.LICYTACJA,
+            title="Licytacja mieszkania w Opolu", event_date=utcnow() + timedelta(days=days),
+        ))
+
+    minela = licytacja("po-terminie", -5)
+    przed_nami = licytacja("przed-nami", 10)
+    stara, _, _ = upsert_listing(session, minela.data, minela.phones, source)
+    nowa, _, _ = upsert_listing(session, przed_nami.data, przed_nami.phones, source)
+    # i ponowne zobaczenie w źródle nie przywraca zakończonej
+    stara, _, _ = upsert_listing(session, minela.data, minela.phones, source)
+    session.flush()
+
+    assert stara.status == ListingStatus.NIEAKTYWNA
+    assert nowa.status == ListingStatus.AKTYWNA
+
+
+def test_miejscowosc_odtworzona_z_czlonow_adresu(session):
+    """Z produkcji: „Biestrzykowice, Świerczów, namysłowski" zapisane jako
+    ulica, dzielnica i puste miasto — karta pokazywała sam powiat."""
+    from metruj.models import Source
+    from metruj.pipeline.repair import _restore_cities
+    from metruj.pipeline.runner import upsert_listing
+
+    source = Source(key="test-odtworzenie", name="Test")
+    session.add(source)
+    session.flush()
+    raw = normalize(make_raw(external_id="odtw-1", url="https://gratka.pl/odtw-1",
+                             source_key="gratka", title="Budynek gospodarczy z poddaszem"))
+    listing, _, _ = upsert_listing(session, raw.data, raw.phones, source)
+    listing.city, listing.district, listing.street = None, "Świerczów", "Biestrzykowice"
+    listing.county, listing.voivodeship = "namysłowski", "opolskie"
+    session.flush()
+
+    assert _restore_cities(session) >= 1
+    session.refresh(listing)
+    assert listing.city == "Świerczów"
+    assert listing.district == "Biestrzykowice"
+    assert listing.county == "namysłowski"

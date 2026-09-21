@@ -264,6 +264,12 @@ def cmd_repair(
         f"wyczyszczone z przyszłości {stats.dates_cleared}, "
         f"uzupełniona data wystawienia {stats.listed_at}"
     )
+    console.print(
+        f"[green]Treść:[/] odtworzone miejscowości {stats.cities_restored}, "
+        f"odkodowane tytuły {stats.titles}, opisy ze skryptami {stats.descriptions}, "
+        f"licytacje i przetargi po terminie "
+        f"{stats.concluded}, stare ogłoszenia z BIP {stats.old_notices}"
+    )
     console.print(f"[green]Odniesienie rynkowe:[/] {market}")
 
 

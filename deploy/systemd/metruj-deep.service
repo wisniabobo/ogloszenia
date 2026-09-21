@@ -11,6 +11,10 @@ EnvironmentFile=/opt/metruj/.env
 # ofert z kraju. Karty ofert pomijamy (--no-details), bo przy setkach tysięcy
 # pozycji to osobny, budżetowany przebieg.
 ExecStart=/opt/metruj/.venv/bin/python -m metruj.cli scan --deep --no-details
+# Po pełnym przejściu: naprawa danych (daty, lokalizacje, licytacje po terminie,
+# nierealne ceny) i przeliczenie mediany — dopiero potem geokodowanie, bo naprawa
+# kasuje punkty przy zmienionych adresach.
+ExecStartPost=/opt/metruj/.venv/bin/python -m metruj.cli napraw
 ExecStartPost=/opt/metruj/.venv/bin/python -m metruj.cli geocode --limit 20000
 # Pełne przejście przez wszystkie portale w skali kraju to kilkadziesiąt
 # tysięcy zapytań rozłożonych na grzeczne tempo. Doba z zapasem: gdyby się

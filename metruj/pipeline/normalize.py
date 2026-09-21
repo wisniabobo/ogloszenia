@@ -26,6 +26,7 @@ from ..utils.text import (
     extract_rooms,
     extract_year,
     strip_html,
+    unescape_html,
 )
 from .location import resolve as resolve_location
 
@@ -183,7 +184,7 @@ def normalize(
     zostawiamy — region dopisze jej geokoder, który pyta rejestr adresowy,
     zamiast zgadywać z tytułu. Odrzucanie takich ofert gubiło dane.
     """
-    title = clean(raw.title)
+    title = clean(unescape_html(raw.title))
     description = strip_html(raw.description)
     if not title or not raw.url:
         return None

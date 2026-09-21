@@ -315,9 +315,10 @@ def audit_presentation() -> None:
                 select(func.count(Listing.id)).where(Listing.status == ListingStatus.AKTYWNA, *where)
             ) or 0)
 
-        check("opisy bez znaczników HTML",
-              count(Listing.description.like("%<%>%")) == 0,
-              f"{count(Listing.description.like('%<%>%'))} ofert")
+        tags = (Listing.description.like("%<p>%") | Listing.description.like("%<br%")
+                | Listing.description.like("%</%") | Listing.description.like("%<div%")
+                | Listing.description.like("%<script%") | Listing.description.like("%$(%"))
+        check("opisy bez znaczników HTML i skryptów", count(tags) == 0, f"{count(tags)} ofert")
         check("tytuły niepuste", count(Listing.title == "") == 0, "puste tytuły")
         check("tytuły bez encji HTML",
               count(Listing.title.like("%&amp;%") | Listing.title.like("%&nbsp;%")) == 0,

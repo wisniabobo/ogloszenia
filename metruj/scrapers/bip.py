@@ -71,7 +71,10 @@ PUBLISHED = re.compile(
 )
 
 #: Data doklejona do tytułu: „Wykaz nieruchomości do zbycia - 15.10.2025".
-ANY_DATE = re.compile(r"\b(\d{1,2}[.-]\d{1,2}[.-]\d{4}|\d{4}-\d{2}-\d{2})\b")
+#: Bez granicy słowa na końcu: Kluczbork pisze „- 14.07.2023r.", a litera
+#: tuż po roku sprawiała, że daty nie było — i wykazy sprzed lat wchodziły
+#: do bazy jako aktualne.
+ANY_DATE = re.compile(r"(?<!\d)(\d{1,2}[.-]\d{1,2}[.-]\d{4}|\d{4}-\d{2}-\d{2})(?!\d)")
 
 #: Rok z sygnatury sprawy: „GNP.6840.14.2023.JK", „GG.6840.5.2014.JK".
 #: Ostatnia deska ratunku, gdy sekcja BIP-u trzyma archiwum bez dat przy
@@ -186,7 +189,7 @@ class BipScraper(BaseScraper):
             self.kind = kind
         #: Po ilu dniach ogłoszenie uznajemy za archiwalne. Dwa lata to zapas
         #: na wykazy z art. 35, które potrafią czekać na przetarg kilka miesięcy.
-        self.max_age_days = int(self.config.get("max_age_days", 730))
+        self.max_age_days = int(self.config.get("max_age_days", 365))
 
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
         sections = self.config.get("sections") or self.config.get("urls") or []
@@ -233,6 +236,18 @@ class BipScraper(BaseScraper):
                     return
 
     # ------------------------------------------------------------------ #
+
+    def _outdated(self, event_date, published) -> bool:
+        """Przetarg, który już się odbył, albo ogłoszenie sprzed roku.
+
+        Sekcje BIP-ów trzymają razem bieżące ogłoszenia i archiwum sprzed lat.
+        Licytacja sprzed miesiąca jest rozstrzygnięta, a wykaz sprzed roku
+        dawno doczekał się przetargu — żadne z nich nie jest ofertą.
+        """
+        now = utcnow()
+        if event_date is not None:
+            return (now - event_date).days > 1
+        return published is not None and (now - published).days > self.max_age_days
     def _offer_links(self, tree: HTMLParser, section: str) -> list[tuple[str, str]]:
         """Odnośniki do ogłoszeń, z pominięciem menu i rozstrzygnięć."""
         node = _content(tree)
@@ -299,8 +314,7 @@ class BipScraper(BaseScraper):
         if loose:
             published = parse_datetime(loose.group(1))
         event_date = parse_datetime(date_match.group(1)) if date_match else None
-        newest = event_date or published
-        if newest is not None and (utcnow() - newest).days > self.max_age_days:
+        if self._outdated(event_date, published):
             return None
 
         property_type = PropertyType.INNE
@@ -415,10 +429,7 @@ class BipScraper(BaseScraper):
                 # reszta projektu trzyma czasy bez strefy — trzymamy się tego
                 published = datetime(int(case_year.group(1)), 12, 31)
 
-        # Sekcje BIP-ów trzymają razem bieżące ogłoszenia i archiwum sprzed lat.
-        # Przetarg sprzed czterech lat nie jest ofertą, więc go nie zapisujemy.
-        newest = event_date or published
-        if newest is not None and (utcnow() - newest).days > self.max_age_days:
+        if self._outdated(event_date, published):
             return None
 
         parcels = PARCEL.search(haystack)

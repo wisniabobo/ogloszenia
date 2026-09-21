@@ -182,6 +182,20 @@ class TestDatyISO:
         # zimą — 23:00 UTC
         assert polish_midnight_utc(datetime(2026, 12, 5, 12, 0)) == datetime(2026, 12, 4, 23, 0)
 
+    def test_data_z_litera_po_roku(self):
+        from metruj.scrapers.bip import ANY_DATE
+
+        # „- 14.07.2023r." — BIP Kluczborka; wcześniej daty nie było
+        assert ANY_DATE.search("Wykaz nieruchomości - 14.07.2023r.").group(1) == "14.07.2023"
+        assert ANY_DATE.search("sprzedaż 2026-09-12, godz. 10").group(1) == "2026-09-12"
+
+    def test_encje_w_tytule(self):
+        from metruj.utils.text import unescape_html
+
+        assert unescape_html("Garden &amp; Villa") == "Garden & Villa"
+        assert unescape_html("SPA&amp;amp;GYM") == "SPA&GYM"
+        assert unescape_html("Dom & ogród") == "Dom & ogród"
+
     def test_termin_licytacji_w_czasie_polskim(self):
         from datetime import datetime
 

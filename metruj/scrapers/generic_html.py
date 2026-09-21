@@ -364,7 +364,12 @@ class GenericHtmlScraper(BaseScraper):
         sel = cfg.get("detail_description_selector")
         node = tree.css_first(sel) if sel else (tree.css_first("main") or tree.css_first("body"))
         if node:
-            item.description = clean(node.text())[:20000]
+            # Skrypty, style i menu to też „tekst" węzła — bez odsiania opis
+            # oferty PKP zaczynał się od „A- A A+ O PKP S.A. Wynajem Oferty…"
+            # i kilku ekranów JavaScriptu.
+            for junk in node.css("script, style, noscript, nav, header, footer, form, button"):
+                junk.decompose()
+            item.description = clean(node.text(separator=" "))[:20000] or None
         if not item.price:
             item.price = parse_number(item.description or "")
         if not item.images:

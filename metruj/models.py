@@ -9,7 +9,7 @@ a reszta trafia do JSON-owego `extra`.
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import (
     JSON,
@@ -308,6 +308,24 @@ class Listing(Base):
     def market_since(self) -> datetime:
         """Data wystawienia — z portalu, a w jej braku z naszego pierwszego spotkania."""
         return self.listed_at or self.published_at or self.first_seen_at
+
+    @property
+    def concluded(self) -> bool:
+        """Licytacja albo przetarg, których termin minął — to już nie oferta.
+
+        Komornicy, BIP-y i KAS nie zdejmują ogłoszeń od razu po licytacji,
+        więc zbieracz przy każdym przejściu przywracał je do aktywnych.
+        Liczy się najpóźniejszy termin (koniec przyjmowania ofert albo sama
+        licytacja), z dniem zapasu na przesunięcia.
+        """
+        if self.kind not in (OfferKind.LICYTACJA, OfferKind.PRZETARG):
+            return False
+        terms = [moment for moment in (self.event_date, self.deadline) if moment]
+        if not terms:
+            return False
+        from .utils.text import to_polish_time
+
+        return max(terms) < to_polish_time(utcnow()) - timedelta(days=1)
 
     @property
     def offer_window(self) -> bool:

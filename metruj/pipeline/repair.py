@@ -24,7 +24,8 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from ..geo import detect_location, known_voivodeship, lookup, resolve_place
-from ..models import AppState, DuplicateLink, Listing, ListingStatus, utcnow
+from ..models import AppState, DuplicateLink, Listing, ListingStatus, OfferKind, utcnow
+from ..utils.text import clean
 from .dedup import _match, _refresh_copy_count
 from .normalize import LAND_TYPES, NAVIGATION_TITLE
 
@@ -57,6 +58,11 @@ class RepairStats:
     dates_unswapped: int = 0
     dates_cleared: int = 0
     listed_at: int = 0
+    cities_restored: int = 0
+    titles: int = 0
+    descriptions: int = 0
+    concluded: int = 0
+    old_notices: int = 0
 
     def __str__(self) -> str:
         return (
@@ -66,7 +72,10 @@ class RepairStats:
             f"nieaktualne_punkty={self.stale_points} śmieci={self.navigation} "
             f"rozpięte_kopie={self.unlinked} do_przeliczenia={self.regeocode} "
             f"daty_z_portalu={self.dates_reparsed} daty_odwrócone={self.dates_unswapped} "
-            f"daty_wyczyszczone={self.dates_cleared} data_wystawienia={self.listed_at}"
+            f"daty_wyczyszczone={self.dates_cleared} data_wystawienia={self.listed_at} "
+            f"odtworzone_miejscowości={self.cities_restored} tytuły={self.titles} "
+            f"opisy_ze_skryptami={self.descriptions} "
+            f"po_terminie={self.concluded} stare_ogłoszenia={self.old_notices}"
         )
 
 
@@ -76,6 +85,21 @@ def _fix_prices(session: Session) -> tuple[int, int]:
     zeroed = session.execute(
         update(Listing).where(Listing.price <= 0).values(price=None, price_per_m2=None)
     ).rowcount
+    # „1234567890 zł" i ceny powyżej granicy rozsądku. Odczyt odrzuca je od
+    # razu, ale przy aktualizacji odrzucona cena nic nie zmieniała — i stara,
+    # błędna zostawała w bazie.
+    from .normalize import _plausible_price
+
+    suspicious = session.execute(
+        select(Listing.id, Listing.price).where(Listing.price >= 10_000_000)
+    ).all()
+    implausible = [row.id for row in suspicious if not _plausible_price(row.price)]
+    for start in range(0, len(implausible), 500):
+        session.execute(
+            update(Listing).where(Listing.id.in_(implausible[start:start + 500]))
+            .values(price=None, price_per_m2=None, deal_ratio=None, deal_level=None)
+        )
+    zeroed = (zeroed or 0) + len(implausible)
 
     recomputed = 0
     rows = session.execute(
@@ -300,6 +324,154 @@ def _relocate_structured(session: Session) -> int:
     return changed
 
 
+def _restore_cities(session: Session) -> int:
+    """Miejscowość z członów adresu, które zostały po usunięciu powiatu.
+
+    Stary odczyt Gratki i Morizona brał człony adresu po kolei: z
+    „Biestrzykowice, Świerczów, namysłowski" wychodziło miasto „namysłowski",
+    dzielnica „Świerczów" i ulica „Biestrzykowice". Naprawa słusznie zdjęła
+    powiat z pola miasta, ale miasto zostało puste, a karta pokazywała
+    „ul. Biestrzykowice, Świerczów, —". Dzisiejszy odczyt wybiera
+    miejscowość według rejestru TERYT — tu robimy to samo z tym, co zostało
+    zapisane.
+    """
+    from ..scrapers.base import RawListing
+    from ..scrapers.ringier import _is_county, _is_place
+    from .location import resolve
+
+    rows = session.execute(
+        select(Listing.id, Listing.title, Listing.voivodeship, Listing.county,
+               Listing.district, Listing.street)
+        .where(
+            Listing.city.is_(None),
+            Listing.source_key.in_(("gratka", "morizon")),
+            or_(Listing.district.is_not(None), Listing.street.is_not(None)),
+        )
+    ).all()
+    changed = 0
+    for row in rows:
+        parts = [clean(p) for p in (row.street or "").split(",") if clean(p)]
+        parts += [row.district] if row.district else []
+        city = None
+        for index in range(len(parts) - 1, -1, -1):
+            if _is_place(parts[index]):
+                city = parts.pop(index)
+                break
+        if city is None:
+            continue  # rejestr nie zna żadnego członu — nie zgadujemy
+        parts = [p for p in parts if p != city]
+        district = parts.pop() if parts else None
+        found = resolve(RawListing(
+            external_id="", url="", title=row.title or "",
+            city=city,
+            county=row.county if row.county and _is_county(row.county) else None,
+            voivodeship=row.voivodeship,
+            district=district,
+            street=", ".join(parts) or None,
+        ))
+        if not found.city:
+            continue
+        session.execute(
+            update(Listing).where(Listing.id == row.id).values(
+                city=found.city,
+                county=found.county,
+                commune=found.commune,
+                voivodeship=found.voivodeship or row.voivodeship,
+                teryt=found.teryt,
+                district=found.district,
+                street=found.street,
+                lat=None, lon=None, geo_precision=None, geo_source=None,
+            )
+        )
+        changed += 1
+    return changed
+
+
+def _unescape_titles(session: Session) -> int:
+    """„Garden &amp; Villa" → „Garden & Villa" w tytułach już zapisanych."""
+    from ..utils.text import unescape_html
+
+    rows = session.execute(
+        select(Listing.id, Listing.title).where(Listing.title.like("%&%;%"))
+    ).all()
+    changed = 0
+    for row in rows:
+        title = clean(unescape_html(row.title))
+        if title and title != row.title:
+            session.execute(update(Listing).where(Listing.id == row.id).values(title=title))
+            changed += 1
+    return changed
+
+
+def _drop_script_descriptions(session: Session) -> int:
+    """Opis, który jest menu i kodem strony, a nie opisem oferty.
+
+    Odczyt karty oferty brał cały `<body>` razem ze skryptami — opis PKP
+    zaczynał się od „A- A A+ O PKP S.A." i ekranów JavaScriptu. Pusty opis
+    uzupełni następne przejście, już z poprawionym odczytem.
+    """
+    return int(session.execute(
+        update(Listing).where(or_(
+            Listing.description.like("%$(function%"),
+            Listing.description.like("%$(document)%"),
+            Listing.description.like("%{ margin%"),
+        )).values(description=None)
+    ).rowcount or 0)
+
+
+def _close_concluded(session: Session) -> int:
+    """Licytacje i przetargi po terminie przestają być aktywnymi ofertami."""
+    rows = session.scalars(
+        select(Listing).where(
+            Listing.status == ListingStatus.AKTYWNA,
+            Listing.kind.in_((OfferKind.LICYTACJA, OfferKind.PRZETARG)),
+            or_(Listing.event_date.is_not(None), Listing.deadline.is_not(None)),
+        )
+    ).all()
+    closed = 0
+    for listing in rows:
+        if listing.concluded:
+            listing.status = ListingStatus.NIEAKTYWNA
+            listing.removed_at = listing.removed_at or utcnow()
+            closed += 1
+    return closed
+
+
+def _archive_old_notices(session: Session) -> int:
+    """Ogłoszenia z BIP-ów sprzed roku, zapisane zanim rozpoznawaliśmy ich datę.
+
+    „Wykaz nieruchomości … - 14.07.2023r." — litera tuż po roku sprawiała,
+    że daty nie było, więc filtr wieku przepuszczał archiwum sprzed lat.
+    """
+    from datetime import timedelta
+
+    from ..scrapers.bip import ANY_DATE, TITLE_DATE
+    from ..utils.text import parse_datetime
+
+    limit = utcnow() - timedelta(days=365)
+    rows = session.execute(
+        select(Listing.id, Listing.title, Listing.published_at).where(
+            Listing.status == ListingStatus.AKTYWNA,
+            Listing.source_key.like("bip_%"),
+            Listing.event_date.is_(None),
+        )
+    ).all()
+    archived = []
+    for row in rows:
+        published = row.published_at
+        if published is None:
+            match = TITLE_DATE.search(row.title or "") or ANY_DATE.search(row.title or "")
+            published = parse_datetime(match.group(1)) if match else None
+        if published is not None and published < limit:
+            archived.append(row.id)
+    for start in range(0, len(archived), 500):
+        session.execute(
+            update(Listing).where(Listing.id.in_(archived[start:start + 500]))
+            .values(status=ListingStatus.ARCHIWALNA, removed_at=utcnow())
+        )
+    return len(archived)
+
+
 def _recheck_duplicates(session: Session) -> int:
     """Rozpina połączenia, które nie przechodzą już dzisiejszych reguł.
 
@@ -380,7 +552,7 @@ def _recheck_coordinates(session: Session) -> int:
     """
     from ..geo.streets import split_house_number
     from ..models import GeocodeCache
-    from ..utils.text import clean, sha1
+    from ..utils.text import sha1
 
     cache = {
         row.query_hash: (row.lat, row.lon)
@@ -566,6 +738,11 @@ def repair(session: Session, *, regeocode_all: bool = False) -> RepairStats:
     stats.navigation = _deactivate_navigation(session)
     stats.relocated = _relocate_text_sources(session) + _relocate_structured(session)
     stats.counties_as_cities = _county_as_city(session)
+    stats.cities_restored = _restore_cities(session)
+    stats.titles = _unescape_titles(session)
+    stats.descriptions = _drop_script_descriptions(session)
+    stats.concluded = _close_concluded(session)
+    stats.old_notices = _archive_old_notices(session)
     stats.regions = _fix_regions(session)
     stats.stale_points = _recheck_coordinates(session)
     stats.unlinked = _recheck_duplicates(session)
