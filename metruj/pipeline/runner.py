@@ -312,6 +312,8 @@ def _persist(source_key: str, items: list[RawListing], error: str,
             except Exception as exc:
                 log.debug("Normalizacja odrzuciła ofertę %s: %s", raw.url, exc)
                 result.errors += 1
+                if not result.message:
+                    result.message = f"normalizacja — {type(exc).__name__}: {exc}"[:400]
                 continue
             if normalized is None:
                 continue
@@ -323,6 +325,11 @@ def _persist(source_key: str, items: list[RawListing], error: str,
                 session.rollback()
                 log.debug("Zapis oferty %s nie powiódł się: %s", raw.url, exc)
                 result.errors += 1
+                # Licznik błędów bez powodu jest bezużyteczny: „285 błędów"
+                # w tabeli przebiegu nie mówi, czy portal przemeblował front,
+                # czy baza była zajęta. Pierwszy powód zapamiętujemy i pokazujemy.
+                if not result.message:
+                    result.message = f"{type(exc).__name__}: {exc}"[:400]
                 continue
 
             if action == "new":
@@ -467,8 +474,9 @@ async def run_scan(
             result.new_listing_ids.extend(new_ids)
             items.clear()   # pozycje są już w bazie — nie trzymamy ich w pamięci
             log.info(
-                "Źródło %s: pobrane %s, nowe %s, błędy %s",
+                "Źródło %s: pobrane %s, nowe %s, błędy %s%s",
                 source.key, source_result.fetched, source_result.new, source_result.errors,
+                f" ({source_result.message})" if source_result.message else "",
             )
 
     with session_scope() as session:
