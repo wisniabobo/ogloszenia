@@ -562,7 +562,7 @@ def test_zmiana_adresu_uniewaznia_punkt_na_mapie(session):
     from metruj.models import Source
     from metruj.pipeline.runner import upsert_listing
 
-    source = Source(key="test", name="Test")
+    source = Source(key="test-adres", name="Test")
     session.add(source)
     session.flush()
 
@@ -580,6 +580,46 @@ def test_zmiana_adresu_uniewaznia_punkt_na_mapie(session):
     assert listing.city == "Opole"
     assert listing.lat is None, "stary punkt został przy nowym adresie"
     assert listing.geo_source is None
+
+
+def test_najnowsze_to_najswiezej_wystawione_a_nie_zebrane(session):
+    """Po pełnym przejściu przez portal na górę listy wskakiwały oferty sprzed
+    miesięcy, bo sortowanie szło po dacie naszego pierwszego spotkania."""
+    from datetime import timedelta
+
+    from metruj.models import Source
+    from metruj.pipeline.runner import upsert_listing
+    from metruj.query import Filters, search_listings
+
+    source = Source(key="test-najnowsze", name="Test")
+    session.add(source)
+    session.flush()
+
+    stara = normalize(make_raw(external_id="S", url="https://x.pl/s", source_key="test-najnowsze",
+                               title="Mieszkanie w Opolu, wystawione pół roku temu",
+                               published_at=utcnow() - timedelta(days=180)))
+    swieza = normalize(make_raw(external_id="N", url="https://x.pl/n", source_key="test-najnowsze",
+                                title="Dom w Nysie, wystawiony dziś",
+                                published_at=utcnow() - timedelta(hours=2)))
+    # świeżą zbieramy PIERWSZĄ, starą — później (tak jak w pełnym przejściu)
+    upsert_listing(session, swieza.data, swieza.phones, source)
+    upsert_listing(session, stara.data, stara.phones, source)
+    session.flush()
+
+    wyniki, _ = search_listings(
+        session, Filters(sort="najnowsze", only_original=False, source=["test-najnowsze"])
+    )
+    assert wyniki[0].external_id == "N"
+    assert wyniki[0].is_fresh is True
+    assert wyniki[-1].is_fresh is False
+    assert wyniki[-1].days_on_market >= 179
+
+
+def test_data_wystawienia_z_przyszlosci_jest_odrzucana():
+    from datetime import timedelta
+
+    wynik = normalize(make_raw(published_at=utcnow() + timedelta(days=80)))
+    assert wynik.data["published_at"] is None
 
 
 def test_stopka_z_lista_wojewodztw_nie_przestawia_lokalizacji():

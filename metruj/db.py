@@ -105,6 +105,29 @@ def _add_missing_columns(engine: Engine, metadata) -> list[str]:
     return added
 
 
+def _add_missing_indexes(engine: Engine, metadata) -> list[str]:
+    """Zakłada indeksy dopisane do modelu po utworzeniu tabeli.
+
+    `create_all` pomija tabele, które już istnieją — razem z ich indeksami.
+    Indeks na miejscowości dopisany do modelu nigdy więc nie powstał na
+    serwerze i filtr „miasto" dalej czytał całą tabelę.
+    """
+    from sqlalchemy import inspect
+
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    created: list[str] = []
+    for table in metadata.sorted_tables:
+        if table.name not in existing_tables:
+            continue
+        have = {index["name"] for index in inspector.get_indexes(table.name)}
+        for index in table.indexes:
+            if index.name and index.name not in have:
+                index.create(engine)
+                created.append(index.name)
+    return created
+
+
 def _relax_not_null(engine: Engine, metadata) -> list[str]:
     """Zdejmuje `NOT NULL` z kolumn, które w modelu są już opcjonalne.
 
@@ -285,6 +308,9 @@ def init_db() -> None:
     relaxed = _relax_not_null(engine, models.Base.metadata)
     if relaxed:
         log.info("Zdjęto wymóg wartości z kolumn: %s", ", ".join(relaxed))
+    created = _add_missing_indexes(engine, models.Base.metadata)
+    if created:
+        log.info("Założono brakujące indeksy: %s", ", ".join(created))
     repaired = _repair_dangling_references(engine, models.Base.metadata)
     if repaired:
         log.info("Odtworzono tabele z uszkodzonymi kluczami obcymi: %s", ", ".join(repaired))

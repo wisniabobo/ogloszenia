@@ -24,7 +24,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from ..geo import detect_location, known_voivodeship, lookup, resolve_place
-from ..models import DuplicateLink, Listing, ListingStatus
+from ..models import AppState, DuplicateLink, Listing, ListingStatus, utcnow
 from .dedup import _match, _refresh_copy_count
 from .normalize import LAND_TYPES, NAVIGATION_TITLE
 
@@ -53,6 +53,10 @@ class RepairStats:
     navigation: int = 0
     unlinked: int = 0
     regeocode: int = 0
+    dates_reparsed: int = 0
+    dates_unswapped: int = 0
+    dates_cleared: int = 0
+    listed_at: int = 0
 
     def __str__(self) -> str:
         return (
@@ -60,7 +64,9 @@ class RepairStats:
             f"powierzchnia_gruntu={self.land_area} regiony={self.regions} "
             f"lokalizacje={self.relocated} powiat_jako_miasto={self.counties_as_cities} "
             f"nieaktualne_punkty={self.stale_points} śmieci={self.navigation} "
-            f"rozpięte_kopie={self.unlinked} do_przeliczenia={self.regeocode}"
+            f"rozpięte_kopie={self.unlinked} do_przeliczenia={self.regeocode} "
+            f"daty_z_portalu={self.dates_reparsed} daty_odwrócone={self.dates_unswapped} "
+            f"daty_wyczyszczone={self.dates_cleared} data_wystawienia={self.listed_at}"
         )
 
 
@@ -351,9 +357,126 @@ def _recheck_coordinates(session: Session) -> int:
     return len(stale)
 
 
+#: Skąd w danych portalu da się przeczytać oryginalną datę — dla źródeł, które
+#: trzymają surową odpowiedź. Pole -> kolejne klucze do sprawdzenia.
+RAW_DATE_KEYS: dict[str, dict[str, tuple[str, ...]]] = {
+    "olx": {"published_at": ("created_time",), "source_updated_at": ("last_refresh_time",)},
+    "otodom": {"published_at": ("dateCreatedFirst", "dateCreated"),
+               "source_updated_at": ("pushedUpAt", "modifiedAt")},
+    "elicytacje_kas": {"published_at": ("publicationDateTime",),
+                       "event_date": ("saleBeginDateTime",),
+                       "deadline": ("depositDueDate", "saleEndDateTime")},
+    "msig": {"published_at": ("dateOfPublication",)},
+}
+
+#: Źródła, które podają datę w zapisie „rok-miesiąc-dzień", ale nie trzymają
+#: surowej odpowiedzi (Morizon i Gratka: „Dodane: 2026.09.07" z karty, GetHome:
+#: ISO z danych strony). Stary parser zamienił im dzień z miesiącem przy
+#: każdym dniu od 1 do 12 — i tylko wtedy.
+YEAR_FIRST_SOURCES = ("gethome", "morizon", "gratka")
+
+#: Znacznik jednorazowej naprawy — odwrócenie zamiany na danych już
+#: poprawionych zamieniłoby je z powrotem.
+DATES_MIGRATION = "naprawa-dat-iso-2026-09"
+
+
+def _reparse_raw_dates(session: Session) -> int:
+    """Czyta daty od nowa z oryginalnej odpowiedzi portalu (tam, gdzie ją mamy).
+
+    Bezpieczne do wielokrotnego uruchamiania: wynik zależy wyłącznie od
+    napisu z portalu i poprawionego parsera.
+    """
+    from ..utils.text import parse_datetime
+
+    changed = 0
+    for source_key, fields in RAW_DATE_KEYS.items():
+        rows = session.execute(
+            select(Listing.id, Listing.raw).where(Listing.source_key == source_key)
+        ).all()
+        for row in rows:
+            raw = row.raw if isinstance(row.raw, dict) else {}
+            if not raw:
+                continue
+            values = {}
+            for field, keys in fields.items():
+                text = next((raw[k] for k in keys if raw.get(k)), None)
+                if text:
+                    values[field] = parse_datetime(text)
+            if values:
+                session.execute(update(Listing).where(Listing.id == row.id).values(**values))
+                changed += 1
+    return changed
+
+
+def _unswap(moment):
+    """Odwraca zamianę dnia z miesiącem zrobioną przez stary parser."""
+    if moment is None or moment.day > 12 or moment.day == moment.month:
+        return moment
+    try:
+        return moment.replace(month=moment.day, day=moment.month)
+    except ValueError:
+        return moment
+
+
+def _unswap_year_first(session: Session) -> int:
+    """Jednorazowo odwraca zamienione daty w źródłach bez surowej odpowiedzi."""
+    changed = 0
+    rows = session.execute(
+        select(Listing.id, Listing.published_at, Listing.source_updated_at)
+        .where(Listing.source_key.in_(YEAR_FIRST_SOURCES))
+    ).all()
+    for row in rows:
+        published, refreshed = _unswap(row.published_at), _unswap(row.source_updated_at)
+        if published != row.published_at or refreshed != row.source_updated_at:
+            session.execute(
+                update(Listing).where(Listing.id == row.id)
+                .values(published_at=published, source_updated_at=refreshed)
+            )
+            changed += 1
+    return changed
+
+
+def _clear_future_dates(session: Session) -> int:
+    """Data wystawienia w przyszłości to pomyłka — lepiej pusta niż fałszywa."""
+    from datetime import timedelta
+
+    limit = utcnow() + timedelta(days=1)
+    changed = session.execute(
+        update(Listing).where(Listing.published_at > limit).values(published_at=None)
+    ).rowcount or 0
+    changed += session.execute(
+        update(Listing).where(Listing.source_updated_at > limit).values(source_updated_at=None)
+    ).rowcount or 0
+    return int(changed)
+
+
+def _fill_listed_at(session: Session) -> int:
+    """Data wystawienia na rynku: z portalu, a w jej braku — pierwsze spotkanie."""
+    from sqlalchemy import func
+
+    return int(
+        session.execute(
+            update(Listing).values(
+                listed_at=func.coalesce(Listing.published_at, Listing.first_seen_at)
+            )
+        ).rowcount or 0
+    )
+
+
+def _fix_dates(session: Session, stats: RepairStats) -> None:
+    stats.dates_reparsed = _reparse_raw_dates(session)
+    done = session.get(AppState, DATES_MIGRATION)
+    if done is None:
+        stats.dates_unswapped = _unswap_year_first(session)
+        session.add(AppState(key=DATES_MIGRATION, value=str(stats.dates_unswapped)))
+    stats.dates_cleared = _clear_future_dates(session)
+    stats.listed_at = _fill_listed_at(session)
+
+
 def repair(session: Session, *, regeocode_all: bool = False) -> RepairStats:
     """Przelicza pola, które dało się policzyć źle, i czyści nieprawdziwe."""
     stats = RepairStats()
+    _fix_dates(session, stats)
     stats.prices, stats.price_per_m2 = _fix_prices(session)
     stats.land_area = _fix_land_area(session)
     stats.navigation = _deactivate_navigation(session)

@@ -266,6 +266,16 @@ class Listing(Base):
     # --- czas ---
     published_at: Mapped[datetime | None] = mapped_column(DateTime)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    #: Kiedy oferta **pojawiła się na rynku**: data wystawienia z portalu,
+    #: a gdy portal jej nie podaje — chwila, w której ją zobaczyliśmy.
+    #:
+    #: To po tej dacie sortuje „od najnowszych" i liczy „na rynku od". Wcześniej
+    #: sortowanie szło po `first_seen_at`, czyli po dacie **naszego** pierwszego
+    #: spotkania — po każdym pełnym przejściu przez portal na górę listy
+    #: wskakiwały dziesiątki tysięcy ogłoszeń sprzed miesięcy, a „dodane dziś"
+    #: pokazywało 52 tysiące ofert. Osobna, indeksowana kolumna zamiast
+    #: `coalesce()` w zapytaniu, bo to najczęstsze sortowanie w całym serwisie.
+    listed_at: Mapped[datetime | None] = mapped_column(DateTime, index=True)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     source_updated_at: Mapped[datetime | None] = mapped_column(DateTime)
     removed_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -295,14 +305,24 @@ class Listing(Base):
 
     # ------------------------------------------------------------------ #
     @property
+    def market_since(self) -> datetime:
+        """Data wystawienia — z portalu, a w jej braku z naszego pierwszego spotkania."""
+        return self.listed_at or self.published_at or self.first_seen_at
+
+    @property
     def days_on_market(self) -> int:
         end = self.removed_at or utcnow()
-        base = self.published_at or self.first_seen_at
-        return max(0, (end - base).days)
+        return max(0, (end - self.market_since).days)
 
     @property
     def is_fresh(self) -> bool:
-        return (utcnow() - self.first_seen_at).total_seconds() < 3600
+        """„NOWA" = wystawiona w ciągu ostatniej doby.
+
+        Liczyła się godzina od naszego pierwszego spotkania — przez co po
+        pełnym przejściu przez portal znaczek „NOWA" dostawało kilkadziesiąt
+        tysięcy ogłoszeń wiszących od miesięcy.
+        """
+        return (utcnow() - self.market_since).total_seconds() < 86400
 
 
 class Phone(Base):
@@ -428,6 +448,21 @@ class Region(Base):
     lat: Mapped[float | None] = mapped_column(Float)
     lon: Mapped[float | None] = mapped_column(Float)
     teryt: Mapped[str | None] = mapped_column(String(16))
+
+
+class AppState(Base):
+    """Stan aplikacji: przede wszystkim znaczniki jednorazowych migracji danych.
+
+    Niektórych napraw nie wolno wykonać dwa razy. Odwrócenie zamienionego
+    dnia z miesiącem jest poprawne na danych zapisanych starym kodem, ale na
+    danych już poprawionych zamieniłoby je z powrotem.
+    """
+
+    __tablename__ = "app_state"
+
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class MarketStat(Base):

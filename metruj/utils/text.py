@@ -116,17 +116,62 @@ def parse_int(value: str | int | None) -> int | None:
     return int(n) if n is not None else None
 
 
-def parse_datetime(value: str | datetime | None) -> datetime | None:
-    """Obsługuje ISO, polskie daty słowne oraz zwroty względne ('dzisiaj 14:30')."""
-    if value is None:
+#: Data w zapisie ISO: rok na początku („2026-09-12", „2026-09-12T10:41:34+02:00").
+ISO_DATE = re.compile(r"^\d{4}-\d{1,2}-\d{1,2}")
+
+
+def _to_utc_naive(dt: datetime) -> datetime:
+    """Czas ze strefą sprowadzony do UTC, bez znacznika strefy.
+
+    Wszystkie nasze znaczniki czasu (`first_seen_at`, `utcnow()`) są w UTC.
+    Samo zdjęcie strefy z „10:41+02:00" dawało 10:41 zamiast 08:41 — i oferta
+    wystawiona tuż po północy lądowała w „dzisiaj" albo „wczoraj" nie tego dnia.
+    """
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def parse_datetime(value: str | datetime | int | float | None) -> datetime | None:
+    """Obsługuje ISO, polskie daty słowne, zapis dzień.miesiąc.rok, znaczniki
+    czasu uniksowego oraz zwroty względne („dzisiaj 14:30").
+
+    **Zapis ISO czytamy ściśle, osobno od reszty.** Ogólny parser z ustawieniem
+    „dzień pierwszy" — potrzebnym dla polskiego „12.09.2026" — czytał także
+    „2026-09-12" jako rok-dzień-miesiąc i robił z niego 9 grudnia. Dotyczyło to
+    każdej daty z dniem od 1 do 12, czyli mniej więcej 40% ofert: tysiące
+    ogłoszeń „dodanych" w przyszłości, sortowanie od najnowszych stawiające na
+    górze ogłoszenia sprzed miesięcy i przestawione terminy licytacji. Dni od 13
+    wzwyż wychodziły dobrze, bo nie mogą być miesiącem — stąd błąd wyglądał
+    na przypadkowy.
+    """
+    if value is None or value == "":
         return None
     if isinstance(value, datetime):
-        return value.replace(tzinfo=None) if value.tzinfo else value
+        return _to_utc_naive(value)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        # znacznik uniksowy — w sekundach albo w milisekundach
+        seconds = value / 1000 if value > 1e11 else value
+        try:
+            return datetime.fromtimestamp(seconds, timezone.utc).replace(tzinfo=None)
+        except (OverflowError, OSError, ValueError):
+            return None
 
-    s = clean(value).lower()
-    if not s:
+    raw = clean(value)
+    if not raw:
         return None
 
+    if ISO_DATE.match(raw):
+        try:
+            return _to_utc_naive(dateparser.isoparse(raw.replace(" ", "T", 1)))
+        except (ValueError, OverflowError):
+            pass
+        try:
+            return _to_utc_naive(dateparser.parse(raw, dayfirst=False, yearfirst=True))
+        except (ValueError, OverflowError, TypeError):
+            return None
+
+    s = raw.lower()
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     time_m = re.search(r"(\d{1,2}):(\d{2})", s)
     hh, mm = (int(time_m.group(1)), int(time_m.group(2))) if time_m else (0, 0)
@@ -146,9 +191,9 @@ def parse_datetime(value: str | datetime | None) -> datetime | None:
 
     try:
         dt = dateparser.parse(s, dayfirst=True, fuzzy=True)
-        return dt.replace(tzinfo=None) if dt and dt.tzinfo else dt
     except (ValueError, OverflowError, TypeError):
         return None
+    return _to_utc_naive(dt) if dt else None
 
 
 # --------------------------------------------------------------------------- #

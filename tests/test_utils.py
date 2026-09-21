@@ -127,3 +127,35 @@ class TestPozostale:
         a = shingle_hash("Ładne mieszkanie w centrum Opola z balkonem i piwnicą do remontu")
         b = shingle_hash("ŁADNE MIESZKANIE W CENTRUM OPOLA Z BALKONEM I PIWNICĄ DO REMONTU")
         assert a == b
+
+
+class TestDatyISO:
+    """Z produkcji: tysiące ogłoszeń „dodanych" w przyszłości.
+
+    Parser z ustawieniem „dzień pierwszy" czytał zapis ISO „2026-09-12" jako
+    rok-dzień-miesiąc i robił z niego 9 grudnia — przy każdym dniu od 1 do 12.
+    """
+
+    def test_iso_z_dniem_do_dwunastu(self):
+        assert parse_datetime("2026-09-12").strftime("%Y-%m-%d") == "2026-09-12"
+
+    def test_iso_z_godzina_i_strefa_w_utc(self):
+        assert str(parse_datetime("2026-09-12T10:41:34+02:00")) == "2026-09-12 08:41:34"
+
+    def test_iso_ze_spacja(self):
+        assert str(parse_datetime("2026-09-05 10:41:34")) == "2026-09-05 10:41:34"
+
+    def test_data_z_karty_morizona(self):
+        """Karta Morizona i Gratki: „Dodane: 2026.09.07"."""
+        assert parse_datetime("2026.09.07".replace(".", "-")).strftime("%Y-%m-%d") == "2026-09-07"
+
+    def test_polski_zapis_dzien_miesiac_rok(self):
+        assert parse_datetime("05.03.2026").strftime("%Y-%m-%d") == "2026-03-05"
+        assert parse_datetime("05-03-2026").strftime("%Y-%m-%d") == "2026-03-05"
+
+    def test_slownie(self):
+        assert parse_datetime("5 marca 2026").strftime("%Y-%m-%d") == "2026-03-05"
+
+    def test_znacznik_uniksowy(self):
+        assert parse_datetime(1757672494).strftime("%Y-%m-%d") == "2025-09-12"
+        assert parse_datetime(1757672494000).strftime("%Y-%m-%d") == "2025-09-12"

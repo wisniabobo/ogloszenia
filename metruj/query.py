@@ -27,8 +27,10 @@ from .models import (
 )
 
 SORTS = {
-    "najnowsze": (Listing.first_seen_at, True),
-    "najstarsze": (Listing.first_seen_at, False),
+    # „Najnowsze" to najświeżej **wystawione**, nie najświeżej przez nas
+    # zauważone — patrz `Listing.listed_at`.
+    "najnowsze": (Listing.listed_at, True),
+    "najstarsze": (Listing.listed_at, False),
     "cena_rosnaco": (Listing.price, False),
     "cena_malejaco": (Listing.price, True),
     "cena_m2_rosnaco": (Listing.price_per_m2, False),
@@ -38,7 +40,7 @@ SORTS = {
     "dzialka": (Listing.plot_area, True),
     # Im niższy stosunek do mediany, tym większa okazja — stąd rosnąco.
     "okazje": (Listing.deal_ratio, False),
-    "najdluzej_wisi": (Listing.first_seen_at, False),
+    "najdluzej_wisi": (Listing.listed_at, False),
     "najwiecej_kopii": (Listing.copies_count, True),
     "termin_licytacji": (Listing.event_date, False),
 }
@@ -54,7 +56,6 @@ SORT_LABELS = {
     "powierzchnia": "największe",
     "powierzchnia_rosnaco": "najmniejsze",
     "dzialka": "największa działka",
-    "najstarsze": "od najstarszych",
     "najdluzej_wisi": "najdłużej wiszące",
     "najwiecej_kopii": "najczęściej powtarzane",
     "termin_licytacji": "najbliższy termin licytacji",
@@ -215,13 +216,17 @@ def apply_filters(stmt: Select, filters: dict[str, Any] | Filters) -> Select:
         # na świeżą. Datę z portalu mamy przy 87% ogłoszeń; przy pozostałych
         # zostaje moment, w którym je zobaczyliśmy.
         since = utcnow() - timedelta(days=PERIODS[f.period])
-        clauses.append(func.coalesce(Listing.published_at, Listing.first_seen_at) >= since)
+        clauses.append(Listing.listed_at >= since)
 
     now = utcnow()
+    # „Jak długo wisi" liczone od wystawienia — tak samo jak licznik „na rynku"
+    # na karcie oferty. Wcześniej filtr liczył od naszego pierwszego spotkania,
+    # a karta od daty z portalu, więc oferta „na rynku 8 miesięcy" nie łapała
+    # się do filtra „wisi ponad 30 dni".
     if f.days_on_market_min is not None:
-        clauses.append(Listing.first_seen_at <= now - timedelta(days=f.days_on_market_min))
+        clauses.append(Listing.listed_at <= now - timedelta(days=f.days_on_market_min))
     if f.days_on_market_max is not None:
-        clauses.append(Listing.first_seen_at >= now - timedelta(days=f.days_on_market_max))
+        clauses.append(Listing.listed_at >= now - timedelta(days=f.days_on_market_max))
 
     if f.price_dropped:
         clauses.append(and_(Listing.initial_price.is_not(None), Listing.price < Listing.initial_price))
@@ -352,8 +357,9 @@ def dashboard_stats(session) -> dict[str, Any]:
         "total": count(active),
         "original": count(active, original),
         "copies": count(active, Listing.is_original.is_(False)),
-        "today": count(active, Listing.first_seen_at >= now - timedelta(days=1)),
-        "week": count(active, Listing.first_seen_at >= now - timedelta(days=7)),
+        # „Dodane dziś" = wystawione dziś, a nie zebrane dziś przez nas.
+        "today": count(active, Listing.listed_at >= now - timedelta(days=1)),
+        "week": count(active, Listing.listed_at >= now - timedelta(days=7)),
         "price_drops": count(active, original, Listing.initial_price.is_not(None),
                              Listing.price < Listing.initial_price),
         "auctions": count(active, Listing.kind == OfferKind.LICYTACJA),
@@ -416,10 +422,10 @@ def map_points(session, filters: Filters) -> list[dict]:
         Listing.price, Listing.price_per_m2, Listing.area, Listing.rooms,
         Listing.city, Listing.street, Listing.kind, Listing.property_type,
         Listing.seller_type, Listing.source_key, Listing.copies_count,
-        Listing.first_seen_at, Listing.url,
+        Listing.first_seen_at, Listing.listed_at, Listing.url,
     ).where(Listing.lat.is_not(None), Listing.lon.is_not(None))
     stmt = apply_filters(stmt, filters)
-    stmt = stmt.order_by(desc(Listing.first_seen_at)).limit(filters.per_page)
+    stmt = stmt.order_by(desc(Listing.listed_at)).limit(filters.per_page)
 
     now = utcnow()
     features = []
@@ -443,7 +449,7 @@ def map_points(session, filters: Filters) -> list[dict]:
                     "s": row.seller_type.value if row.seller_type else None,
                     "src": row.source_key,
                     "cop": row.copies_count,
-                    "d": (now - row.first_seen_at).days,
+                    "d": max(0, (now - (row.listed_at or row.first_seen_at)).days),
                     "prec": row.geo_precision,
                     "u": row.url,
                 },

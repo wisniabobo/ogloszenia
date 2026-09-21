@@ -187,7 +187,7 @@
     <a class="btn btn--ghost btn--sm" href="/oferta/{{ listing.id }}">Szczegóły oferty</a>
     <button class="btn btn--quiet btn--sm" data-on="0"
             onclick="toggleFavorite(this, {{ listing.id }})">☆ Zapisz</button>
-    <div class="offer__added">dodana {{ (listing.published_at or listing.first_seen_at).strftime('%d.%m.%Y') }}</div>
+    <div class="offer__added">dodana {{ listing.market_since.strftime('%d.%m.%Y') }}</div>
   </div>
 </article>
 {% endmacro %}

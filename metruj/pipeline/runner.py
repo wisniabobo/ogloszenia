@@ -175,6 +175,8 @@ def upsert_listing(
 
     if listing is None:
         listing = Listing(**data, source_id=source.id, initial_price=data.get("price"))
+        listing.first_seen_at = listing.first_seen_at or utcnow()
+        listing.listed_at = listing.published_at or listing.first_seen_at
         session.add(listing)
         session.flush()
         _sync_phones(session, listing, phones)
@@ -220,6 +222,7 @@ def upsert_listing(
     if data.get("extra"):
         listing.extra = {**(listing.extra or {}), **data["extra"]}
 
+    listing.listed_at = listing.published_at or listing.first_seen_at
     listing.last_seen_at = utcnow()
     listing.status = ListingStatus.AKTYWNA
     listing.removed_at = None

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 from ..models import OfferKind, PropertyType, SellerType, TransactionType
 from ..scrapers.base import RawListing
@@ -145,6 +146,20 @@ def _pick(*values):
         if value not in (None, "", 0):
             return value
     return None
+
+
+def _not_in_future(moment):
+    """Data wystawienia albo odświeżenia nie może leżeć w przyszłości.
+
+    Jeśli leży, to jest pomyłką — portalu albo odczytu. Zostawiona w bazie
+    stawiała ofertę na szczycie „od najnowszych" na kilka miesięcy. Terminów
+    licytacji to nie dotyczy: te z definicji są przed nami.
+    """
+    from ..models import utcnow
+
+    if moment is None:
+        return None
+    return None if moment > utcnow() + timedelta(days=1) else moment
 
 
 def _parcel_numbers(text: str) -> list[str]:
@@ -328,8 +343,8 @@ def normalize(
         "seller_type": raw.seller_type or SellerType.NIEZNANY,
         "seller_name": clean(raw.seller_name or "")[:300] or None,
         "contact_email": clean(raw.contact_email or "")[:200] or None,
-        "published_at": raw.published_at,
-        "source_updated_at": raw.source_updated_at,
+        "published_at": _not_in_future(raw.published_at),
+        "source_updated_at": _not_in_future(raw.source_updated_at),
         "event_date": raw.event_date,
         "deadline": raw.deadline,
         "opening_price": opening_price,

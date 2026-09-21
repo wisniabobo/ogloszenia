@@ -523,6 +523,9 @@ def listing_to_dict(listing: Listing, *, reveal_phone: bool = False) -> dict[str
         "is_original": listing.is_original,
         "copies_count": listing.copies_count,
         "days_on_market": listing.days_on_market,
+        # data wystawienia na rynku (z portalu, a w jej braku — nasze pierwsze
+        # spotkanie); po niej sortuje „od najnowszych"
+        "listed_at": listing.market_since.isoformat(),
         "first_seen_at": listing.first_seen_at.isoformat(),
         "last_seen_at": listing.last_seen_at.isoformat(),
         "published_at": listing.published_at.isoformat() if listing.published_at else None,
@@ -1091,7 +1094,7 @@ def api_runs(db: DB, limit: int = 50) -> dict:
 def api_market_report(db: DB, city: str | None = None, days: int = 90) -> dict:
     """Prosty raport rynkowy: mediana ceny za m², rotacja ofert, udział biur."""
     since = utcnow() - timedelta(days=days)
-    stmt = select(Listing).where(Listing.is_original.is_(True), Listing.first_seen_at >= since)
+    stmt = select(Listing).where(Listing.is_original.is_(True), Listing.listed_at >= since)
     if city:
         stmt = stmt.where(Listing.city.ilike(f"%{city}%"))
     rows = list(db.scalars(stmt))
