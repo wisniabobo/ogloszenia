@@ -87,6 +87,10 @@ def audit_sorting(client: TestClient) -> None:
         "cena_m2_malejaco": ("price_per_m2", True),
         "powierzchnia": ("area", True),
         "powierzchnia_rosnaco": ("area", False),
+        # po dacie wystawienia na portalu, nie po dacie naszego zebrania
+        "najnowsze": ("listed_at", True),
+        "najstarsze": ("listed_at", False),
+        "najdluzej_wisi": ("listed_at", False),
     }
     for sort in SORTS:
         data = get(client, f"/api/listings?sort={sort}&per_page=30")
@@ -104,6 +108,33 @@ def audit_sorting(client: TestClient) -> None:
         known = [v for v in values if v not in (None, 0)]
         ordered = sorted(known, reverse=descending)
         check(f"sort={sort}: kolejność", known == ordered, f"{known[:6]}")
+
+
+def audit_dates(client: TestClient) -> None:
+    print("\n=== Daty ===")
+    from datetime import datetime, timedelta
+
+    from metruj.models import utcnow
+    from metruj.utils.text import to_polish_time
+
+    now = utcnow()
+    newest = (get(client, "/api/listings?sort=najnowsze&per_page=50") or {}).get("items") or []
+    future = [x["listed_at"] for x in newest
+              if datetime.fromisoformat(x["listed_at"]) > now + timedelta(hours=1)]
+    check('„od najnowszych" nie zaczyna się od dat z przyszłości', not future, str(future[:3]))
+    stale = [x["listed_at"] for x in newest[:10]
+             if datetime.fromisoformat(x["listed_at"]) < now - timedelta(days=3)]
+    check('na górze „od najnowszych" są oferty z ostatnich dni', not stale, str(stale[:3]))
+
+    auctions = (get(client, "/api/listings?kind=licytacja&sort=termin_licytacji&per_page=50")
+                or {}).get("items") or []
+    terms = [(x.get("auction") or {}).get("event_date") for x in auctions]
+    terms = [datetime.fromisoformat(t) for t in terms if t]
+    local_now = to_polish_time(now)
+    upcoming = [t for t in terms if t >= local_now]
+    check('„najbliższy termin licytacji" zaczyna od licytacji przed nami',
+          not terms or terms[0] >= local_now, str(terms[:3]))
+    check("terminy licytacji rosnąco", upcoming == sorted(upcoming), str(upcoming[:5]))
 
 
 def audit_filters(client: TestClient) -> None:
@@ -316,6 +347,13 @@ def audit_data_quality() -> None:
               f"{count(Listing.area == 0)} ofert")
         check("brak ofert z ceną za m² = 0", count(Listing.price_per_m2 == 0) == 0,
               f"{count(Listing.price_per_m2 == 0)} ofert")
+        from datetime import timedelta
+
+        from metruj.models import utcnow
+
+        tomorrow = utcnow() + timedelta(days=1)
+        future = count(Listing.published_at > tomorrow) + count(Listing.listed_at > tomorrow)
+        check("żadna oferta nie jest wystawiona w przyszłości", future == 0, f"{future} ofert")
         total = count()
         no_city = count(Listing.city.is_(None))
         check("wszystkie oferty maja miejscowosc", no_city == 0, f"{no_city} z {total}")
@@ -337,6 +375,7 @@ def main() -> int:
         audit_pages(client)
         audit_api(client)
         audit_sorting(client)
+        audit_dates(client)
         audit_filters(client)
         audit_form_shape(client)
         audit_completeness(client)

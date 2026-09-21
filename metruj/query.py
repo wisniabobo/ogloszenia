@@ -25,7 +25,7 @@ from .models import (
     TransactionType,
     utcnow,
 )
-from .utils.text import polish_midnight_utc
+from .utils.text import polish_midnight_utc, to_polish_time
 
 SORTS = {
     # „Najnowsze" to najświeżej **wystawione**, nie najświeżej przez nas
@@ -263,7 +263,17 @@ def apply_sort(stmt: Select, sort: str = "najnowsze") -> Select:
     „najtańsze najpierw" pokazywało stronę ofert *bez podanej ceny*. Oferta bez
     ceny nie jest najtańsza — jest nieznana, a więc jej miejsce jest na końcu.
     """
-    from sqlalchemy import nullslast
+    from sqlalchemy import case, nullslast
+
+    if sort == "termin_licytacji":
+        # „Najbliższy termin" to najbliższy *przed nami*. Samo rosnąco po dacie
+        # stawiało na początku licytacje, które już się odbyły. Terminy są
+        # w czasie polskim, więc i „teraz" liczymy po polsku.
+        now = to_polish_time(utcnow())
+        passed = case((Listing.event_date < now, 1), else_=0)
+        return stmt.order_by(
+            passed, nullslast(Listing.event_date.asc()), desc(Listing.id)
+        )
 
     column, descending = SORTS.get(sort, SORTS["najnowsze"])
     order = desc(column) if descending else column.asc()
@@ -304,7 +314,7 @@ def phone_lookup(session, phone_fragment: str) -> list[Listing]:
         select(Listing)
         .join(Phone)
         .where(or_(Phone.national.like(f"%{digits}%"), Phone.e164.like(f"%{digits}%")))
-        .order_by(desc(Listing.first_seen_at))
+        .order_by(desc(Listing.listed_at))
         .limit(100)
     )
     return list(session.scalars(stmt))
