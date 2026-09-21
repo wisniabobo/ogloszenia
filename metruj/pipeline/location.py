@@ -32,6 +32,7 @@ from ..geo import (
     lookup,
     normalize_street,
     resolve_place,
+    voivodeships_at,
 )
 from ..scrapers.base import RawListing
 from ..utils.text import clean
@@ -102,6 +103,19 @@ def resolve(raw: RawListing) -> Location:
     if as_region:
         result.voivodeship = result.voivodeship or as_region
         portal_city = ""
+    # Punkt od portalu mówi, w którym województwie szukać. Bez tego nazwa
+    # rozstrzygała sama: z kilku „Osieków" wygrywał świętokrzyski, choć
+    # GetHome postawił pinezkę pod Krakowem, a wieś spoza rejestru gmin
+    # (Florynka) dostawała region z sekcji wyszukiwania.
+    near = [] if result.voivodeship else voivodeships_at(raw.lat, raw.lon)
+    if len(near) == 1:
+        result.voivodeship = near[0]
+    if portal_city and len(near) > 1:
+        for candidate in near:
+            matched = resolve_place(portal_city, voivodeship_hint=candidate)
+            if matched and matched.get("voivodeship") == candidate:
+                result.voivodeship = candidate
+                break
     if portal_city:
         matched = resolve_place(portal_city, voivodeship_hint=result.voivodeship)
         result.city = matched.get("city") or portal_city

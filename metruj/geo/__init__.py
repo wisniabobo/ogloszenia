@@ -28,6 +28,7 @@ from .teryt import (
     units,
     voivodeship_of,
     voivodeships,
+    voivodeships_at,
 )
 
 __all__ = [
@@ -44,6 +45,7 @@ __all__ = [
     "find_places",
     "in_poland",
     "in_voivodeship",
+    "voivodeships_at",
     "known_voivodeship",
     "lookup",
     "normalize_street",

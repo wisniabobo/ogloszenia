@@ -762,3 +762,16 @@ def test_gethome_podaje_czas_polski_oznaczony_jako_utc():
     # „20:31:07Z" pobrane o 19:20 UTC — to 20:31 w Polsce, czyli 18:31 UTC
     assert _local_timestamp("2026-09-21T20:31:07.968565Z") == datetime(2026, 9, 21, 18, 31, 7, 968565)
     assert _local_timestamp(None) is None
+
+
+def test_punkt_od_portalu_wskazuje_wojewodztwo():
+    """Z produkcji: GetHome „Osiek" z pinezką pod Krakowem trafiał do
+    świętokrzyskiego, a „Florynka" dostawała region z sekcji wyszukiwania."""
+    from metruj.pipeline.location import resolve
+
+    osiek = resolve(make_raw(title="Mieszkanie", city="Osiek", lat=50.003, lon=20.105))
+    assert osiek.voivodeship == "małopolskie"
+    florynka = resolve(make_raw(title="Dom", city="Florynka", lat=49.557, lon=20.986))
+    assert florynka.voivodeship == "małopolskie"
+    # bez punktu nic się nie zmienia
+    assert resolve(make_raw(title="Mieszkanie", city="Opole")).voivodeship == "opolskie"

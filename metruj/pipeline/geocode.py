@@ -23,7 +23,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..apis.gugik import GeocodeResult, GugikClient
@@ -294,22 +294,38 @@ REVERSE_RADIUS_M = 1500
 
 
 async def name_places_from_points(*, limit: int = DEFAULT_BATCH, concurrency: int = 4) -> int:
-    """Miejscowość z rejestru adresowego dla ofert, które mają punkt, a nie mają miasta.
+    """Lokalizacja z rejestru adresowego tam, gdzie punkt wie więcej niż tekst.
 
-    GetHome przy części ogłoszeń podaje tylko powiat i współrzędne; karta
-    pokazywała wtedy „— · pow. ropczycko-sędziszowski". Rejestr GUGiK zwraca
-    najbliższy adres z miejscowością, gminą i kodem TERYT. Przyjmujemy go
-    tylko wtedy, gdy zgadza się z województwem i powiatem z ogłoszenia —
-    punkt postawiony na granicy powiatów nie może przenieść oferty.
+    Dwa przypadki:
+
+    - **oferta ma punkt, a nie ma miasta.** GetHome przy części ogłoszeń podaje
+      tylko powiat i współrzędne; karta pokazywała „— · pow. …".
+    - **punkt od portalu leży poza przypisanym województwem.** GetHome nie
+      podaje regionu, więc brał się on z nazwy miejscowości: z kilku
+      „Osieków" wygrywał świętokrzyski, choć pinezka stała pod Krakowem,
+      a wieś spoza rejestru gmin dostawała region z sekcji wyszukiwania —
+      i w filtrze „opolskie" wisiały oferty z Florynki i Wieliczki.
+
+    Rejestr GUGiK zwraca najbliższy adres z miejscowością, gminą, powiatem
+    i kodem TERYT. Ofercie bez miasta bierzemy z niego wszystko, ale gdy
+    ogłoszenie samo podało powiat, rejestr musi się z nim zgadzać. Ofercie
+    z miastem zostawiamy jej miejscowość, a przynależność administracyjną
+    bierzemy z punktu.
     """
     with session_scope() as session:
         rows = session.execute(
-            select(Listing.id, Listing.lat, Listing.lon, Listing.voivodeship, Listing.county,
-                   Listing.geo_precision)
-            .where(Listing.city.is_(None), Listing.lat.is_not(None), Listing.lon.is_not(None),
-                   Listing.status == ListingStatus.AKTYWNA)
-            .limit(limit)
+            select(Listing.id, Listing.lat, Listing.lon, Listing.city, Listing.voivodeship,
+                   Listing.county, Listing.geo_precision)
+            .where(Listing.lat.is_not(None), Listing.lon.is_not(None),
+                   Listing.status == ListingStatus.AKTYWNA,
+                   or_(Listing.city.is_(None), Listing.geo_precision == "portal"))
         ).all()
+    rows = [
+        row for row in rows
+        if row.city is None
+        or not row.voivodeship
+        or not in_voivodeship(row.lat, row.lon, row.voivodeship)
+    ][:limit]
     if not rows:
         return 0
 
@@ -323,34 +339,37 @@ async def name_places_from_points(*, limit: int = DEFAULT_BATCH, concurrency: in
 
         answers = await asyncio.gather(*(lookup(row) for row in rows))
 
-    named = 0
+    fixed = 0
     with session_scope() as session:
         for row, found in answers:
             if found is None or not found.city:
                 continue
             unit = parse_jednostka(found.jednostka) if found.jednostka else {}
-            # Punkt od portalu bije województwo przypisane z sekcji wyszukiwania:
-            # GetHome w dziale „opolskie" pokazywał też inwestycje z Wieliczki
-            # i Wrocławia, a my wpisywaliśmy im Opolskie. Gdy portal podał powiat,
-            # musi się on zgadzać — wtedy region pochodzi z samego ogłoszenia.
-            from_portal = row.geo_precision == "portal" and not row.county
-            if (row.voivodeship and unit.get("voivodeship") and not from_portal
-                    and unit["voivodeship"] != row.voivodeship):
+            if not unit.get("voivodeship"):
                 continue
-            if row.county and unit.get("county") and unit["county"] != row.county:
+            from_portal = row.geo_precision == "portal"
+            if row.city is None and not from_portal:
+                # punkt z naszego geokodowania — musi się zgadzać z ogłoszeniem
+                if row.voivodeship and unit["voivodeship"] != row.voivodeship:
+                    continue
+                if row.county and unit.get("county") and unit["county"] != row.county:
+                    continue
+            if from_portal and row.city is None and row.county and unit.get("county") \
+                    and unit["county"] != row.county:
                 continue
             listing = session.get(Listing, row.id)
-            if listing is None or listing.city:
+            if listing is None:
                 continue
-            listing.city = found.city
-            listing.commune = unit.get("commune") or listing.commune
+            if listing.city is None or listing.city.lower() == found.city.lower():
+                listing.city = found.city
+            listing.voivodeship = unit["voivodeship"]
             listing.county = unit.get("county") or listing.county
-            listing.voivodeship = unit.get("voivodeship") or listing.voivodeship
+            listing.commune = unit.get("commune") or listing.commune
             listing.teryt = found.teryt or listing.teryt
             listing.simc = listing.simc or found.simc
             listing.postal_code = listing.postal_code or found.postal_code
-            named += 1
-    return named
+            fixed += 1
+    return fixed
 
 
 def _administrative_fix(listing: Listing, entry: GeocodeCache) -> bool:

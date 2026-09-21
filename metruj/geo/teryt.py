@@ -212,6 +212,16 @@ def in_voivodeship(lat: float | None, lon: float | None, voivodeship: str | None
     return lat_min <= lat <= lat_max and lon_min <= lon <= lon_max
 
 
+def voivodeships_at(lat: float | None, lon: float | None) -> list[str]:
+    """Województwa, w których ramce leży punkt — przy granicy bywa ich kilka."""
+    if lat is None or lon is None:
+        return []
+    return [
+        name for name, (lat_min, lat_max, lon_min, lon_max) in bboxes().items()
+        if lat_min <= lat <= lat_max and lon_min <= lon <= lon_max
+    ]
+
+
 #: GUGiK oddaje hierarchię w polu `jednostka`: „{Polska,małopolskie,Kraków,Kraków}".
 #: Przy trafieniu w ulicę skraca ją do „{Nysa,160705}", więc trzeba oba warianty.
 _JEDNOSTKA = re.compile(r"[{}]")
