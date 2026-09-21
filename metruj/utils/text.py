@@ -6,6 +6,7 @@ import hashlib
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from dateutil import parser as dateparser
 
@@ -132,7 +133,38 @@ def _to_utc_naive(dt: datetime) -> datetime:
     return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 
+#: Strefa, w której podają godziny sądy, komornicy i urzędy.
+WARSAW = ZoneInfo("Europe/Warsaw")
+
+
+def _to_local_naive(dt: datetime) -> datetime:
+    """Czas ze strefą przeliczony na czas polski, bez znacznika strefy."""
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(WARSAW).replace(tzinfo=None)
+
+
 def parse_datetime(value: str | datetime | int | float | None) -> datetime | None:
+    """Chwila w UTC — dla dat wystawienia, odświeżenia i wszystkiego, co
+    porównujemy z `utcnow()`. Szczegóły odczytu opisuje `_parse_moment`."""
+    moment = _parse_moment(value)
+    return _to_utc_naive(moment) if moment else None
+
+
+def parse_local_datetime(value: str | datetime | int | float | None) -> datetime | None:
+    """Godzina zegarowa w Polsce — dla terminów licytacji, przetargów i wadium.
+
+    Licytację o 11:00 pokazujemy jako 11:00, a nie jako 09:00 UTC, bo tak ją
+    ogłosił komornik i o tej godzinie trzeba być na sali albo przy komputerze.
+    e-Licytacje KAS podają terminy w UTC („2026-11-26T09:00:00Z"), strony
+    sądów i urzędów — w czasie polskim bez strefy; po przeliczeniu jedno
+    i drugie znaczy to samo.
+    """
+    moment = _parse_moment(value)
+    return _to_local_naive(moment) if moment else None
+
+
+def _parse_moment(value: str | datetime | int | float | None) -> datetime | None:
     """Obsługuje ISO, polskie daty słowne, zapis dzień.miesiąc.rok, znaczniki
     czasu uniksowego oraz zwroty względne („dzisiaj 14:30").
 
@@ -148,12 +180,12 @@ def parse_datetime(value: str | datetime | int | float | None) -> datetime | Non
     if value is None or value == "":
         return None
     if isinstance(value, datetime):
-        return _to_utc_naive(value)
+        return value
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         # znacznik uniksowy — w sekundach albo w milisekundach
         seconds = value / 1000 if value > 1e11 else value
         try:
-            return datetime.fromtimestamp(seconds, timezone.utc).replace(tzinfo=None)
+            return datetime.fromtimestamp(seconds, timezone.utc)
         except (OverflowError, OSError, ValueError):
             return None
 
@@ -163,11 +195,11 @@ def parse_datetime(value: str | datetime | int | float | None) -> datetime | Non
 
     if ISO_DATE.match(raw):
         try:
-            return _to_utc_naive(dateparser.isoparse(raw.replace(" ", "T", 1)))
+            return dateparser.isoparse(raw.replace(" ", "T", 1))
         except (ValueError, OverflowError):
             pass
         try:
-            return _to_utc_naive(dateparser.parse(raw, dayfirst=False, yearfirst=True))
+            return dateparser.parse(raw, dayfirst=False, yearfirst=True)
         except (ValueError, OverflowError, TypeError):
             return None
 
@@ -193,7 +225,7 @@ def parse_datetime(value: str | datetime | int | float | None) -> datetime | Non
         dt = dateparser.parse(s, dayfirst=True, fuzzy=True)
     except (ValueError, OverflowError, TypeError):
         return None
-    return _to_utc_naive(dt) if dt else None
+    return dt
 
 
 # --------------------------------------------------------------------------- #

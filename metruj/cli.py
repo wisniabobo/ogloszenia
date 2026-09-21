@@ -258,6 +258,12 @@ def cmd_repair(
         f"wygaszone śmieci {stats.navigation}, rozpięte kopie {stats.unlinked}, "
         f"do przeliczenia na mapie {stats.regeocode}"
     )
+    console.print(
+        f"[green]Daty:[/] przeczytane od nowa z portalu {stats.dates_reparsed}, "
+        f"odwrócona zamiana dnia z miesiącem {stats.dates_unswapped}, "
+        f"wyczyszczone z przyszłości {stats.dates_cleared}, "
+        f"uzupełniona data wystawienia {stats.listed_at}"
+    )
     console.print(f"[green]Odniesienie rynkowe:[/] {market}")
 
 

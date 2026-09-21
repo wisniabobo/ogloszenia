@@ -14,7 +14,13 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 from ..models import OfferKind, SellerType
-from ..utils.text import clean, extract_area, extract_case_number, parse_datetime, parse_number
+from ..utils.text import (
+    clean,
+    extract_area,
+    extract_case_number,
+    parse_local_datetime,
+    parse_number,
+)
 from .base import BaseScraper, RawListing, ScrapeContext
 from .generic_html import guess_property_type
 
@@ -84,8 +90,8 @@ class KRZScraper(BaseScraper):
             opening_price=parse_number(row.get("cenaWywolawcza")),
             estimate_value=parse_number(row.get("wartoscOszacowania")),
             deposit=parse_number(row.get("wadium")),
-            deadline=parse_datetime(row.get("terminSkladaniaOfert")),
-            event_date=parse_datetime(row.get("dataObwieszczenia") or row.get("terminOtwarcia")),
+            deadline=parse_local_datetime(row.get("terminSkladaniaOfert")),
+            event_date=parse_local_datetime(row.get("dataObwieszczenia") or row.get("terminOtwarcia")),
             case_number=clean(row.get("sygnatura") or "") or extract_case_number(content),
             authority=clean(row.get("syndyk") or row.get("organ") or "") or None,
             seller_type=SellerType.SYNDYK,

@@ -310,6 +310,17 @@ class Listing(Base):
         return self.listed_at or self.published_at or self.first_seen_at
 
     @property
+    def offer_window(self) -> bool:
+        """Sprzedaż z oknem na oferty: od `event_date` do `deadline`.
+
+        e-Licytacje KAS przy sprzedaży przez zbieranie ofert podają początek
+        i koniec przyjmowania ofert, bez jednego terminu licytacji. Pokazane
+        jako „termin 26.11, oferty do 14.01" wyglądało, jakby oferty składało
+        się po licytacji.
+        """
+        return bool(self.event_date and self.deadline and self.deadline > self.event_date)
+
+    @property
     def days_on_market(self) -> int:
         end = self.removed_at or utcnow()
         return max(0, (end - self.market_since).days)

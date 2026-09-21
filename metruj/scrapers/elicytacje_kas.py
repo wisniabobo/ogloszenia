@@ -22,7 +22,7 @@ from collections.abc import AsyncIterator
 
 from ..geo import detect_location
 from ..models import OfferKind, PropertyType, SellerType, TransactionType
-from ..utils.text import clean, extract_area, parse_datetime, parse_number
+from ..utils.text import clean, extract_area, parse_datetime, parse_local_datetime, parse_number
 from .base import BaseScraper, RawListing, ScrapeContext
 
 BASE = "https://elicytacje.mf.gov.pl"
@@ -130,8 +130,8 @@ class ELicytacjeKASScraper(BaseScraper):
             title=title[:400],
             price=starting,
             opening_price=starting,
-            event_date=parse_datetime(row.get("saleBeginDateTime")),
-            deadline=parse_datetime(row.get("depositDueDate") or row.get("saleEndDateTime")),
+            event_date=parse_local_datetime(row.get("saleBeginDateTime")),
+            deadline=parse_local_datetime(row.get("depositDueDate") or row.get("saleEndDateTime")),
             published_at=parse_datetime(row.get("publicationDateTime")),
             seller_type=SellerType.URZAD,
             authority="Krajowa Administracja Skarbowa",

@@ -160,8 +160,12 @@
         {% if listing.opening_price %}<span class="spec">wywoławcza <strong>{{ money(listing.opening_price) }}</strong></span>{% endif %}
         {% if listing.estimate_value %}<span class="spec">oszacowanie {{ money(listing.estimate_value) }}</span>{% endif %}
         {% if listing.deposit %}<span class="spec">wadium {{ money(listing.deposit) }}</span>{% endif %}
-        {% if listing.event_date %}<span class="spec">termin <strong>{{ listing.event_date.strftime('%d.%m.%Y, %H:%M') }}</strong></span>{% endif %}
-        {% if listing.deadline %}<span class="spec">oferty do {{ listing.deadline.strftime('%d.%m.%Y') }}</span>{% endif %}
+        {% if listing.offer_window %}
+          <span class="spec">oferty <strong>{{ listing.event_date.strftime('%d.%m') }}–{{ listing.deadline.strftime('%d.%m.%Y') }}</strong></span>
+        {% else %}
+          {% if listing.event_date %}<span class="spec">termin <strong>{{ listing.event_date.strftime('%d.%m.%Y, %H:%M') }}</strong></span>{% endif %}
+          {% if listing.deadline %}<span class="spec">{{ 'wadium' if listing.source_key == 'elicytacje_kas' else 'oferty' }} do {{ listing.deadline.strftime('%d.%m.%Y') }}</span>{% endif %}
+        {% endif %}
         {% if listing.case_number %}<span class="spec muted">sygn. {{ listing.case_number }}</span>{% endif %}
       </div>
     {% endif %}

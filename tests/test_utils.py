@@ -159,3 +159,17 @@ class TestDatyISO:
     def test_znacznik_uniksowy(self):
         assert parse_datetime(1757672494).strftime("%Y-%m-%d") == "2025-09-12"
         assert parse_datetime(1757672494000).strftime("%Y-%m-%d") == "2025-09-12"
+
+    def test_termin_licytacji_w_czasie_polskim(self):
+        from datetime import datetime
+
+        from metruj.utils.text import parse_local_datetime
+
+        # KAS podaje UTC; licytacja o 11:00 latem i o 10:00 zimą
+        assert parse_local_datetime("2026-09-09T09:00:00Z") == datetime(2026, 9, 9, 11, 0)
+        assert parse_local_datetime("2026-11-26T09:00:00Z") == datetime(2026, 11, 26, 10, 0)
+        # zapis bez strefy to już czas polski — bez przeliczania
+        assert parse_local_datetime("12.10.2026 10:00") == datetime(2026, 10, 12, 10, 0)
+        assert parse_local_datetime("2026-11-13") == datetime(2026, 11, 13)
+        # a chwile do porównań dalej idą w UTC
+        assert parse_datetime("2026-09-09T11:00:00+02:00") == datetime(2026, 9, 9, 9, 0)

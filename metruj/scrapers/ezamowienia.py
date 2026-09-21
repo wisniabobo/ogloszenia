@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 
 from ..models import OfferKind, SellerType, TransactionType
-from ..utils.text import clean, parse_datetime, parse_number
+from ..utils.text import clean, parse_datetime, parse_local_datetime, parse_number
 from .base import BaseScraper, RawListing, ScrapeContext
 
 BASE = "https://ezamowienia.gov.pl"
@@ -113,7 +113,7 @@ class EZamowieniaScraper(BaseScraper):
             kind=OfferKind.PRZETARG,
             transaction=TransactionType.NIEZNANY,
             title=title[:400],
-            deadline=parse_datetime(row.get("submittingOffersDate")),
+            deadline=parse_local_datetime(row.get("submittingOffersDate")),
             published_at=parse_datetime(row.get("publicationDate")),
             price=parse_number(row.get("orderValue")),
             authority=clean(row.get("organizationName") or "") or None,

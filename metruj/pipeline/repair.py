@@ -369,6 +369,9 @@ RAW_DATE_KEYS: dict[str, dict[str, tuple[str, ...]]] = {
     "msig": {"published_at": ("dateOfPublication",)},
 }
 
+#: Pola z godziną zegarową w Polsce, nie chwilą w UTC.
+LOCAL_TIME_FIELDS = frozenset({"event_date", "deadline"})
+
 #: Źródła, które podają datę w zapisie „rok-miesiąc-dzień", ale nie trzymają
 #: surowej odpowiedzi (Morizon i Gratka: „Dodane: 2026.09.07" z karty, GetHome:
 #: ISO z danych strony). Stary parser zamienił im dzień z miesiącem przy
@@ -384,14 +387,17 @@ def _reparse_raw_dates(session: Session) -> int:
     """Czyta daty od nowa z oryginalnej odpowiedzi portalu (tam, gdzie ją mamy).
 
     Bezpieczne do wielokrotnego uruchamiania: wynik zależy wyłącznie od
-    napisu z portalu i poprawionego parsera.
+    napisu z portalu i poprawionego parsera, a zapisujemy tylko to, co się
+    zmieniło. Terminy licytacji i wadium to godziny zegarowe w Polsce, reszta
+    — chwile w UTC.
     """
-    from ..utils.text import parse_datetime
+    from ..utils.text import parse_datetime, parse_local_datetime
 
     changed = 0
     for source_key, fields in RAW_DATE_KEYS.items():
+        columns = [getattr(Listing, field) for field in fields]
         rows = session.execute(
-            select(Listing.id, Listing.raw).where(Listing.source_key == source_key)
+            select(Listing.id, Listing.raw, *columns).where(Listing.source_key == source_key)
         ).all()
         for row in rows:
             raw = row.raw if isinstance(row.raw, dict) else {}
@@ -400,8 +406,12 @@ def _reparse_raw_dates(session: Session) -> int:
             values = {}
             for field, keys in fields.items():
                 text = next((raw[k] for k in keys if raw.get(k)), None)
-                if text:
-                    values[field] = parse_datetime(text)
+                if not text:
+                    continue
+                parse = parse_local_datetime if field in LOCAL_TIME_FIELDS else parse_datetime
+                moment = parse(text)
+                if moment != getattr(row, field):
+                    values[field] = moment
             if values:
                 session.execute(update(Listing).where(Listing.id == row.id).values(**values))
                 changed += 1
@@ -454,11 +464,12 @@ def _fill_listed_at(session: Session) -> int:
     """Data wystawienia na rynku: z portalu, a w jej braku — pierwsze spotkanie."""
     from sqlalchemy import func
 
+    market_since = func.coalesce(Listing.published_at, Listing.first_seen_at)
     return int(
         session.execute(
-            update(Listing).values(
-                listed_at=func.coalesce(Listing.published_at, Listing.first_seen_at)
-            )
+            update(Listing)
+            .where(Listing.listed_at.is_distinct_from(market_since))
+            .values(listed_at=market_since)
         ).rowcount or 0
     )
 

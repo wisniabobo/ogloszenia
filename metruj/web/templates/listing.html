@@ -61,8 +61,12 @@
     {% if listing.opening_price %}<tr><th>Cena wywoławcza</th><td>{{ money(listing.opening_price) }}</td></tr>{% endif %}
     {% if listing.estimate_value %}<tr><th>Suma oszacowania</th><td>{{ money(listing.estimate_value) }}</td></tr>{% endif %}
     {% if listing.deposit %}<tr><th>Rękojmia / wadium</th><td>{{ money(listing.deposit) }}</td></tr>{% endif %}
-    {% if listing.event_date %}<tr><th>Termin licytacji</th><td><strong>{{ listing.event_date.strftime('%d.%m.%Y, godz. %H:%M') }}</strong></td></tr>{% endif %}
-    {% if listing.deadline %}<tr><th>Oferty do</th><td>{{ listing.deadline.strftime('%d.%m.%Y') }}</td></tr>{% endif %}
+    {% if listing.offer_window %}
+    <tr><th>Przyjmowanie ofert</th><td><strong>od {{ listing.event_date.strftime('%d.%m.%Y, godz. %H:%M') }} do {{ listing.deadline.strftime('%d.%m.%Y, godz. %H:%M') }}</strong></td></tr>
+    {% else %}
+    {% if listing.event_date %}<tr><th>{{ 'Termin licytacji' if listing.kind.value == 'licytacja' else 'Termin' }}</th><td><strong>{{ listing.event_date.strftime('%d.%m.%Y, godz. %H:%M') }}</strong></td></tr>{% endif %}
+    {% if listing.deadline %}<tr><th>{{ 'Wpłata wadium do' if listing.source_key == 'elicytacje_kas' else 'Oferty do' }}</th><td>{{ listing.deadline.strftime('%d.%m.%Y') }}</td></tr>{% endif %}
+    {% endif %}
     {% if listing.case_number %}<tr><th>Sygnatura akt</th><td>{{ listing.case_number }}</td></tr>{% endif %}
     {% if listing.authority %}<tr><th>Prowadzący</th><td>{{ listing.authority }}</td></tr>{% endif %}
     {% if listing.share %}<tr><th>Udział</th><td>{{ listing.share }}</td></tr>{% endif %}
