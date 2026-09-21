@@ -240,3 +240,11 @@ class TestAdres:
         assert normalize_street("ul. Wrocławska") == "Wrocławska"
         assert normalize_street("al. Solidarności") == "al. Solidarności"
         assert normalize_street("os. Chabry") == "os. Chabry"
+
+
+def test_jednostka_z_nazwa_w_cudzyslowie():
+    from metruj.geo import parse_jednostka
+
+    unit = parse_jednostka('{Polska,podkarpackie,ropczycko-sędziszowski,"Sędziszów Małopolski"}')
+    assert unit == {"voivodeship": "podkarpackie", "county": "ropczycko-sędziszowski",
+                    "commune": "Sędziszów Małopolski"}

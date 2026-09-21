@@ -67,6 +67,18 @@ def _state(tree: HTMLParser) -> dict[str, Any]:
     return {}
 
 
+
+def _local_timestamp(value):
+    """GetHome oznacza czas jako UTC, ale podaje zegar polski.
+
+    Strona pobrana o 19:20 UTC miała już „updated_at": „…T20:31:07Z", a oferty
+    „wystawiane" były kwadrans po tym, jak je zobaczyliśmy. Etykietę strefy
+    odrzucamy i czytamy godzinę jako czas polski.
+    """
+    if not isinstance(value, str):
+        return parse_datetime(value)
+    return parse_datetime(value.strip().removesuffix("Z"), naive_local=True)
+
 class GetHomeScraper(BaseScraper):
     key = "gethome"
     name = "GetHome.pl"
@@ -187,7 +199,7 @@ class GetHomeScraper(BaseScraper):
             phones_raw=phones,
             seller_type=seller_type,
             seller_name=seller_name or None,
-            published_at=parse_datetime(row.get("created_at")),
+            published_at=_local_timestamp(row.get("created_at")),
             # Adres sekcji zawęża wyniki do województwa.
             region_assured=True,
         )

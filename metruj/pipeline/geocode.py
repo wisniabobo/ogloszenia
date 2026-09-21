@@ -77,12 +77,15 @@ class GeocodeStats:
     #: ile realnych zapytań poszło w świat — miara tego, jak bardzo
     #: grupowanie po adresie i cache oszczędzają cudze serwery
     queries: int = 0
+    #: ile ofert bez miasta dostało miejscowość z rejestru po współrzędnych
+    named: int = 0
 
     def __str__(self) -> str:
         return (
             f"sprawdzone={self.checked} z_cache={self.from_cache} "
             f"nowe={self.geocoded} poprawione_regiony={self.corrected} "
-            f"nieudane={self.failed} zapytań={self.queries}"
+            f"nieudane={self.failed} zapytań={self.queries} "
+            f"miejscowości_z_punktu={self.named}"
         )
 
 
@@ -175,6 +178,7 @@ async def geocode_pending(
             groups[key].append(row.id)
 
     if not groups:
+        stats.named = await name_places_from_points(limit=limit)
         return stats
     stats.checked = sum(len(ids) for ids in groups.values())
 
@@ -196,6 +200,7 @@ async def geocode_pending(
                 stats.failed += len(listing_ids)
 
     if not pending:
+        stats.named = await name_places_from_points(limit=limit)
         log.info("Geokodowanie (wszystko z cache): %s", stats)
         return stats
 
@@ -278,8 +283,67 @@ async def geocode_pending(
             stats.failed += len(listing_ids)
 
     stats.queries = len(pending)
+    stats.named = await name_places_from_points(limit=limit)
     log.info("Geokodowanie: %s", stats)
     return stats
+
+
+#: Jak daleko od punktu szukać najbliższego adresu. Na wsi najbliższy
+#: budynek z numerem bywa kilkaset metrów dalej.
+REVERSE_RADIUS_M = 1500
+
+
+async def name_places_from_points(*, limit: int = DEFAULT_BATCH, concurrency: int = 4) -> int:
+    """Miejscowość z rejestru adresowego dla ofert, które mają punkt, a nie mają miasta.
+
+    GetHome przy części ogłoszeń podaje tylko powiat i współrzędne; karta
+    pokazywała wtedy „— · pow. ropczycko-sędziszowski". Rejestr GUGiK zwraca
+    najbliższy adres z miejscowością, gminą i kodem TERYT. Przyjmujemy go
+    tylko wtedy, gdy zgadza się z województwem i powiatem z ogłoszenia —
+    punkt postawiony na granicy powiatów nie może przenieść oferty.
+    """
+    with session_scope() as session:
+        rows = session.execute(
+            select(Listing.id, Listing.lat, Listing.lon, Listing.voivodeship, Listing.county)
+            .where(Listing.city.is_(None), Listing.lat.is_not(None), Listing.lon.is_not(None),
+                   Listing.status == ListingStatus.AKTYWNA)
+            .limit(limit)
+        ).all()
+    if not rows:
+        return 0
+
+    gate = asyncio.Semaphore(max(1, concurrency))
+    async with HttpClient(concurrency=max(4, concurrency * 2)) as http:
+        gugik = GugikClient(http)
+
+        async def lookup(row):
+            async with gate:
+                return row, await gugik.reverse(row.lat, row.lon, radius=REVERSE_RADIUS_M)
+
+        answers = await asyncio.gather(*(lookup(row) for row in rows))
+
+    named = 0
+    with session_scope() as session:
+        for row, found in answers:
+            if found is None or not found.city:
+                continue
+            unit = parse_jednostka(found.jednostka) if found.jednostka else {}
+            if row.voivodeship and unit.get("voivodeship") and unit["voivodeship"] != row.voivodeship:
+                continue
+            if row.county and unit.get("county") and unit["county"] != row.county:
+                continue
+            listing = session.get(Listing, row.id)
+            if listing is None or listing.city:
+                continue
+            listing.city = found.city
+            listing.commune = unit.get("commune") or listing.commune
+            listing.county = unit.get("county") or listing.county
+            listing.voivodeship = unit.get("voivodeship") or listing.voivodeship
+            listing.teryt = found.teryt or listing.teryt
+            listing.simc = listing.simc or found.simc
+            listing.postal_code = listing.postal_code or found.postal_code
+            named += 1
+    return named
 
 
 def _administrative_fix(listing: Listing, entry: GeocodeCache) -> bool:

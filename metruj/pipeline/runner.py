@@ -180,7 +180,7 @@ def upsert_listing(
     if listing is None:
         listing = Listing(**data, source_id=source.id, initial_price=data.get("price"))
         listing.first_seen_at = listing.first_seen_at or utcnow()
-        listing.listed_at = listing.published_at or listing.first_seen_at
+        listing.listed_at = Listing.listed_at_for(listing.published_at, listing.first_seen_at)
         if listing.concluded:
             listing.status = ListingStatus.NIEAKTYWNA
             listing.removed_at = utcnow()
@@ -229,7 +229,7 @@ def upsert_listing(
     if data.get("extra"):
         listing.extra = {**(listing.extra or {}), **data["extra"]}
 
-    listing.listed_at = listing.published_at or listing.first_seen_at
+    listing.listed_at = Listing.listed_at_for(listing.published_at, listing.first_seen_at)
     listing.last_seen_at = utcnow()
     if listing.concluded:
         # po terminie — źródło wciąż je pokazuje, ale to już nie oferta

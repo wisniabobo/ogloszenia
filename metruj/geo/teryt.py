@@ -226,7 +226,9 @@ def parse_jednostka(value: str | None) -> dict[str, str]:
     """
     if not value:
         return {}
-    parts = [p.strip() for p in _JEDNOSTKA.sub("", value).split(",") if p.strip()]
+    # Tablica w zapisie PostgreSQL: nazwy ze spacją idą w cudzysłowie —
+    # „{Polska,podkarpackie,ropczycko-sędziszowski,"Sędziszów Małopolski"}".
+    parts = [p.strip().strip('"') for p in _JEDNOSTKA.sub("", value).split(",") if p.strip()]
     if len(parts) >= 4 and parts[0].lower() == "polska":
         return {"voivodeship": parts[1].lower(), "county": parts[2], "commune": parts[3]}
     if len(parts) == 2 and parts[1].isdigit():

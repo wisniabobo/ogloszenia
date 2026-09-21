@@ -304,6 +304,21 @@ class Listing(Base):
     )
 
     # ------------------------------------------------------------------ #
+    @staticmethod
+    def listed_at_for(published_at: datetime | None, first_seen_at: datetime | None):
+        """Data wystawienia: z portalu, ale nie późniejsza niż nasze pierwsze spotkanie.
+
+        Oferty nie da się zobaczyć, zanim ją wystawiono — data z portalu
+        późniejsza od pierwszego spotkania to błąd strefy czasowej (GetHome
+        oznacza czas polski jako UTC, Otodom podaje go bez strefy) i stawiała
+        ofertę na szczycie „od najnowszych" z godziną z przyszłości.
+        """
+        if published_at is None:
+            return first_seen_at
+        if first_seen_at is not None and published_at > first_seen_at:
+            return first_seen_at
+        return published_at
+
     @property
     def market_since(self) -> datetime:
         """Data wystawienia — z portalu, a w jej braku z naszego pierwszego spotkania."""
@@ -551,3 +566,15 @@ class GeocodeCache(Base):
     @property
     def found(self) -> bool:
         return self.lat is not None and self.lon is not None
+
+
+def listed_at_expression():
+    """`Listing.listed_at_for` w SQL — do przeliczania całej tabeli naraz."""
+    from sqlalchemy import and_, case
+
+    return case(
+        (Listing.published_at.is_(None), Listing.first_seen_at),
+        (and_(Listing.first_seen_at.is_not(None), Listing.published_at > Listing.first_seen_at),
+         Listing.first_seen_at),
+        else_=Listing.published_at,
+    )

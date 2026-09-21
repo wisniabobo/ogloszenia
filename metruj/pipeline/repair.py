@@ -445,7 +445,9 @@ def _archive_old_notices(session: Session) -> int:
     """
     from datetime import timedelta
 
-    from ..scrapers.bip import ANY_DATE, TITLE_DATE
+    from datetime import datetime
+
+    from ..scrapers.bip import ANY_DATE, CASE_YEAR, TITLE_DATE
     from ..utils.text import parse_datetime
 
     limit = utcnow() - timedelta(days=365)
@@ -462,6 +464,8 @@ def _archive_old_notices(session: Session) -> int:
         if published is None:
             match = TITLE_DATE.search(row.title or "") or ANY_DATE.search(row.title or "")
             published = parse_datetime(match.group(1)) if match else None
+            if published is None and (case := CASE_YEAR.search(row.title or "")):
+                published = datetime(int(case.group(1)), 12, 31)  # „GG.1431.34-35.2013"
         if published is not None and published < limit:
             archived.append(row.id)
     for start in range(0, len(archived), 500):
@@ -706,10 +710,10 @@ def _clear_future_dates(session: Session) -> int:
 
 
 def _fill_listed_at(session: Session) -> int:
-    """Data wystawienia na rynku: z portalu, a w jej braku — pierwsze spotkanie."""
-    from sqlalchemy import func
+    """Data wystawienia na rynku — patrz `Listing.listed_at`."""
+    from ..models import listed_at_expression
 
-    market_since = func.coalesce(Listing.published_at, Listing.first_seen_at)
+    market_since = listed_at_expression()
     return int(
         session.execute(
             update(Listing)

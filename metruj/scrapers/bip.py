@@ -79,7 +79,8 @@ ANY_DATE = re.compile(r"(?<!\d)(\d{1,2}[.-]\d{1,2}[.-]\d{4}|\d{4}-\d{2}-\d{2})(?
 #: Rok z sygnatury sprawy: „GNP.6840.14.2023.JK", „GG.6840.5.2014.JK".
 #: Ostatnia deska ratunku, gdy sekcja BIP-u trzyma archiwum bez dat przy
 #: wpisach — a tak jest w Kluczborku, gdzie jedna lista sięga 2014 roku.
-CASE_YEAR = re.compile(r"\b\d{3,5}\.\d{1,4}\.(20[0-3]\d)\b")
+#: Bywa też zakres numerów: „GG.1431.34-35.2013".
+CASE_YEAR = re.compile(r"\b\d{3,5}\.\d{1,4}(?:-\d{1,4})?\.(20[0-3]\d)\b")
 
 #: „Ogłoszenie z dnia 06 sierpnia 2026 r. o przetargu…"
 TITLE_DATE = re.compile(

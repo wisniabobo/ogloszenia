@@ -740,3 +740,25 @@ def test_miejscowosc_odtworzona_z_czlonow_adresu(session):
     assert listing.city == "Świerczów"
     assert listing.district == "Biestrzykowice"
     assert listing.county == "namysłowski"
+
+
+def test_oferta_nie_jest_wystawiona_po_pierwszym_spotkaniu():
+    """Data z portalu późniejsza od naszego pierwszego spotkania to błąd strefy."""
+    from datetime import datetime
+
+    from metruj.models import Listing
+
+    seen = datetime(2026, 9, 21, 19, 15)
+    assert Listing.listed_at_for(datetime(2026, 9, 21, 20, 31), seen) == seen
+    assert Listing.listed_at_for(datetime(2026, 9, 1, 10, 0), seen) == datetime(2026, 9, 1, 10, 0)
+    assert Listing.listed_at_for(None, seen) == seen
+
+
+def test_gethome_podaje_czas_polski_oznaczony_jako_utc():
+    from datetime import datetime
+
+    from metruj.scrapers.gethome import _local_timestamp
+
+    # „20:31:07Z" pobrane o 19:20 UTC — to 20:31 w Polsce, czyli 18:31 UTC
+    assert _local_timestamp("2026-09-21T20:31:07.968565Z") == datetime(2026, 9, 21, 18, 31, 7, 968565)
+    assert _local_timestamp(None) is None
