@@ -118,7 +118,7 @@ def _relax_not_null(engine: Engine, metadata) -> list[str]:
     Przebudowa jest bezpieczna: nowa tabela powstaje z modelu, dane przenosimy
     po nazwach wspólnych kolumn, stara znika dopiero po udanym przepisaniu.
     """
-    from sqlalchemy import inspect, text
+    from sqlalchemy import inspect
 
     if not engine.url.get_backend_name().startswith("sqlite"):
         return []
@@ -142,31 +142,58 @@ def _relax_not_null(engine: Engine, metadata) -> list[str]:
         if not stale:
             continue
 
-        shared = [name for name in in_db if name in table.columns]
-        target = ", ".join(f'"{name}"' for name in shared)
+        target, source, fills = _copy_expression(table, in_db)
+        _rebuild_table(engine, inspector, table, target, source, fills)
+        fixed.append(f"{table.name}({', '.join(stale)})")
+    return fixed
 
-        # Stara tabela mogła mieć puste wartości tam, gdzie nowa ich wymaga
-        # (kolumna dostała w modelu wartość domyślną już po jej założeniu).
-        # Przy przepisywaniu podstawiamy tę wartość domyślną, zamiast wywracać
-        # migrację na jednym wierszu sprzed poprawki.
-        fills: dict[str, object] = {}
-        source_parts: list[str] = []
-        for name in shared:
-            column = table.columns[name]
-            fill = _column_default(column)
-            if not column.nullable and not column.primary_key and fill is not None:
-                fills[f"fill_{name}"] = fill
-                source_parts.append(f'COALESCE("{name}", :fill_{name})')
-            else:
-                source_parts.append(f'"{name}"')
-        source = ", ".join(source_parts)
-        backup = f"{table.name}__stare"
 
-        with engine.begin() as conn:
-            conn.execute(text("PRAGMA foreign_keys=OFF"))
+def _copy_expression(table, in_db) -> tuple[str, str, dict]:
+    """Lista kolumn do przepisania i wyrażenie źródłowe.
+
+    Stara tabela może mieć puste wartości tam, gdzie nowa ich wymaga — kolumna
+    dostała w modelu wartość domyślną już po jej założeniu. Przy przepisywaniu
+    podstawiamy tę wartość, zamiast wywracać migrację na jednym wierszu
+    sprzed poprawki.
+    """
+    shared = [name for name in in_db if name in table.columns]
+    fills: dict[str, object] = {}
+    source_parts: list[str] = []
+    for name in shared:
+        column = table.columns[name]
+        fill = _column_default(column)
+        if not column.nullable and not column.primary_key and fill is not None:
+            fills[f"fill_{name}"] = fill
+            source_parts.append(f'COALESCE("{name}", :fill_{name})')
+        else:
+            source_parts.append(f'"{name}"')
+    return ", ".join(f'"{name}"' for name in shared), ", ".join(source_parts), fills
+
+
+def _rebuild_table(engine: Engine, inspector, table, target: str, source: str,
+                   fills: dict) -> None:
+    """Zakłada tabelę od nowa z modelu i przepisuje do niej dane.
+
+    Jedna rzecz jest tu nieoczywista i kosztowała produkcję: nowoczesne SQLite
+    przy `ALTER TABLE … RENAME` **przepisuje odwołania w innych tabelach**.
+    Zmiana nazwy `agencies` na roboczą sprawiała więc, że klucz obcy w tabeli
+    ofert zaczynał wskazywać tabelę roboczą — a po jej skasowaniu wskazywał
+    w próżnię i każdy zapis oferty kończył się „no such table".
+
+    Dlatego na czas przebudowy włączamy `legacy_alter_table`, czyli dokładnie
+    to, co zaleca procedura zmiany schematu z dokumentacji SQLite.
+    """
+    from sqlalchemy import text
+
+    backup = f"{table.name}__stare"
+    with engine.begin() as conn:
+        conn.execute(text("PRAGMA foreign_keys=OFF"))
+        conn.execute(text("PRAGMA legacy_alter_table=ON"))
+        try:
             for index in inspector.get_indexes(table.name):
                 if index.get("name"):
                     conn.execute(text(f'DROP INDEX IF EXISTS "{index["name"]}"'))
+            conn.execute(text(f'DROP TABLE IF EXISTS "{backup}"'))
             conn.execute(text(f'ALTER TABLE "{table.name}" RENAME TO "{backup}"'))
             table.create(conn)
             conn.execute(
@@ -174,13 +201,48 @@ def _relax_not_null(engine: Engine, metadata) -> list[str]:
                 fills,
             )
             conn.execute(text(f'DROP TABLE "{backup}"'))
+        finally:
+            conn.execute(text("PRAGMA legacy_alter_table=OFF"))
             conn.execute(text("PRAGMA foreign_keys=ON"))
-        fixed.append(f"{table.name}({', '.join(stale)})")
-    return fixed
+
+
+def _repair_dangling_references(engine: Engine, metadata) -> list[str]:
+    """Odtwarza tabele, których klucze obce wskazują tabelę roboczą.
+
+    Ślad po nieudanej przebudowie: w definicji tabeli zostaje odwołanie do
+    `…__stare`, której już nie ma. Zapis do takiej tabeli kończy się błędem
+    „no such table", choć sama tabela wygląda na zdrową.
+    """
+    from sqlalchemy import inspect, text
+
+    if not engine.url.get_backend_name().startswith("sqlite"):
+        return []
+
+    with engine.connect() as conn:
+        broken = [
+            row[0]
+            for row in conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%__stare%'")
+            )
+        ]
+    if not broken:
+        return []
+
+    inspector = inspect(engine)
+    repaired: list[str] = []
+    for table in metadata.sorted_tables:
+        if table.name not in broken:
+            continue
+        in_db = [col["name"] for col in inspector.get_columns(table.name)]
+        target, source, fills = _copy_expression(table, in_db)
+        _rebuild_table(engine, inspector, table, target, source, fills)
+        repaired.append(table.name)
+    return repaired
 
 
 def _column_default(column) -> object | None:
     """Wartość domyślna kolumny w postaci nadającej się do zapisu w SQLite."""
+    import enum
     import json
 
     default = getattr(column, "default", None)
@@ -197,6 +259,11 @@ def _column_default(column) -> object | None:
             value = value()
     if value is None:
         return None
+    if isinstance(value, enum.Enum):
+        # Kolumny wyliczeniowe trzymają w SQLite **nazwę** składowej
+        # („NIERUCHOMOSC"), a nie jej wartość („nieruchomosc"). Zapisanie
+        # wartości dałoby wiersz, którego model nie potrafi potem odczytać.
+        return value.name
     if isinstance(value, (list, dict)):
         return json.dumps(value)
     if isinstance(value, bool):
@@ -218,3 +285,6 @@ def init_db() -> None:
     relaxed = _relax_not_null(engine, models.Base.metadata)
     if relaxed:
         log.info("Zdjęto wymóg wartości z kolumn: %s", ", ".join(relaxed))
+    repaired = _repair_dangling_references(engine, models.Base.metadata)
+    if repaired:
+        log.info("Odtworzono tabele z uszkodzonymi kluczami obcymi: %s", ", ".join(repaired))
