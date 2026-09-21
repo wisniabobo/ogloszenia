@@ -443,9 +443,7 @@ def _archive_old_notices(session: Session) -> int:
     „Wykaz nieruchomości … - 14.07.2023r." — litera tuż po roku sprawiała,
     że daty nie było, więc filtr wieku przepuszczał archiwum sprzed lat.
     """
-    from datetime import timedelta
-
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
     from ..scrapers.bip import ANY_DATE, CASE_YEAR, TITLE_DATE
     from ..utils.text import parse_datetime
