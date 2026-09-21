@@ -39,6 +39,17 @@ ssh -o BatchMode=yes -o PasswordAuthentication=no "$TARGET" bash -euo pipefail <
 	echo "==> Doinstalowuję zależności"
 	sudo -u "$APP_USER" "$REMOTE_DIR/.venv/bin/pip" install -q -r requirements.txt
 
+	echo "==> Synchronizuję jednostki systemd"
+	# Bez tego kroku poprawka w pliku jednostki (np. dłuższy limit czasu na
+	# nocne przejście) leżała w repozytorium, a serwer chodził dalej na starej.
+	if ! diff -rq "$REMOTE_DIR/deploy/systemd/" /etc/systemd/system/ \
+			--include='metruj-*' >/dev/null 2>&1; then
+		install -m 644 "$REMOTE_DIR"/deploy/systemd/metruj-*.service /etc/systemd/system/
+		install -m 644 "$REMOTE_DIR"/deploy/systemd/metruj-*.timer /etc/systemd/system/
+		systemctl daemon-reload
+		echo "    jednostki zaktualizowane"
+	fi
+
 	echo "==> Domykam schemat bazy i wczytuję rejestr źródeł"
 	# init-db dokłada też kolumny, których nie było w poprzedniej wersji —
 	# bez tego pierwsze zapytanie po restarcie kończy się „no such column".
