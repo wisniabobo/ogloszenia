@@ -331,7 +331,7 @@ def suggest_cities(db: Session, limit: int = 400) -> list[str]:
 #: domyślne strony (np. próg okazji na „/okazje") nie mogą rozwijać całego
 #: formularza i spychać wyników pod zgięcie.
 ADVANCED_FILTERS = (
-    "voivodeship", "county", "district", "street", "price_m2_min", "price_m2_max",
+    "county", "district", "street", "price_m2_min", "price_m2_max",
     "rooms_min", "rooms_max", "floor_min", "floor_max", "plot_area_min",
     "plot_area_max", "seller_type", "source", "period", "market", "year_min",
     "days_on_market_min", "days_on_market_max", "q", "deal_max",

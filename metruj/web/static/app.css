@@ -573,3 +573,22 @@ h1, h2, h3, h4 { margin: 0; line-height: 1.25; font-weight: 650; letter-spacing:
   .filterchip  { background: var(--brand-soft); color: var(--brand-ink); border-color: #23463a; }
   .filterchip__x { background: rgba(255,255,255,.12); }
 }
+
+/* Główny rząd panelu wyszukiwania ma sześć pól: rodzaj, transakcja,
+   województwo, miejscowość, cena, powierzchnia. Automatyczne dopasowanie
+   kolumn zrzucało przy typowej szerokości laptopa ostatnie pole do drugiego
+   rzędu, gdzie stało samo i wyglądało jak błąd układu. Na szerokim ekranie
+   dostają więc równo sześć kolumn, a węższe schodzą na trzy i dwie. */
+.filters > .filters__grid {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+@media (max-width: 1100px) {
+  .filters > .filters__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .filters > .filters__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 400px) {
+  .filters > .filters__grid { grid-template-columns: 1fr; }
+}
+.field__pair input { min-width: 0; }
