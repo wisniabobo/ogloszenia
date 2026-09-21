@@ -260,42 +260,32 @@ def _source_context(source: Source, ctx: ScrapeContext) -> ScrapeContext:
     )
 
 
-async def _collect(source: Source, client: HttpClient, ctx: ScrapeContext) -> tuple[list[RawListing], str]:
-    if (source.config or {}).get("requires_js"):
-        # lepiej powiedzieć wprost, że się nie da, niż zwrócić ciche zero
-        return [], JS_REQUIRED_MESSAGE
-    ctx = _source_context(source, ctx)
-    scraper = _build_scraper(source, client)
-    items: list[RawListing] = []
-    error = ""
-    try:
-        async for raw in scraper.run(ctx):
-            raw.source_key = raw.source_key or source.key
-            items.append(raw)
-    except Exception as exc:  # scraper nie może wywrócić całego skanu
-        error = f"{type(exc).__name__}: {exc}"
-        log.warning("Źródło %s zakończyło się błędem: %s", source.key, error)
-    return items, error
+#: Co tyle pozycji zebrane oferty idą do bazy.
+#:
+#: Wcześniej źródło trzymało w pamięci **wszystko**, co zebrało, i zapisywało
+#: dopiero na końcu. Przy jednym województwie było to kilka tysięcy obiektów.
+#: Przy pełnym przejściu przez kraj Otodom to kilkaset tysięcy ofert, każda
+#: z kompletem danych z portalu — nocny przebieg zajmował całą pamięć serwera
+#: i system go zabijał (`oom-kill`), zanim OLX, Otodom i Morizon cokolwiek
+#: zapisały. Teraz pamięć trzyma najwyżej jedną paczkę na źródło, a przerwany
+#: przebieg zostawia po sobie wszystko, co zdążył zebrać.
+PERSIST_EVERY = 500
 
 
-def _persist(source_key: str, items: list[RawListing], error: str,
-             scope: list[str] | None = None,
-             complete_pass: bool = False) -> tuple[SourceResult, list[int]]:
-    """Zapisuje wynik jednego źródła. Wywoływane w osobnym wątku."""
-    result = SourceResult(source_key=source_key, fetched=len(items), ok=not error, message=error)
-    new_ids: list[int] = []
+def _persist_batch(source_key: str, items: list[RawListing], scope: list[str] | None,
+                   result: SourceResult, new_ids: list[int]) -> None:
+    """Zapisuje jedną paczkę pozycji źródła. Liczniki dopisuje do `result`.
 
+    Wywoływane w osobnym wątku, pod wspólną blokadą zapisu — SQLite i tak
+    przyjmuje jeden zapis naraz, a tak unikamy błędów „database is locked"
+    przy kilku źródłach kończących paczkę w tej samej chwili.
+    """
     with session_scope() as session:
         source = session.scalar(select(Source).where(Source.key == source_key))
         if source is None:
             result.ok = False
             result.message = "brak źródła w rejestrze"
-            return result, []
-
-        run = ScanRun(source_key=source_key)
-        session.add(run)
-        session.flush()
-        processed = 0
+            return
 
         # Katalog biur nie produkuje ogłoszeń — zasila rejestr pośredników.
         if items and (items[0].extra or {}).get("katalog"):
@@ -305,19 +295,14 @@ def _persist(source_key: str, items: list[RawListing], error: str,
                         result.new += 1
                     else:
                         result.updated += 1
-                except Exception:
+                except Exception as exc:
                     session.rollback()
                     result.errors += 1
-            source.last_run_at = utcnow()
-            source.last_ok_at = utcnow()
-            source.last_error = None
-            run.finished_at = utcnow()
-            run.fetched, run.new, run.updated, run.errors = (
-                result.fetched, result.new, result.updated, result.errors
-            )
-            run.ok = result.ok
-            return result, []
+                    if not result.message:
+                        result.message = f"{type(exc).__name__}: {exc}"[:400]
+            return
 
+        processed = 0
         for raw in items:
             try:
                 normalized = normalize(raw, scope=scope)
@@ -358,17 +343,26 @@ def _persist(source_key: str, items: list[RawListing], error: str,
                 # oddajemy blokadę zapisu, żeby inne zadania mogły się wcisnąć
                 session.commit()
 
-        # oznaczanie ofert zdjętych ze źródła
-        # Oferty wygaszamy WYŁĄCZNIE po pełnym przejściu wyników. Zwykły skan
-        # bierze tylko najnowsze strony, więc z definicji nie widzi starszych
-        # ofert — uznawanie ich wtedy za zdjęte kasowało z widoku prawie całą
-        # bazę w kilkanaście minut od jej zebrania.
-        if not error and items and complete_pass:
+
+def _finish_source(source_key: str, result: SourceResult, error: str,
+                   complete_pass: bool, started_at) -> None:
+    """Zamyka przebieg źródła: wpis w dzienniku, wygaszanie, liczniki."""
+    with session_scope() as session:
+        source = session.scalar(select(Source).where(Source.key == source_key))
+        if source is None:
+            return
+
+        # Oferty wygaszamy WYŁĄCZNIE po pełnym i bezbłędnym przejściu wyników.
+        # Zwykły skan bierze tylko najnowsze strony, więc z definicji nie widzi
+        # starszych ofert — uznawanie ich wtedy za zdjęte kasowało z widoku
+        # prawie całą bazę w kilkanaście minut od jej zebrania.
+        if not error and result.fetched and complete_pass:
             result.removed = _mark_missing(session, source)
 
         source.last_run_at = utcnow()
         source.total_listings = int(
-            session.scalar(select(func.count(Listing.id)).where(Listing.source_key == source_key)) or 0
+            session.scalar(select(func.count(Listing.id)).where(Listing.source_key == source_key))
+            or 0
         )
         if error:
             source.last_error = error[:1000]
@@ -376,15 +370,72 @@ def _persist(source_key: str, items: list[RawListing], error: str,
             source.last_ok_at = utcnow()
             source.last_error = None
 
-        run.finished_at = utcnow()
-        run.fetched = result.fetched
-        run.new = result.new
-        run.updated = result.updated
-        run.duplicates = result.duplicates
-        run.errors = result.errors
-        run.ok = result.ok
-        run.message = result.message[:1000] or None
+        session.add(
+            ScanRun(
+                source_key=source_key,
+                started_at=started_at,
+                finished_at=utcnow(),
+                fetched=result.fetched,
+                new=result.new,
+                updated=result.updated,
+                duplicates=result.duplicates,
+                errors=result.errors,
+                ok=result.ok,
+                message=(result.message or "")[:1000] or None,
+            )
+        )
 
+
+async def _collect_and_persist(
+    source: Source, client: HttpClient, ctx: ScrapeContext,
+    scope: list[str] | None, deep: bool, write_lock: asyncio.Lock,
+) -> tuple[SourceResult, list[int]]:
+    """Zbiera jedno źródło i zapisuje je paczkami w trakcie zbierania."""
+    result = SourceResult(source_key=source.key)
+    new_ids: list[int] = []
+    started_at = utcnow()
+
+    if (source.config or {}).get("requires_js"):
+        # lepiej powiedzieć wprost, że się nie da, niż zwrócić ciche zero
+        result.ok = False
+        result.message = JS_REQUIRED_MESSAGE
+        async with write_lock:
+            await asyncio.to_thread(
+                _finish_source, source.key, result, JS_REQUIRED_MESSAGE, False, started_at
+            )
+        return result, new_ids
+
+    ctx = _source_context(source, ctx)
+    scraper = _build_scraper(source, client)
+    buffer: list[RawListing] = []
+    error = ""
+
+    async def flush() -> None:
+        nonlocal buffer
+        if not buffer:
+            return
+        batch, buffer = buffer, []
+        async with write_lock:
+            await asyncio.to_thread(_persist_batch, source.key, batch, scope, result, new_ids)
+
+    try:
+        async for raw in scraper.run(ctx):
+            raw.source_key = raw.source_key or source.key
+            buffer.append(raw)
+            result.fetched += 1
+            if len(buffer) >= PERSIST_EVERY:
+                await flush()
+    except Exception as exc:  # scraper nie może wywrócić całego skanu
+        error = f"{type(exc).__name__}: {exc}"
+        log.warning("Źródło %s zakończyło się błędem: %s", source.key, error)
+    # To, co zebrano przed błędem, i tak trafia do bazy.
+    await flush()
+
+    if error:
+        result.ok = False
+        result.message = result.message or error
+    async with write_lock:
+        await asyncio.to_thread(_finish_source, source.key, result, error, deep, started_at)
     return result, new_ids
 
 
@@ -464,30 +515,26 @@ async def run_scan(
         limits_explicit=bool(max_pages or max_items),
     )
 
-    # Każde źródło zapisujemy **gdy tylko skończy**, a nie po zakończeniu
-    # wszystkich. Przy jednym województwie różnica była niewidoczna; przy
-    # zasięgu krajowym zbierane pozycje leżały w pamięci godzinami, czekając
-    # na najwolniejszy BIP, a przerwany przebieg nie zostawiał po sobie nic.
-    # Zapis idzie do osobnego wątku, żeby nie blokować pobierania.
+    # Każde źródło zbiera i zapisuje równolegle z innymi, paczkami — pamięć
+    # trzyma najwyżej jedną paczkę na źródło, a zapisy idą po kolei pod wspólną
+    # blokadą, bo SQLite i tak przyjmuje jeden zapis naraz.
     result = ScanResult()
+    write_lock = asyncio.Lock()
     async with HttpClient() as client:
-
-        async def collect_one(source: Source):
-            items, error = await _collect(source, client, ctx)
-            return source, items, error
-
-        tasks = [asyncio.create_task(collect_one(source)) for source in sources]
-        for finished in asyncio.as_completed(tasks):
-            source, items, error = await finished
-            source_result, new_ids = await asyncio.to_thread(
-                _persist, source.key, items, error, scope, deep
+        tasks = [
+            asyncio.create_task(
+                _collect_and_persist(source, client, ctx, scope, deep, write_lock)
             )
+            for source in sources
+        ]
+        for finished in asyncio.as_completed(tasks):
+            source_result, new_ids = await finished
             result.sources.append(source_result)
             result.new_listing_ids.extend(new_ids)
-            items.clear()   # pozycje są już w bazie — nie trzymamy ich w pamięci
             log.info(
                 "Źródło %s: pobrane %s, nowe %s, błędy %s%s",
-                source.key, source_result.fetched, source_result.new, source_result.errors,
+                source_result.source_key, source_result.fetched, source_result.new,
+                source_result.errors,
                 f" ({source_result.message})" if source_result.message else "",
             )
 
