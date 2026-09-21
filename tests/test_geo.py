@@ -95,6 +95,18 @@ class TestOdmiana:
             ("Mieszkanie w Szczecinie", "Szczecin"),
             ("Dom w Toruniu", "Toruń"),
             ("Mieszkanie w Białej Podlaskiej", "Biała Podlaska"),
+            # Odmiana wymienia ostatnią spółgłoskę rdzenia: „Starogard" ->
+            # „w Starogar-dzie". Nazwa dwuczłonowa musi wtedy wygrać z samym
+            # „Gdańskiem", który siedzi w drugim członie.
+            ("Mieszkanie w Starogardzie Gdańskim", "Starogard Gdański"),
+            ("Dom w Grudziądzu", "Grudziądz"),
+            ("Mieszkanie w Zielonej Górze", "Zielona Góra"),
+            ("Mieszkanie w Jeleniej Górze", "Jelenia Góra"),
+            ("Dom w Gorzowie Wielkopolskim", "Gorzów Wielkopolski"),
+            ("Dom w Nowym Sączu", "Nowy Sącz"),
+            ("Mieszkanie w Elblągu", "Elbląg"),
+            ("Mieszkanie w Częstochowie", "Częstochowa"),
+            ("Dom w Sopocie", "Sopot"),
         ],
     )
     def test_miejscownik(self, tekst, miasto):
@@ -145,6 +157,19 @@ class TestBledyZProdukcji:
     def test_wojewodztwo_podane_wprost(self):
         assert detect_voivodeship("Działka, woj. opolskie") == "opolskie"
         assert detect_voivodeship("Dom w województwie mazowieckim") == "mazowieckie"
+
+    def test_starogard_gdanski_to_nie_gdansk(self):
+        """Ogłoszenie ze Starogardu trafiało do Gdańska — i wyglądało na okazję.
+
+        Gdańsk ma dwa i pół raza wyższą medianę ceny za metr, więc mieszkanie
+        ze Starogardu porównane z nią wychodziło na „65% poniżej rynku".
+        Pomyłka lokalizacji zamienia się tu wprost w fałszywą okazję.
+        """
+        hit = detect_location(
+            "Polecam słoneczne 53,1 m² mieszkanie z balkonem w Starogardzie Gdańskim"
+        )
+        assert hit.city == "Starogard Gdański"
+        assert hit.county == "starogardzki"
 
     def test_opis_bez_lokalizacji(self):
         assert detect_location("mieszkanie z balkonem i piwnicą, do wprowadzenia").city is None

@@ -32,7 +32,7 @@ from .teryt import Unit, units
 #: człon po członie, więc kosztuje to ułamek milisekundy.
 STEM = 3
 
-#: Najdłuższa końcówka fleksyjna, jaką dopuszczamy przy dopasowaniu członu.
+#: Najdłuższa końcówka fleksyjna dopuszczana przy dopasowaniu członu.
 MAX_INFLECTION = 3
 
 TOKEN = re.compile(r"[0-9A-Za-zÀ-ž]+", re.UNICODE)
@@ -78,15 +78,31 @@ def _index() -> dict[str, list[tuple[tuple[str, ...], Unit]]]:
 
 
 def _token_matches(pattern: str, token: str) -> tuple[bool, bool]:
-    """Czy `token` to `pattern` w dowolnym przypadku. Zwraca (pasuje, dokładnie)."""
+    """Czy `token` to `pattern` w dowolnym przypadku. Zwraca (pasuje, dokładnie).
+
+    Polska odmiana działa na dwa sposoby i oba trzeba obsłużyć osobno:
+
+    * **końcówka doklejona do całej nazwy** — „Starogard" -> „w Starogar**dzie**",
+      „Gdański" -> „Gdańsk**im**", „Kraków" -> „w Krakow**ie**",
+    * **wymiana ostatniej litery** — „Nysa" -> „w Nys**ie**",
+      „Zielona" -> „Zielon**ej**", „Góra" -> „Gór**ze**".
+
+    Pierwszy wariant sprawdzamy przed drugim. Obcinanie ostatniej litery „na
+    wszelki wypadek" psuło pierwszy przypadek: z „Starogard" robiło „Starogar",
+    a wtedy „Starogardzie" wyrastało o cztery znaki i wypadało poza próg —
+    przez co ogłoszenie ze Starogardu Gdańskiego trafiało do Gdańska i wyglądało
+    na okazję, bo Gdańsk ma dwa i pół raza wyższą medianę.
+    """
     if token == pattern:
         return True, True
     if len(pattern) <= 3:
         return False, False       # krótkie człony („Bór") tylko dokładnie
+    if token.startswith(pattern) and len(token) - len(pattern) <= MAX_INFLECTION:
+        return True, False
     stem = pattern[:-1]
-    if not token.startswith(stem):
-        return False, False
-    return len(token) - len(stem) <= MAX_INFLECTION, False
+    if len(stem) >= 3 and token.startswith(stem):
+        return len(token) - len(stem) <= MAX_INFLECTION, False
+    return False, False
 
 
 def find_places(text: str | None) -> list[Match]:
