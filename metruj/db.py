@@ -23,7 +23,10 @@ def _configure_sqlite(dbapi_conn, _record) -> None:
     cur.execute("PRAGMA foreign_keys=ON")
     # Skan zapisuje partiami, ale przy równoległych zadaniach warto dać
     # zapisowi czas na doczekanie swojej kolei zamiast wywalać się od razu.
-    cur.execute("PRAGMA busy_timeout=30000")
+    # Nocne przejście, zwykły skan co kwadrans i dociąganie kontaktów piszą
+    # równolegle; lepiej, żeby zapis poczekał dwie minuty, niż żeby oferta
+    # przepadła z „database is locked".
+    cur.execute("PRAGMA busy_timeout=120000")
     cur.close()
 
 

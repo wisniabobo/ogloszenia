@@ -42,7 +42,11 @@ DAYS_MISSING_BEFORE_REMOVAL = 3
 #: Co tyle ofert zamykamy transakcję. Przy pełnym przejściu jedno źródło
 #: potrafi dać kilka tysięcy pozycji — jedna transakcja na całość blokowałaby
 #: bazę na kilkanaście minut i każdy inny zapis kończyłby się błędem.
-COMMIT_EVERY = 100
+#: Sto to było wciąż za dużo: przy 100 tys. ofert w bazie dopasowanie biura
+#: i szukanie duplikatów dla stu nowych pozycji trzymało zapis dłużej niż
+#: 30 s, na które czeka inny proces — i zwykły skan w trakcie nocnego
+#: przejścia wywracał się na „database is locked" (24 razy w trzy godziny).
+COMMIT_EVERY = 25
 
 
 @dataclass
