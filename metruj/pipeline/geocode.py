@@ -304,7 +304,8 @@ async def name_places_from_points(*, limit: int = DEFAULT_BATCH, concurrency: in
     """
     with session_scope() as session:
         rows = session.execute(
-            select(Listing.id, Listing.lat, Listing.lon, Listing.voivodeship, Listing.county)
+            select(Listing.id, Listing.lat, Listing.lon, Listing.voivodeship, Listing.county,
+                   Listing.geo_precision)
             .where(Listing.city.is_(None), Listing.lat.is_not(None), Listing.lon.is_not(None),
                    Listing.status == ListingStatus.AKTYWNA)
             .limit(limit)
@@ -328,7 +329,13 @@ async def name_places_from_points(*, limit: int = DEFAULT_BATCH, concurrency: in
             if found is None or not found.city:
                 continue
             unit = parse_jednostka(found.jednostka) if found.jednostka else {}
-            if row.voivodeship and unit.get("voivodeship") and unit["voivodeship"] != row.voivodeship:
+            # Punkt od portalu bije województwo przypisane z sekcji wyszukiwania:
+            # GetHome w dziale „opolskie" pokazywał też inwestycje z Wieliczki
+            # i Wrocławia, a my wpisywaliśmy im Opolskie. Gdy portal podał powiat,
+            # musi się on zgadzać — wtedy region pochodzi z samego ogłoszenia.
+            from_portal = row.geo_precision == "portal" and not row.county
+            if (row.voivodeship and unit.get("voivodeship") and not from_portal
+                    and unit["voivodeship"] != row.voivodeship):
                 continue
             if row.county and unit.get("county") and unit["county"] != row.county:
                 continue
