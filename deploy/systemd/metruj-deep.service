@@ -12,7 +12,11 @@ EnvironmentFile=/opt/metruj/.env
 # pozycji to osobny, budżetowany przebieg.
 ExecStart=/opt/metruj/.venv/bin/python -m metruj.cli scan --deep --no-details
 ExecStartPost=/opt/metruj/.venv/bin/python -m metruj.cli geocode --limit 20000
-TimeoutStartSec=43200
+# Pełne przejście przez wszystkie portale w skali kraju to kilkadziesiąt
+# tysięcy zapytań rozłożonych na grzeczne tempo. Doba z zapasem: gdyby się
+# nie zmieściło, każde źródło i tak zapisuje się osobno, więc dorobek
+# poprzedniej nocy nie przepada.
+TimeoutStartSec=72000
 
 NoNewPrivileges=true
 PrivateTmp=true

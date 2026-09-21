@@ -1,3 +1,7 @@
+# Domyślne limity dotyczą źródeł, które nie podają własnych: BIP-ów gmin
+# i pojedynczych stron biur. Przy portalu ogólnopolskim są bez sensu — 20 tys.
+# ofert to sufit, na którym Morizon zatrzymywał się co noc, mając ich
+# kilkakrotnie więcej. Portale mają więc limity wpisane u siebie.
 defaults:
   interval_minutes: 15
   max_pages: 5
@@ -60,6 +64,14 @@ sources:
     trzyma się tych granic.
 
     '
+  config:
+    # Portal dzieli wyniki po województwach, więc pełne przejście to 16 sekcji
+    # razy liczba kategorii. Limit musi być powyżej tego, ile portal faktycznie
+    # ma ofert — inaczej zbieranie kończy się na okrągłej liczbie, a nie na
+    # końcu wyników.
+    deep_max_pages: 300
+    deep_max_items: 200000
+
 - key: morizon
   name: Morizon.pl
   scraper: morizon
@@ -74,6 +86,14 @@ sources:
     i limit=, więc paginujemy samym page= i bierzemy domyślne sortowanie.
 
     '
+  config:
+    # Portal dzieli wyniki po województwach, więc pełne przejście to 16 sekcji
+    # razy liczba kategorii. Limit musi być powyżej tego, ile portal faktycznie
+    # ma ofert — inaczej zbieranie kończy się na okrągłej liczbie, a nie na
+    # końcu wyników.
+    deep_max_pages: 300
+    deep_max_items: 200000
+
 - key: nieruchomosci_online
   name: Nieruchomosci-online.pl
   scraper: nieruchomosci_online
@@ -100,6 +120,14 @@ sources:
   interval_minutes: 30
   coverage: krajowy
   sprawdzono: 2026-09-19
+  config:
+    # Portal dzieli wyniki po województwach, więc pełne przejście to 16 sekcji
+    # razy liczba kategorii. Limit musi być powyżej tego, ile portal faktycznie
+    # ma ofert — inaczej zbieranie kończy się na okrągłej liczbie, a nie na
+    # końcu wyników.
+    deep_max_pages: 300
+    deep_max_items: 200000
+
 - key: adresowo
   name: Adresowo.pl
   scraper: adresowo
@@ -159,6 +187,8 @@ sources:
   sprawdzono: 2026-09-20
   notes: "Lista renderowana po stronie serwera, więc czytelna bez przeglądarki. Nazwy klas CSS portal generuje losowo przy każdym wdrożeniu, dlatego parser trzyma się znacznika address i układu tekstu karty, a nie selektorów."
   config:
+    deep_max_pages: 300
+    deep_max_items: 200000
     sections:
     - path: /mieszkania/na-sprzedaz/{region}/
       transaction: sprzedaz
