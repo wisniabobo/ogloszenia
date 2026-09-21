@@ -134,6 +134,56 @@ class TestDeduplikacja:
         session.flush()
         assert other.is_original is True
 
+    def test_rozne_kawalerki_w_tym_samym_miescie_to_nie_kopie(self, session):
+        """Odcisk parametrów w dużym mieście pasuje do setek mieszkań.
+
+        Z produkcji: trzy różne kawalerki 30 m² we Wrocławiu zostały scalone
+        w jedną, bo miały ten sam metraż, tę samą liczbę pokoi i ceny
+        mieszczące się w dopuszczalnym rozrzucie. Sam odcisk nie może
+        wystarczać — musi go potwierdzić ulica, telefon albo treść.
+        """
+        self._add(
+            session, external_id="W1", source_key="portal_a", url="https://a.pl/w1",
+            title="Mieszkanie 1-pokojowe w centrum Wrocławia",
+            description="Kawalerka 30 m2 w centrum, do wynajęcia od zaraz.",
+            city="Wrocław", area=30.0, rooms=1, price=2100.0, street=None,
+        )
+        other = self._add(
+            session, external_id="W2", source_key="portal_b", url="https://b.pl/w2",
+            title="30m2 z sypialnią - Legnicka, nowy budynek",
+            description="Ustawne mieszkanie przy Legnickiej, osobna sypialnia.",
+            city="Wrocław", area=30.0, rooms=1, price=2050.0, street=None,
+        )
+        link_duplicates(session, other)
+        session.flush()
+        assert other.is_original is True
+        assert other.duplicate_of_id is None
+
+    def test_odcisk_potwierdzony_trescia_laczy(self, session):
+        """Ten sam opis przepisany na drugi portal to już przesłanka."""
+        opis = (
+            "Przestronne mieszkanie dwupokojowe o powierzchni 54 m2 na trzecim "
+            "piętrze w budynku z windą. Kuchnia w zabudowie, duży balkon od "
+            "strony parku, miejsce postojowe w hali garażowej. Do mieszkania "
+            "przynależy piwnica. Okolica cicha, w pobliżu szkoła i przedszkole."
+        )
+        first = self._add(
+            session, external_id="T1", source_key="portal_a", url="https://a.pl/t1",
+            title="Dwupokojowe z balkonem, Gdańsk", description=opis,
+            city="Gdańsk", area=54.0, rooms=2, price=690000.0, street=None,
+            published_at=utcnow() - timedelta(days=4),
+        )
+        second = self._add(
+            session, external_id="T2", source_key="portal_b", url="https://b.pl/t2",
+            title="Gdańsk | 54 m² | 2 pokoje | winda", description=opis,
+            city="Gdańsk", area=54.0, rooms=2, price=690000.0, street=None,
+            published_at=utcnow() - timedelta(days=1),
+        )
+        link_duplicates(session, second)
+        session.flush()
+        assert second.is_original is False
+        assert second.duplicate_of_id == first.id
+
     def test_rozne_licytacje_o_tym_samym_tytule(self, session):
         """Obwieszczenia bywają zatytułowane identycznie — to nie czyni ich kopiami."""
         from metruj.models import OfferKind

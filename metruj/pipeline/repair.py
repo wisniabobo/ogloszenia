@@ -24,7 +24,8 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from ..geo import detect_location, known_voivodeship, lookup, resolve_place
-from ..models import Listing, ListingStatus
+from ..models import DuplicateLink, Listing, ListingStatus
+from .dedup import _match, _refresh_copy_count
 from .normalize import LAND_TYPES, NAVIGATION_TITLE
 
 #: Źródła, w których lokalizacja pochodzi z pola portalu, a nie z tekstu.
@@ -46,6 +47,7 @@ class RepairStats:
     regions: int = 0
     relocated: int = 0
     navigation: int = 0
+    unlinked: int = 0
     regeocode: int = 0
 
     def __str__(self) -> str:
@@ -53,7 +55,7 @@ class RepairStats:
             f"ceny={self.prices} cena_za_m2={self.price_per_m2} "
             f"powierzchnia_gruntu={self.land_area} regiony={self.regions} "
             f"lokalizacje={self.relocated} śmieci={self.navigation} "
-            f"do_przeliczenia={self.regeocode}"
+            f"rozpięte_kopie={self.unlinked} do_przeliczenia={self.regeocode}"
         )
 
 
@@ -230,6 +232,45 @@ def _relocate_text_sources(session: Session) -> int:
     return changed
 
 
+def _recheck_duplicates(session: Session) -> int:
+    """Rozpina połączenia, które nie przechodzą już dzisiejszych reguł.
+
+    Przez jakiś czas sam odcisk parametrów (miasto + metraż + pokoje)
+    wystarczał, żeby uznać dwie oferty za tę samą nieruchomość. W dużym
+    mieście pasuje on do setek mieszkań, więc trzy różne kawalerki
+    we Wrocławiu stały się jedną — a dwie z nich zniknęły z wyników.
+
+    Przechodzimy więc po istniejących powiązaniach jeszcze raz i zostawiamy
+    tylko te, które obroniłyby się przy dzisiejszych regułach. Rozpięta oferta
+    wraca na listę jako samodzielna; nic nie jest kasowane.
+    """
+    links = list(session.scalars(select(DuplicateLink)))
+    touched: set[int] = set()
+    removed = 0
+
+    for link in links:
+        original = session.get(Listing, link.original_id)
+        copy = session.get(Listing, link.copy_id)
+        if original is None or copy is None:
+            session.delete(link)
+            removed += 1
+            continue
+        if _match(original, copy) is not None:
+            touched.add(original.id)
+            continue
+        session.delete(link)
+        removed += 1
+        if copy.duplicate_of_id == original.id:
+            copy.duplicate_of_id = None
+            copy.is_original = True
+        touched.add(original.id)
+
+    session.flush()
+    for original_id in touched:
+        _refresh_copy_count(session, original_id)
+    return removed
+
+
 def repair(session: Session, *, regeocode_all: bool = False) -> RepairStats:
     """Przelicza pola, które dało się policzyć źle, i czyści nieprawdziwe."""
     stats = RepairStats()
@@ -238,6 +279,7 @@ def repair(session: Session, *, regeocode_all: bool = False) -> RepairStats:
     stats.navigation = _deactivate_navigation(session)
     stats.relocated = _relocate_text_sources(session)
     stats.regions = _fix_regions(session)
+    stats.unlinked = _recheck_duplicates(session)
     stats.regeocode = _mark_for_regeocode(session, suspicious_only=not regeocode_all)
     log.info("Naprawa danych: %s", stats)
     return stats

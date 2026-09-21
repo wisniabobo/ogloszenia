@@ -6,9 +6,17 @@ lista jest bezużyteczna.
 
 Sygnały (od najmocniejszego):
   1. **telefon** — ten sam numer + zbliżone parametry = ta sama nieruchomość,
-  2. **odcisk parametrów** — miasto + ulica + metraż + pokoje + piętro,
-  3. **shingle opisu** — odporny na przestawienie zdań i drobne przeróbki,
+  2. **shingle opisu** — odporny na przestawienie zdań i drobne przeróbki,
+  3. **odcisk parametrów** — miasto + metraż + pokoje + typ + transakcja.
+     To jest *podpowiedź, nie dowód*: we Wrocławiu „wynajem, 30 m², 1 pokój"
+     pasuje do kilkuset różnych mieszkań. Sam odcisk niczego nie łączy —
+     musi go potwierdzić ulica, numer telefonu albo podobieństwo treści.
   4. **cena** — jako rozstrzygnięcie remisu (kopie często mają inną prowizję).
+
+Kierunek pomyłki nie jest obojętny. Niepołączenie dwóch kopii pokazuje tę samą
+nieruchomość dwa razy — to irytujące, ale uczciwe. Połączenie dwóch różnych
+ofert **ukrywa jedną z nich** przed szukającym. Dlatego przy wątpliwości
+zostawiamy je osobno.
 
 Za oryginał uznajemy ofertę o **najwcześniejszej dacie publikacji**, a przy
 remisie — ofertę prywatną przed pośrednikiem (tak samo działa nbot: oryginał to
@@ -31,6 +39,12 @@ from ..utils.text import norm_key, sha1, shingle_hash
 AREA_TOLERANCE = 1.5
 #: próg podobieństwa tytułu/opisu (0-100)
 TEXT_THRESHOLD = 88
+#: Ile podobieństwa treści wystarcza, żeby potwierdzić odcisk parametrów.
+#: Niżej niż TEXT_THRESHOLD, bo parametry już się zgadzają — ale nie zero,
+#: bo odcisk sam w sobie w dużym mieście nic nie znaczy.
+CORROBORATION_THRESHOLD = 80
+#: Poniżej tylu znaków opis jest zbyt ogólny, żeby cokolwiek potwierdzać.
+MIN_DESCRIPTION = 200
 #: okno czasowe, w którym w ogóle szukamy duplikatów
 WINDOW_DAYS = 400
 
@@ -134,11 +148,20 @@ def _match(a: Listing, b: Listing) -> tuple[str, float] | None:
         if _similar_area(a.area, b.area):
             return "phone", 0.97
 
-    if a.fingerprint and a.fingerprint == b.fingerprint:
-        return "fingerprint", 0.93
-
     if a.text_shingle and a.text_shingle == b.text_shingle:
         return "text", 0.9
+
+    if a.fingerprint and a.fingerprint == b.fingerprint:
+        # Odcisk parametrów to podpowiedź, nie dowód. We Wrocławiu pasuje do
+        # setek mieszkań naraz, bo metraże są okrągłe (30, 40, 50 m²), a cena
+        # różni się w granicach, które przepuszcza `_compatible`. Bez tego
+        # potwierdzenia trzy różne kawalerki na Legnickiej stawały się jedną.
+        if a.street and b.street:
+            return "fingerprint", 0.93     # ta sama ulica, ten sam metraż
+        confirmation = _text_similarity(a, b)
+        if confirmation is not None and confirmation >= CORROBORATION_THRESHOLD:
+            return "fingerprint", round(min(0.92, confirmation / 100), 2)
+        return None
 
     # dopasowanie po tekście wymaga znanego metrażu po obu stronach —
     # bez niego "lokal mieszkalny, Opole" pasowałby do każdego innego
@@ -152,6 +175,25 @@ def _match(a: Listing, b: Listing) -> tuple[str, float] | None:
                 )
             if desc_score >= TEXT_THRESHOLD - 8:
                 return "text", round(min(title_score, desc_score) / 100, 2)
+    return None
+
+
+def _text_similarity(a: Listing, b: Listing) -> float | None:
+    """Jak bardzo treść obu ofert mówi o tym samym. `None` = nie ma z czego sądzić.
+
+    Opis waży więcej niż tytuł: pośrednicy przepisują opis między portalami
+    niemal dosłownie, a tytuł układają pod wyszukiwarkę każdego z osobna.
+    Krótkie opisy („Do wynajęcia mieszkanie") nic nie potwierdzają, więc
+    poniżej `MIN_DESCRIPTION` znaków w ogóle ich nie liczymy.
+    """
+    if a.description and b.description and (
+        len(a.description) >= MIN_DESCRIPTION and len(b.description) >= MIN_DESCRIPTION
+    ):
+        return float(
+            fuzz.token_set_ratio(norm_key(a.description[:1500]), norm_key(b.description[:1500]))
+        )
+    if a.title and b.title:
+        return float(fuzz.token_set_ratio(norm_key(a.title), norm_key(b.title)))
     return None
 
 
