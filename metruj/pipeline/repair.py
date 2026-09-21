@@ -28,13 +28,15 @@ from ..models import DuplicateLink, Listing, ListingStatus
 from .dedup import _match, _refresh_copy_count
 from .normalize import LAND_TYPES, NAVIGATION_TITLE
 
-#: Źródła, w których lokalizacja pochodzi z pola portalu, a nie z tekstu.
-#: Ich ofert nie ruszamy: portal podał miasto wprost i jest ono prawdziwe.
-PORTAL_SOURCES = {
-    "olx", "otodom", "gratka", "morizon", "domiporta", "gethome", "adresowo",
-    "nieruchomosci_online", "szybko", "rynekpierwotny", "krn", "domy_pl",
-    "otoprzeprowadzki_oferty_net", "nportal", "tabelaofert",
-}
+#: Źródła, w których lokalizacja pochodzi z **pola** portalu, a nie z treści
+#: ogłoszenia. Ich ofert naprawa nie rusza: portal podał miejscowość wprost
+#: i jest ona prawdziwa.
+#:
+#: Reszta portali to zwykły HTML czytany selektorami — tam miejscowość bierze
+#: się z tekstu karty i podlega tym samym pomyłkom, co ogłoszenia urzędowe.
+#: Domiporta była tu wcześniej przez pomyłkę i przez to jej ogłoszenia ze
+#: Starogardu Gdańskiego zostawały w Gdańsku mimo poprawki w rozpoznawaniu nazw.
+PORTAL_SOURCES = {"olx", "otodom", "gethome", "gratka", "morizon"}
 
 log = logging.getLogger("metruj.repair")
 
