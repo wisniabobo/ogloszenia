@@ -164,6 +164,11 @@ class Listing(Base):
     __table_args__ = (
         UniqueConstraint("source_key", "external_id", name="uq_listing_source_external"),
         Index("ix_listing_geo", "voivodeship", "city", "district"),
+        # Filtr „miejscowość" bez województwa jest najczęstszym zapytaniem
+        # w całym serwisie, a indeks złożony zaczynający się od województwa
+        # nic w nim nie pomaga.
+        Index("ix_listing_city", "city"),
+        Index("ix_listing_county", "county"),
         Index("ix_listing_kind_status", "kind", "status"),
         Index("ix_listing_seen", "first_seen_at", "last_seen_at"),
         Index("ix_listing_fp", "fingerprint"),

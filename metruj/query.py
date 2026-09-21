@@ -125,6 +125,16 @@ def _enum(value: str | None, enum_cls):
         return None
 
 
+def _place_clause(column, value: str):
+    """Dokładne dopasowanie dla nazw z rejestru, przedrostkowe dla reszty."""
+    from .geo import lookup
+
+    name = value.strip()
+    if lookup(name):
+        return column == name
+    return column.ilike(f"{name}%")
+
+
 def apply_filters(stmt: Select, filters: dict[str, Any] | Filters) -> Select:
     """Nakłada filtry na dowolne zapytanie o `Listing`."""
     f = filters if isinstance(filters, Filters) else Filters(**{
@@ -142,12 +152,17 @@ def apply_filters(stmt: Select, filters: dict[str, Any] | Filters) -> Select:
     if seller := _enum(f.seller_type, SellerType):
         clauses.append(Listing.seller_type == seller)
 
+    # Nazwę, którą zna rejestr TERYT, dopasowujemy dokładnie — wtedy zapytanie
+    # korzysta z indeksu. Nieznaną traktujemy jako początek nazwy („Kędzierzyn"),
+    # co też jest indeksowalne. Wzorzec „%nazwa%" wymuszał przejście po całej
+    # tabeli: przy 59 tysiącach ofert strona wyników wstawała 2,7 sekundy,
+    # a docelowo ofert ma być kilkaset tysięcy.
     if f.city:
-        clauses.append(Listing.city.ilike(f"%{f.city}%"))
+        clauses.append(_place_clause(Listing.city, f.city))
     if f.district:
-        clauses.append(Listing.district.ilike(f"%{f.district}%"))
+        clauses.append(Listing.district.ilike(f"{f.district}%"))
     if f.county:
-        clauses.append(Listing.county.ilike(f"%{f.county}%"))
+        clauses.append(_place_clause(Listing.county, f.county))
     if f.voivodeship:
         clauses.append(Listing.voivodeship == f.voivodeship)
     if f.street:
