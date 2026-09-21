@@ -88,11 +88,12 @@ class LicytacjeKomornikScraper(BaseScraper):
             for page in range(ctx.max_pages):
                 if produced >= ctx.max_items:
                     return
-                params = {
-                    "mainCategory": category,
-                    "province": province,
-                    "offset": page * PAGE_SIZE,
-                }
+                # Pusty `province` to nie to samo, co jego brak: serwis
+                # odpowiada wtedy stroną bez ani jednej licytacji. Żeby objąć
+                # cały kraj, parametr trzeba **pominąć**.
+                params = {"mainCategory": category, "offset": page * PAGE_SIZE}
+                if province:
+                    params["province"] = province
                 try:
                     tree = await self.html(SEARCH, params=params)
                 except Exception:
