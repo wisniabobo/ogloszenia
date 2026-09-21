@@ -389,6 +389,18 @@ def _filters_from_query(request: Request) -> Filters:
         if not values:
             return default
         return values[-1] not in ("0", "false", "")
+    def _many(name: str) -> list[str]:
+        """Wielokrotny wybór z formularza, bez pustych pozycji.
+
+        Lista rozwijana, w której nie wybrano nic, wysyła `source=` — pustą
+        wartość. Wpadała ona do filtru jako „pokaż oferty z serwisu o pustej
+        nazwie", czyli **zero wyników**. Ponieważ sekcja z tym polem jest
+        w formularzu zawsze (tylko zwinięta), zerowało to wyniki przy każdym
+        naciśnięciu „Szukaj" i przy każdym przełączniku — a wyglądało jak
+        zepsute sortowanie i zepsute przyciski.
+        """
+        return [value for value in params.getlist(name) if value]
+
     def num(name: str, cast=float):
         raw = params.get(name)
         if raw in (None, ""):
@@ -409,7 +421,7 @@ def _filters_from_query(request: Request) -> Filters:
         county=params.get("county") or None,
         voivodeship=params.get("voivodeship") or None,
         street=params.get("street") or None,
-        source=params.getlist("source") or [],
+        source=_many("source"),
         seller_type=params.get("seller_type") or None,
         agency_id=num("agency_id", int),
         price_min=num("price_min"),
@@ -431,7 +443,7 @@ def _filters_from_query(request: Request) -> Filters:
         with_phone=flag("with_phone", False),
         price_dropped=flag("price_dropped", False),
         deal_max=num("deal_max"),
-        deal_level=params.getlist("deal_level") or [],
+        deal_level=_many("deal_level"),
         period=params.get("period") or None,
         days_on_market_min=num("days_on_market_min", int),
         days_on_market_max=num("days_on_market_max", int),

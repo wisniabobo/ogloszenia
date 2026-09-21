@@ -31,6 +31,12 @@
         <option value="wszystkie" {{ 'selected' if not filters.transaction }}>wszystko razem</option>
       </select>
     </div>
+    <div class="field"><label for="f-voiv">Województwo</label>
+      <select id="f-voiv" name="voivodeship">
+        <option value="">cała Polska</option>
+        {% for v in voivodeships %}<option value="{{ v }}" {{ 'selected' if filters.voivodeship == v }}>{{ v }}</option>{% endfor %}
+      </select>
+    </div>
     <div class="field"><label for="f-city">Miejscowość</label>
       <input id="f-city" name="city" list="cities" value="{{ filters.city or '' }}"
              placeholder="np. Warszawa, Nysa" autocomplete="off">
@@ -51,15 +57,10 @@
   </div>
 
   <details class="filters__more"{{ ' open' if more_open }}>
-    <summary>Więcej filtrów — region, pokoje, piętro, działka, kto wystawia, serwis</summary>
+    <summary>Więcej filtrów — powiat, dzielnica, pokoje, piętro, działka, kto wystawia, serwis</summary>
 
-    <div class="filters__legend">Gdzie</div>
+    <div class="filters__legend">Gdzie dokładnie</div>
     <div class="filters__group">
-      <div class="field"><label for="f-voiv">Województwo</label>
-        <select id="f-voiv" name="voivodeship"><option value="">cała Polska</option>
-          {% for v in voivodeships %}<option value="{{ v }}" {{ 'selected' if filters.voivodeship == v }}>{{ v }}</option>{% endfor %}
-        </select>
-      </div>
       <div class="field"><label for="f-county">Powiat</label>
         <input id="f-county" name="county" list="counties" value="{{ filters.county or '' }}"
                placeholder="np. nyski" autocomplete="off">
