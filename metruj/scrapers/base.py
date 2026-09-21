@@ -62,6 +62,21 @@ class ScrapeContext:
         """Zgodność wstecz: pierwsze województwo albo pusty łańcuch."""
         return self.voivodeships[0] if self.voivodeships else ""
 
+    def expand(self, template: str, field: str = "klucz") -> list[str]:
+        """Rozwija `{region}` w adresie na wszystkie województwa przebiegu.
+
+        Portale, które dzielą wyniki po województwach, mają w ścieżce jego
+        nazwę. Bez rozwinięcia scraper odpytywałby dosłowny adres
+        `/mieszkania/{region}/` i dostawał 404 — a w tabeli przebiegów
+        wyglądałoby to jak „źródło nic nie oddało".
+        """
+        if "{region}" not in template:
+            return [template]
+        return [
+            template.replace("{region}", str(entry.get(field) or entry.get("klucz") or ""))
+            for entry in self.regions
+        ]
+
 
 @dataclass
 class RawListing:

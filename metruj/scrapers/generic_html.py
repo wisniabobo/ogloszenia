@@ -163,7 +163,15 @@ class GenericHtmlScraper(BaseScraper):
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
         seen: set[str] = set()
         produced = 0
-        for section in self.build_sections(ctx):
+        # Podklasa może nadpisywać samo `build_urls` — tak robi np. Domiporta,
+        # która składa adres z własnych parametrów. Gdyby `run` znał wyłącznie
+        # sekcje, taka podklasa nie dostałaby ani jednego adresu i w tabeli
+        # przebiegów wyglądałoby to jak „portal nic nie oddał".
+        sections = self.build_sections(ctx)
+        if not sections:
+            urls = self.build_urls(ctx)
+            sections = [urls] if urls else []
+        for section in sections:
             empty_streak = 0
             for url in section:
                 if produced >= ctx.max_items:

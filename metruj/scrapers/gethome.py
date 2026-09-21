@@ -80,37 +80,38 @@ class GetHomeScraper(BaseScraper):
         seen: set[str] = set()
 
         for section in sections:
-            path = section["path"] if isinstance(section, dict) else section
-            for page in range(1, ctx.max_pages + 1):
-                try:
-                    tree = await self.html(BASE + path,
-                                           params={"page": page} if page > 1 else None)
-                except Exception:
-                    break
-                rows = (
-                    _state(tree)
-                    .get("offerList", {})
-                    .get("offers", {})
-                    .get("offers")
-                ) or []
-                if not rows:
-                    break
+            raw_path = section["path"] if isinstance(section, dict) else section
+            for path in ctx.expand(raw_path):
+                for page in range(1, ctx.max_pages + 1):
+                    try:
+                        tree = await self.html(
+                            BASE + path, params={"page": page} if page > 1 else None
+                        )
+                    except Exception:
+                        break
+                    rows = (
+                        _state(tree)
+                        .get("offerList", {})
+                        .get("offers", {})
+                        .get("offers")
+                    ) or []
+                    if not rows:
+                        break
 
-                fresh = 0
-                for row in rows:
-                    item = self._parse(row)
-                    if item is None or item.external_id in seen:
-                        continue
-                    seen.add(item.external_id)
-                    fresh += 1
-                    yield item
-                    produced += 1
-                    if produced >= ctx.max_items:
-                        return
-                if fresh == 0:
-                    break
+                    fresh = 0
+                    for row in rows:
+                        item = self._parse(row)
+                        if item is None or item.external_id in seen:
+                            continue
+                        seen.add(item.external_id)
+                        fresh += 1
+                        yield item
+                        produced += 1
+                        if produced >= ctx.max_items:
+                            return
+                    if fresh == 0:
+                        break
 
-    # ------------------------------------------------------------------ #
     def _parse(self, row: dict) -> RawListing | None:
         slug = clean(row.get("slug"))
         title = clean(row.get("name"))

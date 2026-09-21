@@ -19,13 +19,13 @@ OFFER_HREF = re.compile(r"/ob/\d+")
 #: Sprawdzone 20.09.2026. Sekcji „garaże" serwis nie prowadzi dla regionu
 #: (strona wstaje, ale jest pusta), a hal w ogóle nie ma w tym drzewie adresów.
 SECTIONS = [
-    {"path": "/nieruchomosci/mieszkania/opolskie", "transaction": "sprzedaz"},
-    {"path": "/nieruchomosci/domy/opolskie", "transaction": "sprzedaz"},
-    {"path": "/nieruchomosci/dzialki-grunty/opolskie", "transaction": "sprzedaz"},
-    {"path": "/nieruchomosci/lokale-uzytkowe/opolskie", "transaction": "sprzedaz"},
-    {"path": "/nieruchomosci/mieszkania/opolskie/wynajem", "transaction": "wynajem"},
-    {"path": "/nieruchomosci/domy/opolskie/wynajem", "transaction": "wynajem"},
-    {"path": "/nieruchomosci/lokale-uzytkowe/opolskie/wynajem", "transaction": "wynajem"},
+    {"path": "/nieruchomosci/mieszkania/{region}", "transaction": "sprzedaz"},
+    {"path": "/nieruchomosci/domy/{region}", "transaction": "sprzedaz"},
+    {"path": "/nieruchomosci/dzialki-grunty/{region}", "transaction": "sprzedaz"},
+    {"path": "/nieruchomosci/lokale-uzytkowe/{region}", "transaction": "sprzedaz"},
+    {"path": "/nieruchomosci/mieszkania/{region}/wynajem", "transaction": "wynajem"},
+    {"path": "/nieruchomosci/domy/{region}/wynajem", "transaction": "wynajem"},
+    {"path": "/nieruchomosci/lokale-uzytkowe/{region}/wynajem", "transaction": "wynajem"},
 ]
 
 

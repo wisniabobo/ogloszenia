@@ -93,6 +93,15 @@ def resolve(raw: RawListing) -> Location:
 
     # --- 2. miejscowość z pola portalu --------------------------------- #
     portal_city = clean(raw.city or "")
+    # Portal potrafi wstawić w pole miejscowości nazwę województwa — dzieje się
+    # to zawsze, gdy wyszukiwanie obejmuje cały region, a karta nie podaje nic
+    # dokładniejszego. Taki wpis nie jest miejscowością i nie może nią zostać:
+    # wszystkie oferty z regionu dostawały wtedy ten sam odcisk parametrów
+    # i zlewały się w jedną ofertę.
+    as_region = known_voivodeship(portal_city)
+    if as_region:
+        result.voivodeship = result.voivodeship or as_region
+        portal_city = ""
     if portal_city:
         matched = resolve_place(portal_city, voivodeship_hint=result.voivodeship)
         result.city = matched.get("city") or portal_city

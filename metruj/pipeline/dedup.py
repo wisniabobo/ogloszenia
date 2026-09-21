@@ -25,6 +25,7 @@ ten, kto pierwszy wystawił).
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 
 from rapidfuzz import fuzz
@@ -45,6 +46,11 @@ TEXT_THRESHOLD = 88
 CORROBORATION_THRESHOLD = 80
 #: Poniżej tylu znaków opis jest zbyt ogólny, żeby cokolwiek potwierdzać.
 MIN_DESCRIPTION = 200
+#: Gdy jedynym potwierdzeniem odcisku jest podobna treść, ceny muszą się
+#: prawie zgadzać. Deweloper wystawia kilkadziesiąt mieszkań z tym samym
+#: opisem i podobnym metrażem — różni je numer lokalu i właśnie cena.
+#: Ta sama oferta przepisana na drugi portal ma zwykle cenę co do złotówki.
+CORROBORATION_PRICE_SPREAD = 0.05
 #: okno czasowe, w którym w ogóle szukamy duplikatów
 WINDOW_DAYS = 400
 
@@ -144,8 +150,24 @@ def _match(a: Listing, b: Listing) -> tuple[str, float] | None:
     if not _compatible(a, b):
         return None
 
+    # Dwie pozycje z **tego samego** portalu o różnych cenach to dwie różne
+    # nieruchomości. Portal nie wystawia jednego mieszkania dwa razy w dwóch
+    # cenach — wystawia dwa mieszkania. Tak właśnie wyglądają inwestycje
+    # deweloperskie: kilkadziesiąt lokali pod jednym, identycznym opisem,
+    # różniących się wyłącznie ceną. Między portalami różnica ceny jest
+    # normalna (inna prowizja), więc ta zasada dotyczy tylko jednego źródła.
+    if (
+        a.source_key == b.source_key
+        and a.price and b.price
+        and abs(a.price - b.price) > 1.0
+    ):
+        return None
+
     if a.phone_fingerprint and a.phone_fingerprint == b.phone_fingerprint:
-        if _similar_area(a.area, b.area):
+        # Ten sam numer to mocny sygnał, ale tylko przy znanym metrażu:
+        # jeden pośrednik ma na kontakcie kilkadziesiąt różnych mieszkań,
+        # a brak metrażu po obu stronach nie jest zgodnością, tylko niewiedzą.
+        if a.area and b.area and _similar_area(a.area, b.area):
             return "phone", 0.97
 
     if a.text_shingle and a.text_shingle == b.text_shingle:
@@ -159,7 +181,11 @@ def _match(a: Listing, b: Listing) -> tuple[str, float] | None:
         if a.street and b.street:
             return "fingerprint", 0.93     # ta sama ulica, ten sam metraż
         confirmation = _text_similarity(a, b)
-        if confirmation is not None and confirmation >= CORROBORATION_THRESHOLD:
+        if (
+            confirmation is not None
+            and confirmation >= CORROBORATION_THRESHOLD
+            and _similar_price(a, b, CORROBORATION_PRICE_SPREAD)
+        ):
             return "fingerprint", round(min(0.92, confirmation / 100), 2)
         return None
 
@@ -176,6 +202,13 @@ def _match(a: Listing, b: Listing) -> tuple[str, float] | None:
             if desc_score >= TEXT_THRESHOLD - 8:
                 return "text", round(min(title_score, desc_score) / 100, 2)
     return None
+
+
+def _similar_price(a: Listing, b: Listing, spread: float) -> bool:
+    """Czy ceny są na tyle blisko, żeby mówić o tej samej nieruchomości."""
+    if not a.price or not b.price:
+        return True          # brak ceny nie jest sprzecznością
+    return abs(a.price - b.price) / max(a.price, b.price) <= spread
 
 
 def _text_similarity(a: Listing, b: Listing) -> float | None:
@@ -200,6 +233,18 @@ def _text_similarity(a: Listing, b: Listing) -> float | None:
 #: o ile mogą różnić się ceny tej samej nieruchomości na dwóch portalach
 MAX_PRICE_SPREAD = 0.25
 
+#: Numer lokalu w tytule: „Mieszkanie nr 23", „lok. 4", „M12".
+#: Deweloperzy wystawiają kilkadziesiąt mieszkań z tym samym opisem i niemal
+#: tym samym metrażem — numer w tytule jest wtedy jedyną rzeczą, która je
+#: rozróżnia. Bez tego „nr 23" i „nr 29" z jednego budynku stawały się
+#: tą samą ofertą.
+UNIT_NUMBER = re.compile(r"\b(?:nr|lok\.?|lokal|mieszkanie nr|apartament nr|M)\s*(\d{1,4})\b", re.I)
+
+
+def _unit_number(listing: Listing) -> str | None:
+    match = UNIT_NUMBER.search(listing.title or "")
+    return match.group(1) if match else None
+
 
 def _compatible(a: Listing, b: Listing) -> bool:
     """Sprawdza cechy, których część portali nie podaje.
@@ -208,6 +253,9 @@ def _compatible(a: Listing, b: Listing) -> bool:
     znane wartości — inna ulica albo cena rozjeżdżająca się o ćwierć.
     """
     if a.street and b.street and norm_key(a.street) != norm_key(b.street):
+        return False
+    unit_a, unit_b = _unit_number(a), _unit_number(b)
+    if unit_a and unit_b and unit_a != unit_b:
         return False
     if a.floor is not None and b.floor is not None and a.floor != b.floor:
         return False

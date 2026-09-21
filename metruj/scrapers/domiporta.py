@@ -9,13 +9,13 @@ from .generic_html import GenericHtmlScraper
 BASE = "https://www.domiporta.pl"
 
 SECTIONS = [
-    "mieszkanie/sprzedam/opolskie",
-    "mieszkanie/wynajme/opolskie",
-    "dom/sprzedam/opolskie",
-    "dom/wynajme/opolskie",
-    "dzialka/sprzedam/opolskie",
-    "lokal/sprzedam/opolskie",
-    "garaz/sprzedam/opolskie",
+    "mieszkanie/sprzedam/{region}",
+    "mieszkanie/wynajme/{region}",
+    "dom/sprzedam/{region}",
+    "dom/wynajme/{region}",
+    "dzialka/sprzedam/{region}",
+    "lokal/sprzedam/{region}",
+    "garaz/sprzedam/{region}",
 ]
 
 DEFAULT_SELECTORS = {
@@ -38,10 +38,18 @@ class DomiportaScraper(GenericHtmlScraper):
         super().__init__(client, DEFAULT_SELECTORS | (config or {}), source_key=self.key,
                          kind=self.kind, name=self.name)
 
-    def build_urls(self, ctx: ScrapeContext) -> list[str]:
+    def build_sections(self, ctx: ScrapeContext) -> list[list[str]]:
+        """Jedna sekcja = jedna kategoria w jednym województwie.
+
+        Podział ma znaczenie przy zatrzymywaniu: wyczerpane wyniki mieszkań
+        w Opolskiem nie mogą przerwać zbierania domów na Mazowszu.
+        """
         sections = self.config.get("sections") or SECTIONS
         return [
-            f"{BASE}/{section}?PageNumber={page}&Sort=Newest"
+            [
+                f"{BASE}/{path}?PageNumber={page}&Sort=Newest"
+                for page in range(1, ctx.max_pages + 1)
+            ]
             for section in sections
-            for page in range(1, ctx.max_pages + 1)
+            for path in ctx.expand(section)
         ]

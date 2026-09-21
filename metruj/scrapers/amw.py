@@ -199,6 +199,8 @@ class AMWScraper(BaseScraper):
             event_date=event_date,
             images=images,
             extra={k: v for k, v in location.items() if v},
-            # Województwo odczytane z karty, nie zgadnięte z treści.
-            region_assured=(location.get("wojewodztwo") or "") == "opolskie",
+            # Województwo odczytane z karty, nie zgadnięte z treści — dlatego
+            # trafia wprost do pola, a nie do rozpoznawania z tekstu.
+            voivodeship=clean(location.get("wojewodztwo") or "") or None,
+            region_assured=bool(location.get("wojewodztwo")),
         )

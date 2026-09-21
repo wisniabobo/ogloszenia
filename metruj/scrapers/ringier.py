@@ -26,6 +26,7 @@ from urllib.parse import urljoin
 
 from selectolax.parser import Node
 
+from ..geo import known_voivodeship, lookup
 from ..models import OfferKind, SellerType, TransactionType
 from ..utils.text import clean, parse_datetime, parse_number
 from .base import BaseScraper, RawListing, ScrapeContext
@@ -52,6 +53,17 @@ ADDED = re.compile(r"Dodane:\s*([\d.\-]{8,10})")
 SHOW_MORE = re.compile(r"^\s*(?:Zobacz opis|Pokaż opis|Zwiń)\s*", re.I)
 
 
+def _is_county(name: str) -> bool:
+    """Czy nazwa jest powiatem, a nie miejscowością („świecki", „nyski")."""
+    units = lookup(name)
+    return bool(units) and all(unit.kind == "powiat" for unit in units)
+
+
+def _is_place(name: str) -> bool:
+    """Czy rejestr TERYT zna tę nazwę jako miasto albo gminę."""
+    return any(unit.kind == "gmina" for unit in lookup(name))
+
+
 class RingierScraper(BaseScraper):
     """Podklasy podają `base_url`, `offer_href` i sekcje w konfiguracji."""
 
@@ -64,31 +76,35 @@ class RingierScraper(BaseScraper):
         seen: set[str] = set()
 
         for section in sections:
-            path = section["path"] if isinstance(section, dict) else section
+            raw_path = section["path"] if isinstance(section, dict) else section
             transaction = TransactionType(
                 section.get("transaction", "sprzedaz") if isinstance(section, dict) else "sprzedaz"
             )
-            for page in range(1, ctx.max_pages + 1):
-                url = urljoin(self.base_url, path)
-                params = {"page": page} if page > 1 else None
-                try:
-                    tree = await self.html(url, params=params)
-                except Exception:
-                    break
+            # Adres sekcji zawiera województwo, więc jedna pozycja w tablicy
+            # obsługuje wszystkie szesnaście — inaczej portal oddawałby wyniki
+            # tylko z tego jednego, które ktoś kiedyś wpisał w kodzie.
+            for path in ctx.expand(raw_path):
+                for page in range(1, ctx.max_pages + 1):
+                    url = urljoin(self.base_url, path)
+                    params = {"page": page} if page > 1 else None
+                    try:
+                        tree = await self.html(url, params=params)
+                    except Exception:
+                        break
 
-                fresh = 0
-                for card in tree.css(CARD):
-                    item = self._parse_card(card, transaction)
-                    if item is None or item.external_id in seen:
-                        continue
-                    seen.add(item.external_id)
-                    fresh += 1
-                    yield item
-                    produced += 1
-                    if produced >= ctx.max_items:
-                        return
-                if fresh == 0:
-                    break  # serwis oddał tę samą stronę albo skończyły się wyniki
+                    fresh = 0
+                    for card in tree.css(CARD):
+                        item = self._parse_card(card, transaction)
+                        if item is None or item.external_id in seen:
+                            continue
+                        seen.add(item.external_id)
+                        fresh += 1
+                        yield item
+                        produced += 1
+                        if produced >= ctx.max_items:
+                            return
+                    if fresh == 0:
+                        break  # serwis oddał tę samą stronę albo koniec wyników
 
     # ------------------------------------------------------------------ #
     def _parse_card(self, card: Node, transaction: TransactionType) -> RawListing | None:
@@ -122,14 +138,34 @@ class RingierScraper(BaseScraper):
                 floor = 0 if m.group(1).lower() == "parter" else int(m.group(1))
                 floors_total = int(m.group(2))
 
-        # „Jana Bytnara «Rudego», ZWM, Opole, opolskie" — od końca:
-        # województwo, miasto, a wcześniej dzielnica i ulica.
+        # „Jana Bytnara «Rudego», ZWM, Opole, opolskie" — cztery człony, ale
+        # bywa ich dwa albo pięć, a kolejność nie zawsze jest ta sama.
+        # Czytanie po pozycji dawało w polu „miasto" raz powiat („świecki"),
+        # raz dzielnicę („Ponikwoda"), raz nazwę województwa — a każda z tych
+        # pomyłek psuła potem odcisk oferty i porównanie z medianą okolicy.
+        # Dlatego o tym, który człon jest miejscowością, rozstrzyga rejestr
+        # TERYT, a nie miejsce w napisie.
         parts = [clean(p) for p in (self.text(card, LOCATION) or "").split(",") if clean(p)]
-        if parts and parts[-1].lower() == "opolskie":
-            parts.pop()
-        city = parts.pop() if parts else None
-        district = parts.pop() if parts else None
-        street = ", ".join(parts) if parts else None
+        location_text = ", ".join(parts) or None
+        voivodeship = county = city = district = street = None
+
+        if parts and known_voivodeship(parts[-1]):
+            voivodeship = known_voivodeship(parts.pop())
+        if parts and _is_county(parts[-1]):
+            county = parts.pop()
+
+        # Miejscowością jest ten człon, który rejestr zna jako miasto albo
+        # gminę — szukamy od końca, bo tam stoją jednostki najogólniejsze.
+        for index in range(len(parts) - 1, -1, -1):
+            if _is_place(parts[index]):
+                city = parts.pop(index)
+                break
+        if city is None and parts:
+            city = parts.pop()          # rejestr nie zna — bierzemy ostatni człon
+        if parts:
+            district = parts.pop()
+        if parts:
+            street = ", ".join(parts)
 
         description = clean(SHOW_MORE.sub("", self.text(card, DESCRIPTION)))
         if description.startswith(title):
@@ -160,6 +196,9 @@ class RingierScraper(BaseScraper):
             floor=floor,
             floors_total=floors_total,
             city=city,
+            county=county,
+            voivodeship=voivodeship,
+            location_text=location_text,
             district=district,
             street=street,
             images=images[:1],

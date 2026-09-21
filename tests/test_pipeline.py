@@ -184,6 +184,69 @@ class TestDeduplikacja:
         assert second.is_original is False
         assert second.duplicate_of_id == first.id
 
+    def test_ten_sam_portal_dwie_ceny_to_dwa_mieszkania(self, session):
+        """Deweloper wystawia kilkadziesiąt lokali pod jednym opisem.
+
+        Z produkcji: „Nowe mieszkanie trzypokojowe: Wrocław Iwiny" za 669 312
+        i za 678 163 zł to dwa różne lokale w tej samej inwestycji, a nie
+        ta sama oferta w dwóch cenach. Portal nie wystawia jednego mieszkania
+        dwa razy z różną ceną.
+        """
+        opis = (
+            "Nowa inwestycja we Wrocławiu. Mieszkania o wysokim standardzie "
+            "wykończenia, z balkonem lub ogródkiem, w budynku z windą i halą "
+            "garażową. Termin oddania: czwarty kwartał. Zapraszamy do kontaktu."
+        )
+        self._add(
+            session, external_id="D1", source_key="deweloper_portal",
+            url="https://d.pl/1", title="Nowe mieszkanie trzypokojowe: Wrocław Iwiny",
+            description=opis, city="Wrocław", area=72.0, rooms=3, price=669312.0, street=None,
+        )
+        other = self._add(
+            session, external_id="D2", source_key="deweloper_portal",
+            url="https://d.pl/2", title="Nowe mieszkanie trzypokojowe: Wrocław Iwiny",
+            description=opis, city="Wrocław", area=72.0, rooms=3, price=678163.0, street=None,
+        )
+        link_duplicates(session, other)
+        session.flush()
+        assert other.is_original is True
+
+    def test_numer_lokalu_rozroznia_mieszkania(self, session):
+        opis = (
+            "Mieszkanie w nowej inwestycji, wysoki standard, winda, balkon, "
+            "hala garażowa w cenie. Doskonała lokalizacja blisko centrum. "
+            "Zapraszamy na prezentację w biurze sprzedaży inwestycji."
+        )
+        self._add(
+            session, external_id="N1", source_key="portal_a", url="https://a.pl/n1",
+            title="Mieszkanie nr 23 | 45,96 m² | 2 piętro", description=opis,
+            city="Świecie", area=45.0, rooms=2, price=404337.0, street=None,
+        )
+        other = self._add(
+            session, external_id="N2", source_key="portal_b", url="https://b.pl/n2",
+            title="Mieszkanie nr 29 | 45,81 m² | Os. Jagiełły", description=opis,
+            city="Świecie", area=45.0, rooms=2, price=411293.0, street=None,
+        )
+        link_duplicates(session, other)
+        session.flush()
+        assert other.is_original is True
+
+    def test_ten_sam_numer_bez_metrazu_nie_laczy(self, session):
+        """Jeden pośrednik ma na kontakcie kilkadziesiąt różnych mieszkań."""
+        self._add(
+            session, external_id="P1", source_key="portal_a", url="https://a.pl/p1",
+            title="Mieszkanie w centrum", description="Kontakt 537 123 123.",
+            city="Opole", area=None, price=390000.0, street=None,
+        )
+        other = self._add(
+            session, external_id="P2", source_key="portal_b", url="https://b.pl/p2",
+            title="Dom pod miastem", description="Kontakt 537 123 123.",
+            city="Opole", area=None, price=420000.0, street=None,
+        )
+        link_duplicates(session, other)
+        session.flush()
+        assert other.is_original is True
+
     def test_rozne_licytacje_o_tym_samym_tytule(self, session):
         """Obwieszczenia bywają zatytułowane identycznie — to nie czyni ich kopiami."""
         from metruj.models import OfferKind

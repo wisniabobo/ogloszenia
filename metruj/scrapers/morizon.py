@@ -15,15 +15,15 @@ BASE = "https://www.morizon.pl"
 
 OFFER_HREF = re.compile(r"/oferta/")
 
-#: Sprawdzone 20.09.2026. „/nieruchomosci/opolskie/" to zbiorcza lista
+#: Sprawdzone 20.09.2026. „/nieruchomosci/{region}/" to zbiorcza lista
 #: wszystkich typów — trzymamy ją jako siatkę bezpieczeństwa, gdyby serwis
 #: przemianował którąś z sekcji szczegółowych.
 SECTIONS = [
-    {"path": "/mieszkania/opolskie/", "transaction": "sprzedaz"},
-    {"path": "/domy/opolskie/", "transaction": "sprzedaz"},
-    {"path": "/dzialki/opolskie/", "transaction": "sprzedaz"},
-    {"path": "/nieruchomosci/opolskie/", "transaction": "sprzedaz"},
-    {"path": "/do-wynajecia/mieszkania/opolskie/", "transaction": "wynajem"},
+    {"path": "/mieszkania/{region}/", "transaction": "sprzedaz"},
+    {"path": "/domy/{region}/", "transaction": "sprzedaz"},
+    {"path": "/dzialki/{region}/", "transaction": "sprzedaz"},
+    {"path": "/nieruchomosci/{region}/", "transaction": "sprzedaz"},
+    {"path": "/do-wynajecia/mieszkania/{region}/", "transaction": "wynajem"},
 ]
 
 
