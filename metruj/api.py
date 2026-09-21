@@ -275,6 +275,34 @@ app.mount(
 )
 
 
+#: Ile sekund wolno podawać zapamiętaną odpowiedź na pytania, których
+#: odpowiedź zmienia się raz na przebieg zbierania.
+CACHE_TTL = 180
+
+_cache: dict[str, tuple[float, Any]] = {}
+
+
+def cached(key: str, build, ttl: int = CACHE_TTL):
+    """Wynik zapamiętany na krótko — dla zapytań zbiorczych po całej bazie.
+
+    Lista podpowiadanych miejscowości i liczby na pulpicie wymagają przejścia
+    po wszystkich ofertach. Przy jednym województwie kosztowało to milisekundy;
+    przy krajowym zbiorze każde otwarcie strony liczyło je od nowa i widać to
+    było w czasie odpowiedzi. Zmieniają się raz na przebieg zbierania, więc
+    trzymanie ich przez trzy minuty niczego nie postarza w sposób, który
+    ktokolwiek zauważy.
+    """
+    import time
+
+    now = time.monotonic()
+    hit = _cache.get(key)
+    if hit and now - hit[0] < ttl:
+        return hit[1]
+    value = build()
+    _cache[key] = (now, value)
+    return value
+
+
 def suggest_cities(db: Session, limit: int = 400) -> list[str]:
     """Miejscowości do podpowiedzi w wyszukiwarce.
 
@@ -283,15 +311,19 @@ def suggest_cities(db: Session, limit: int = 400) -> list[str]:
     zostaje krajowa lista miast z rejestru TERYT, żeby pole podpowiedzi nie
     świeciło pustką.
     """
-    rows = db.execute(
-        select(Listing.city, func.count(Listing.id).label("n"))
-        .where(Listing.city.is_not(None))
-        .group_by(Listing.city)
-        .order_by(desc("n"))
-        .limit(limit)
-    ).all()
-    found = [row[0] for row in rows if row[0]]
-    return found or town_names()[:limit]
+
+    def build() -> list[str]:
+        rows = db.execute(
+            select(Listing.city, func.count(Listing.id).label("n"))
+            .where(Listing.city.is_not(None))
+            .group_by(Listing.city)
+            .order_by(desc("n"))
+            .limit(limit)
+        ).all()
+        found = [row[0] for row in rows if row[0]]
+        return found or town_names()[:limit]
+
+    return cached(f"cities:{limit}", build)
 
 
 #: Filtry schowane w rozwijanej sekcji. Sekcja otwiera się, gdy użytkownik
@@ -507,7 +539,7 @@ def view_home(request: Request, db: DB):
     kto wchodzi tu po mieszkanie, ma zacząć od szukania, a nie od tabeli
     przebiegów zbierania.
     """
-    stats = dashboard_stats(db)
+    stats = cached("stats", lambda: dashboard_stats(db))
     newest = list(
         db.scalars(
             apply_sort(apply_filters(select(Listing), {"only_original": True}), "najnowsze").limit(9)
@@ -522,7 +554,7 @@ def view_home(request: Request, db: DB):
 
 @app.get("/rynek", response_class=HTMLResponse)
 def view_dashboard(request: Request, db: DB):
-    stats = dashboard_stats(db)
+    stats = cached("stats", lambda: dashboard_stats(db))
     newest = list(
         db.scalars(
             apply_sort(apply_filters(select(Listing), {"only_original": True}), "najnowsze").limit(6)
@@ -935,7 +967,7 @@ async def api_parcel(listing_id: int, db: DB) -> dict:
 
 @app.get("/api/stats")
 def api_stats(db: DB) -> dict:
-    return dashboard_stats(db)
+    return cached("stats", lambda: dashboard_stats(db))
 
 
 @app.get("/api/sources")
