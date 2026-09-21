@@ -315,8 +315,12 @@ class OtodomScraper(BaseScraper):
             seller_type=seller_type,
             seller_name=clean((agency or {}).get("name") or "") or None,
             images=[i for i in images if i][:12],
-            published_at=parse_datetime(row.get("dateCreatedFirst") or row.get("dateCreated")),
-            source_updated_at=parse_datetime(row.get("pushedUpAt") or row.get("modifiedAt")),
+            published_at=parse_datetime(
+                row.get("dateCreatedFirst") or row.get("dateCreated"), naive_local=True
+            ),
+            source_updated_at=parse_datetime(
+                row.get("pushedUpAt") or row.get("modifiedAt"), naive_local=True
+            ),
             property_type=property_type,
             transaction=ttype,
             market="pierwotny" if row.get("market") == "PRIMARY" else

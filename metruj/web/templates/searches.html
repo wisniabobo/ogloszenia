@@ -23,7 +23,7 @@
     </td>
     <td>{{ (search.channels or [])|join(', ') }}</td>
     <td class="num">{{ search.hits }}</td>
-    <td class="nowrap muted">{{ search.last_fired_at.strftime('%d.%m, %H:%M') if search.last_fired_at else '—' }}</td>
+    <td class="nowrap muted">{{ (search.last_fired_at|pl).strftime('%d.%m, %H:%M') if search.last_fired_at else '—' }}</td>
     <td style="text-align:right">
       <button class="btn btn--quiet btn--sm"
         onclick="fetch('/api/searches/{{ search.id }}',{method:'DELETE'}).then(()=>location.reload())">Usuń</button>

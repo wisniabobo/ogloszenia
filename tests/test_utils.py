@@ -160,6 +160,28 @@ class TestDatyISO:
         assert parse_datetime(1757672494).strftime("%Y-%m-%d") == "2025-09-12"
         assert parse_datetime(1757672494000).strftime("%Y-%m-%d") == "2025-09-12"
 
+    def test_otodom_podaje_czas_polski_bez_strefy(self):
+        from datetime import datetime
+
+        # „2026-09-21 19:13:17" to 17:13 UTC — a nie dwie godziny w przyszłości
+        assert parse_datetime("2026-09-21 19:13:17", naive_local=True) == datetime(2026, 9, 21, 17, 13, 17)
+        # zapis ze strefą rozstrzyga sam
+        assert parse_datetime("2026-09-21T19:13:18+02:00", naive_local=True) == datetime(2026, 9, 21, 17, 13, 18)
+        # bez flagi zapis bez strefy zostaje, jak był
+        assert parse_datetime("2026-09-21 19:13:17") == datetime(2026, 9, 21, 19, 13, 17)
+
+    def test_polnoc_w_polsce(self):
+        from datetime import datetime
+
+        from metruj.utils.text import polish_midnight_utc
+
+        # latem północ w Polsce to 22:00 UTC poprzedniego dnia
+        assert polish_midnight_utc(datetime(2026, 9, 21, 17, 0)) == datetime(2026, 9, 20, 22, 0)
+        # 23:30 UTC to już następny dzień w Polsce
+        assert polish_midnight_utc(datetime(2026, 9, 21, 23, 30)) == datetime(2026, 9, 21, 22, 0)
+        # zimą — 23:00 UTC
+        assert polish_midnight_utc(datetime(2026, 12, 5, 12, 0)) == datetime(2026, 12, 4, 23, 0)
+
     def test_termin_licytacji_w_czasie_polskim(self):
         from datetime import datetime
 

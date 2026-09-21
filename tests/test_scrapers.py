@@ -237,6 +237,48 @@ async def test_generic_czyta_selektory_i_sygnature():
     assert items[1].case_number == "Km 45/24"
 
 
+DOMIPORTA_PAGE = """<html><head><script type="application/ld+json">
+{"@context": "https://schema.org", "@graph": [
+  {"@type": "WebPage", "name": "Mieszkania: opolskie"},
+  {"@type": "ItemList", "itemListElement": [{"@type": "ListItem", "position": 1, "item": {
+    "@type": ["Product", "RealEstateListing"],
+    "name": "Do sprzedania nowoczesne 3-pokojowe mieszkanie z ogródkiem w Górkach: Górki",
+    "url": "https://www.domiporta.pl/nieruchomosci/sprzedam-mieszkanie-trzypokojowe-gorki-57m2/156872270",
+    "datePosted": "2026-09-08",
+    "offers": {"@type": "Offer", "price": 535000.0, "priceCurrency": "PLN",
+      "itemOffered": {"@type": "Accommodation", "numberOfRooms": 3,
+        "floorSize": {"@type": "QuantitativeValue", "value": 57.2},
+        "address": {"@type": "PostalAddress", "addressLocality": "Górki",
+                    "addressRegion": "Opolskie", "streetAddress": "Lipowa"}}}
+  }}]}
+]}
+</script></head><body></body></html>"""
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_jsonld_z_adresem_w_itemoffered():
+    """Domiporta: adres, metraż i pokoje siedzą w `offers.itemOffered`."""
+    respx.get("https://example.pl/dp").mock(return_value=httpx.Response(200, html=DOMIPORTA_PAGE))
+
+    async with HttpClient() as client:
+        scraper = GenericHtmlScraper(client, {"urls": ["https://example.pl/dp"]}, source_key="test_dp")
+        items = await collect(scraper, ScrapeContext(max_pages=1, max_items=10))
+
+    assert len(items) == 1
+    item = items[0]
+    assert (item.city, item.voivodeship, item.street) == ("Górki", "Opolskie", "Lipowa")
+    assert (item.area, item.rooms, item.price) == (57.2, 3, 535000)
+    # 8 września, nie 9 sierpnia — i nie data zebrania
+    assert (item.published_at.year, item.published_at.month, item.published_at.day) == (2026, 9, 8)
+
+    from metruj.pipeline.location import resolve
+
+    found = resolve(item)
+    assert found.voivodeship == "opolskie"
+    assert found.city == "Górki"
+
+
 def test_rozpoznanie_typu_nieruchomosci():
     assert guess_property_type("Sprzedam dom wolnostojący").value == "dom"
     assert guess_property_type("Działka budowlana 1200 m2").value == "dzialka"

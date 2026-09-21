@@ -218,12 +218,14 @@ def _relocate_text_sources(session: Session) -> int:
     """
     rows = session.execute(
         select(Listing.id, Listing.source_key, Listing.title, Listing.city,
-               Listing.voivodeship)
+               Listing.voivodeship, Listing.raw)
         .where(Listing.source_key.notin_(PORTAL_SOURCES))
     ).all()
 
     changed = 0
     for row in rows:
+        if _structured_address(row.raw)["city"]:
+            continue  # portal podał adres — ten ma pierwszeństwo przed tytułem
         found = detect_location(row.title)
         if not found.city or found.basis not in ("miasto", "wskazówka"):
             continue
@@ -236,6 +238,61 @@ def _relocate_text_sources(session: Session) -> int:
                 commune=found.commune,
                 voivodeship=found.voivodeship,
                 teryt=found.teryt,
+                lat=None, lon=None, geo_precision=None, geo_source=None,
+            )
+        )
+        changed += 1
+    return changed
+
+
+def _structured_address(raw) -> dict:
+    """Adres z zapisanego ogłoszenia schema.org (Domiporta i inne portale HTML)."""
+    from ..scrapers.generic_html import json_ld_fields
+
+    element = raw.get("jsonld") if isinstance(raw, dict) else None
+    if not isinstance(element, dict):
+        return {"city": None, "street": None, "voivodeship": None}
+    return json_ld_fields(element)
+
+
+def _relocate_structured(session: Session) -> int:
+    """Lokalizacja z adresu, który portal podał w danych strukturalnych.
+
+    Parser czytał adres tylko z pierwszego poziomu ogłoszenia schema.org,
+    a Domiporta trzyma go w `offers.itemOffered`. Miejscowość zgadywana
+    z tytułu trafiała wtedy do innego województwa: „Górki" (Opolskie)
+    do Zielonej Góry, Brożec do Broku, mieszkanie przy Rzeszowskiej
+    w Opolu — do Rzeszowa. Surowe ogłoszenie mamy zapisane, więc adres
+    czytamy od nowa i — gdy wychodzi inaczej — kasujemy współrzędne, żeby
+    geokoder policzył je dla właściwej miejscowości.
+    """
+    from ..scrapers.base import RawListing
+    from .location import resolve
+
+    rows = session.execute(
+        select(Listing.id, Listing.title, Listing.raw, Listing.city, Listing.voivodeship,
+               Listing.county, Listing.street)
+        .where(Listing.source_key.notin_(PORTAL_SOURCES))
+    ).all()
+    changed = 0
+    for row in rows:
+        address = _structured_address(row.raw)
+        if not address["city"]:
+            continue
+        found = resolve(RawListing(
+            external_id="", url="", title=row.title or "",
+            city=address["city"], street=address["street"], voivodeship=address["voivodeship"],
+        ))
+        if (found.city, found.voivodeship, found.county) == (row.city, row.voivodeship, row.county):
+            continue
+        session.execute(
+            update(Listing).where(Listing.id == row.id).values(
+                city=found.city,
+                county=found.county,
+                commune=found.commune,
+                voivodeship=found.voivodeship,
+                teryt=found.teryt,
+                street=found.street or row.street,
                 lat=None, lon=None, geo_precision=None, geo_source=None,
             )
         )
@@ -367,7 +424,11 @@ RAW_DATE_KEYS: dict[str, dict[str, tuple[str, ...]]] = {
                        "event_date": ("saleBeginDateTime",),
                        "deadline": ("depositDueDate", "saleEndDateTime")},
     "msig": {"published_at": ("dateOfPublication",)},
+    "domiporta": {"published_at": ("jsonld.datePosted",)},
 }
+
+#: Źródła, które podają czas polski bez strefy („2026-09-21 19:13:17").
+NAIVE_LOCAL_SOURCES = frozenset({"otodom"})
 
 #: Pola z godziną zegarową w Polsce, nie chwilą w UTC.
 LOCAL_TIME_FIELDS = frozenset({"event_date", "deadline"})
@@ -405,17 +466,29 @@ def _reparse_raw_dates(session: Session) -> int:
                 continue
             values = {}
             for field, keys in fields.items():
-                text = next((raw[k] for k in keys if raw.get(k)), None)
+                text = next((v for v in (_raw_value(raw, k) for k in keys) if v), None)
                 if not text:
                     continue
-                parse = parse_local_datetime if field in LOCAL_TIME_FIELDS else parse_datetime
-                moment = parse(text)
+                if field in LOCAL_TIME_FIELDS:
+                    moment = parse_local_datetime(text)
+                else:
+                    moment = parse_datetime(text, naive_local=source_key in NAIVE_LOCAL_SOURCES)
                 if moment != getattr(row, field):
                     values[field] = moment
             if values:
                 session.execute(update(Listing).where(Listing.id == row.id).values(**values))
                 changed += 1
     return changed
+
+
+def _raw_value(raw: dict, path: str):
+    """Wartość z surowej odpowiedzi; „jsonld.datePosted" schodzi o poziom niżej."""
+    value = raw
+    for key in path.split("."):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    return value
 
 
 def _unswap(moment):
@@ -491,7 +564,7 @@ def repair(session: Session, *, regeocode_all: bool = False) -> RepairStats:
     stats.prices, stats.price_per_m2 = _fix_prices(session)
     stats.land_area = _fix_land_area(session)
     stats.navigation = _deactivate_navigation(session)
-    stats.relocated = _relocate_text_sources(session)
+    stats.relocated = _relocate_text_sources(session) + _relocate_structured(session)
     stats.counties_as_cities = _county_as_city(session)
     stats.regions = _fix_regions(session)
     stats.stale_points = _recheck_coordinates(session)

@@ -36,7 +36,7 @@
         <td class="muted">{{ source.kind.value }}</td>
         <td class="num">{{ source.total_listings }}</td>
         <td class="nowrap muted">{{ source.interval_minutes }} min</td>
-        <td class="nowrap muted">{{ source.last_run_at.strftime('%d.%m, %H:%M') if source.last_run_at else '—' }}</td>
+        <td class="nowrap muted">{{ (source.last_run_at|pl).strftime('%d.%m, %H:%M') if source.last_run_at else '—' }}</td>
         <td class="nowrap">
           {% if source.config and source.config.get('requires_js') %}<span class="dot dot--warn"></span>wymaga przeglądarki
           {% elif not source.enabled %}<span class="dot dot--off"></span>wyłączone
@@ -60,7 +60,7 @@
   {% for run in recent %}
   <tr>
     <td>{{ source_name(run.source_key) }}</td>
-    <td class="nowrap muted">{{ run.started_at.strftime('%d.%m, %H:%M') }}</td>
+    <td class="nowrap muted">{{ (run.started_at|pl).strftime('%d.%m, %H:%M') }}</td>
     <td class="num">{{ run.fetched }}</td>
     <td class="num">{{ run.new }}</td>
     <td class="num">{{ run.duplicates }}</td>

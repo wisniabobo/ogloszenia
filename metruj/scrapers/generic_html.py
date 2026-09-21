@@ -74,6 +74,45 @@ def guess_transaction(*texts: str | None) -> TransactionType:
     return TransactionType.SPRZEDAZ
 
 
+def json_ld_fields(element: dict) -> dict:
+    """Adres, metraż, pokoje i data wystawienia z ogłoszenia schema.org.
+
+    Portale różnie zagnieżdżają te pola: raz wprost w ogłoszeniu, raz w
+    `offers.itemOffered` (Domiporta). Czytane tylko z pierwszego poziomu
+    przepadały — miejscowość trzeba było wtedy zgadywać z tytułu, a „Górki"
+    w Opolskiem lądowały w Zielonej Górze, Brożec w Broku na Mazowszu,
+    a mieszkanie przy Rzeszowskiej w Opolu — w Rzeszowie. Województwo
+    z `addressRegion` rozstrzyga, która z kilkunastu miejscowości o tej samej
+    nazwie jest właściwa.
+    """
+    offers = element.get("offers") or {}
+    if isinstance(offers, list):
+        offers = offers[0] if offers else {}
+    offered = offers.get("itemOffered") if isinstance(offers, dict) else None
+    layers = [element] + ([offered] if isinstance(offered, dict) else [])
+
+    def pick(key: str):
+        for layer in layers:
+            value = layer.get(key)
+            if value not in (None, "", {}, []):
+                return value
+        return None
+
+    address = pick("address")
+    address = address if isinstance(address, dict) else {}
+    floor_size = pick("floorSize")
+    area = parse_number(floor_size.get("value")) if isinstance(floor_size, dict) else None
+    rooms = parse_number(pick("numberOfRooms"))
+    return {
+        "city": clean(address.get("addressLocality") or "") or None,
+        "street": clean(address.get("streetAddress") or "") or None,
+        "voivodeship": clean(address.get("addressRegion") or "") or None,
+        "area": area,
+        "rooms": int(rooms) if rooms else None,
+        "published": element.get("datePosted") or element.get("datePublished"),
+    }
+
+
 class GenericHtmlScraper(BaseScraper):
     """Scraper sterowany słownikiem `config` ze źródła.
 
@@ -238,14 +277,8 @@ class GenericHtmlScraper(BaseScraper):
         if isinstance(offers, list):
             offers = offers[0] if offers else {}
         price = parse_number(offers.get("price") or element.get("price"))
-        area = None
-        floor_size = element.get("floorSize") or {}
-        if isinstance(floor_size, dict):
-            area = parse_number(floor_size.get("value"))
+        fields = json_ld_fields(element)
         description = clean(element.get("description") or "")
-        address = element.get("address") or {}
-        city = clean(address.get("addressLocality") or "") if isinstance(address, dict) else ""
-        street = clean(address.get("streetAddress") or "") if isinstance(address, dict) else ""
         images = element.get("image") or []
         if isinstance(images, str):
             images = [images]
@@ -260,10 +293,12 @@ class GenericHtmlScraper(BaseScraper):
             title=title,
             description=description or None,
             price=price,
-            area=area or extract_area(f"{title} {description}"),
-            rooms=parse_number(element.get("numberOfRooms")) and int(parse_number(element["numberOfRooms"])),
-            city=city or None,
-            street=street or None,
+            area=fields["area"] or extract_area(f"{title} {description}"),
+            rooms=fields["rooms"],
+            city=fields["city"],
+            street=fields["street"],
+            voivodeship=fields["voivodeship"],
+            published_at=parse_datetime(fields["published"]) if fields["published"] else None,
             images=[urljoin(page_url, i) for i in images if isinstance(i, str) and i][:12],
             property_type=guess_property_type(title, description),
             transaction=guess_transaction(title, description, page_url),

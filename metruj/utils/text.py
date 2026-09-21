@@ -144,11 +144,42 @@ def _to_local_naive(dt: datetime) -> datetime:
     return dt.astimezone(WARSAW).replace(tzinfo=None)
 
 
-def parse_datetime(value: str | datetime | int | float | None) -> datetime | None:
+def to_polish_time(moment: datetime | None) -> datetime | None:
+    """Znacznik z bazy (UTC) na godzinę, którą widzi człowiek w Polsce."""
+    if moment is None:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(WARSAW).replace(tzinfo=None)
+
+
+def polish_midnight_utc(now: datetime | None = None) -> datetime:
+    """Początek dzisiejszego dnia w Polsce, jako chwila w UTC.
+
+    „Dodane dziś" to od północy polskiego czasu, a nie ostatnie 24 godziny
+    ani doba liczona od północy UTC (która w Polsce wypada o 1:00 albo 2:00).
+    """
+    local = to_polish_time(now or datetime.now(timezone.utc).replace(tzinfo=None))
+    midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    return _to_utc_naive(midnight.replace(tzinfo=WARSAW))
+
+
+def parse_datetime(
+    value: str | datetime | int | float | None, *, naive_local: bool = False
+) -> datetime | None:
     """Chwila w UTC — dla dat wystawienia, odświeżenia i wszystkiego, co
-    porównujemy z `utcnow()`. Szczegóły odczytu opisuje `_parse_moment`."""
+    porównujemy z `utcnow()`. Szczegóły odczytu opisuje `_parse_moment`.
+
+    `naive_local` mówi, że zapis bez strefy to czas polski. Tak podaje daty
+    Otodom („2026-09-21 19:13:17" obok „2026-09-21T19:13:18+02:00" w tym samym
+    ogłoszeniu) — wzięty za UTC, lądował dwie godziny w przyszłości.
+    """
     moment = _parse_moment(value)
-    return _to_utc_naive(moment) if moment else None
+    if moment is None:
+        return None
+    if naive_local and moment.tzinfo is None:
+        moment = moment.replace(tzinfo=WARSAW)
+    return _to_utc_naive(moment)
 
 
 def parse_local_datetime(value: str | datetime | int | float | None) -> datetime | None:

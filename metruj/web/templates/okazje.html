@@ -45,7 +45,7 @@
   </div>
   <div class="dealstat">
     <div class="dealstat__label">Przeliczone</div>
-    <div class="dealstat__value">{{ computed_at.strftime('%d.%m, %H:%M') if computed_at else '—' }}</div>
+    <div class="dealstat__value">{{ (computed_at|pl).strftime('%d.%m, %H:%M') if computed_at else '—' }}</div>
     <div class="dealstat__hint">po ostatnim skanie</div>
   </div>
 </div>

@@ -51,6 +51,7 @@ from .query import (
     search_listings,
 )
 from .settings import get_settings
+from .utils.text import to_polish_time
 
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "web" / "templates"))
@@ -110,6 +111,7 @@ def source_name(key: str) -> str:
 
 templates.env.globals["source_name"] = source_name
 templates.env.filters["replace_param"] = _replace_param
+templates.env.filters["pl"] = to_polish_time
 templates.env.globals["asset"] = asset
 # Szablon karty oferty sam pyta o numery kontaktowe — inaczej każdy widok
 # musiałby je przekazywać osobno i łatwo byłoby o tym zapomnieć.

@@ -25,6 +25,7 @@ from .models import (
     TransactionType,
     utcnow,
 )
+from .utils.text import polish_midnight_utc
 
 SORTS = {
     # „Najnowsze" to najświeżej **wystawione**, nie najświeżej przez nas
@@ -215,7 +216,10 @@ def apply_filters(stmt: Select, filters: dict[str, Any] | Filters) -> Select:
         # spotkania, więc tydzień po starcie serwisu każda oferta wyglądała
         # na świeżą. Datę z portalu mamy przy 87% ogłoszeń; przy pozostałych
         # zostaje moment, w którym je zobaczyliśmy.
-        since = utcnow() - timedelta(days=PERIODS[f.period])
+        if f.period == "dzis":
+            since = polish_midnight_utc()
+        else:
+            since = utcnow() - timedelta(days=PERIODS[f.period])
         clauses.append(Listing.listed_at >= since)
 
     now = utcnow()
@@ -358,7 +362,7 @@ def dashboard_stats(session) -> dict[str, Any]:
         "original": count(active, original),
         "copies": count(active, Listing.is_original.is_(False)),
         # „Dodane dziś" = wystawione dziś, a nie zebrane dziś przez nas.
-        "today": count(active, Listing.listed_at >= now - timedelta(days=1)),
+        "today": count(active, Listing.listed_at >= polish_midnight_utc()),
         "week": count(active, Listing.listed_at >= now - timedelta(days=7)),
         "price_drops": count(active, original, Listing.initial_price.is_not(None),
                              Listing.price < Listing.initial_price),
