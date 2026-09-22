@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Aktualizacja działającej instalacji na serwerze.
 #
-#   ./deploy/deploy.sh root@bot.wisnia.dev
+#   ./deploy/deploy.sh root@twoja.domena.pl
 #
 # Pierwszą instalację robi deploy/install.sh — ten skrypt zakłada, że usługi
 # już istnieją, i tylko podciąga nowy kod.
@@ -22,7 +22,7 @@ APP_USER="${APP_USER:-metruj}"
 BRANCH="${BRANCH:-main}"
 
 if [[ -z "$TARGET" ]]; then
-	echo "użycie: $0 user@host   (np. $0 root@bot.wisnia.dev)" >&2
+	echo "użycie: $0 user@host   (np. $0 root@twoja.domena.pl)" >&2
 	exit 1
 fi
 
@@ -63,4 +63,4 @@ ssh -o BatchMode=yes -o PasswordAuthentication=no "$TARGET" bash -euo pipefail <
 	systemctl list-timers --all --no-legend | grep metruj || true
 REMOTE
 
-echo "==> Gotowe. Sprawdź: https://bot.wisnia.dev/api/health"
+echo "==> Gotowe. Sprawdź: https://${TARGET#*@}/api/health"

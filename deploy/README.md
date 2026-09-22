@@ -6,7 +6,7 @@ Zaloguj się na serwer i wklej:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/wisniabobo/ogloszenia/main/deploy/bootstrap.sh \
-  | sudo bash -s -- bot.wisnia.dev twoj@email.pl
+  | sudo bash -s -- twoja.domena.pl twoj@email.pl
 ```
 
 Skrypt jest **idempotentny** — tą samą komendą aktualizujesz instalację.
@@ -25,10 +25,9 @@ Co robi, po kolei:
 
 ### Dlaczego aplikacja nie zajmuje portów 80/443
 
-Bo na serwerze zwykle coś już na nich stoi. Na `185.235.69.108` działa nginx
-obsługujący `wisnia.dev` — gdyby kontener przejął te porty, ta strona
-przestałaby działać. Dlatego aplikacja słucha wyłącznie na pętli zwrotnej,
-a ruch z internetu kieruje do niej istniejący nginx.
+Bo na serwerze zwykle coś już na nich stoi — choćby nginx obsługujący inne
+strony. Gdyby aplikacja przejęła te porty, przestałyby działać. Dlatego słucha
+wyłącznie na pętli zwrotnej, a ruch z internetu kieruje do niej istniejący nginx.
 
 Na **czystym** serwerze, bez własnego nginxa, można zamiast tego włączyć
 wbudowane Caddy (samo wystawia i odnawia certyfikat):
@@ -46,11 +45,11 @@ cp .env.example .env && nano .env      # DOMAIN, ACME_EMAIL, OGL_PHONE_HASH_SALT
 docker compose up -d --build
 docker compose exec web python -m metruj.cli init-db
 
-sudo cp deploy/nginx-vhost.conf /etc/nginx/sites-available/bot.wisnia.dev
-sudo ln -sf /etc/nginx/sites-available/bot.wisnia.dev /etc/nginx/sites-enabled/
+sudo cp deploy/nginx-vhost.conf /etc/nginx/sites-available/twoja.domena.pl
+sudo ln -sf /etc/nginx/sites-available/twoja.domena.pl /etc/nginx/sites-enabled/
 sudo mkdir -p /var/cache/nginx/ogloszenia
 sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d bot.wisnia.dev
+sudo certbot --nginx -d twoja.domena.pl
 ```
 
 ## Usługi

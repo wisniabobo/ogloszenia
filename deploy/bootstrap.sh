@@ -3,7 +3,7 @@
 # Instalacja na świeżym serwerze — uruchamiana BEZPOŚREDNIO NA NIM.
 #
 #   curl -fsSL https://raw.githubusercontent.com/wisniabobo/ogloszenia/main/deploy/bootstrap.sh \
-#     | sudo bash -s -- bot.wisnia.dev twoj@email.pl
+#     | sudo bash -s -- twoja.domena.pl twoj@email.pl
 #
 # Co robi:
 #   1. instaluje Dockera, jeśli go nie ma,
@@ -109,7 +109,7 @@ if command -v nginx >/dev/null 2>&1 && [[ -d /etc/nginx/sites-available ]]; then
 		cp -a "$VHOST" "$VHOST.bak.$(date +%s)"
 		echo "istniejący vhost zachowany jako kopia .bak"
 	fi
-	sed "s/bot\.wisnia\.dev/$DOMAIN/g" deploy/nginx-vhost.conf > "$VHOST"
+	sed "s/twoja\.domena\.pl/$DOMAIN/g" deploy/nginx-vhost.conf > "$VHOST"
 	ln -sf "$VHOST" "/etc/nginx/sites-enabled/$DOMAIN"
 	mkdir -p /var/cache/nginx/metruj
 	chown -R www-data:www-data /var/cache/nginx/metruj 2>/dev/null || true

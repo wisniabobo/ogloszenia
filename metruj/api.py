@@ -284,27 +284,48 @@ app.mount(
 CACHE_TTL = 180
 
 _cache: dict[str, tuple[float, Any]] = {}
+_refreshing: set[str] = set()
 
 
-def cached(key: str, build, ttl: int = CACHE_TTL):
+def cached(key: str, build, db: Session, ttl: int = CACHE_TTL):
     """Wynik zapamiętany na krótko — dla zapytań zbiorczych po całej bazie.
 
     Lista podpowiadanych miejscowości i liczby na pulpicie wymagają przejścia
-    po wszystkich ofertach. Przy jednym województwie kosztowało to milisekundy;
-    przy krajowym zbiorze każde otwarcie strony liczyło je od nowa i widać to
-    było w czasie odpowiedzi. Zmieniają się raz na przebieg zbierania, więc
-    trzymanie ich przez trzy minuty niczego nie postarza w sposób, który
-    ktokolwiek zauważy.
+    po wszystkich ofertach — przy 180 tys. ofert to kilka sekund. Zmieniają się
+    raz na przebieg zbierania, więc wystarczy je liczyć co kilka minut.
+
+    Po wygaśnięciu oddajemy od razu ostatni wynik, a nowy liczymy w tle
+    (z własną sesją bazy). Wcześniej co trzy minuty pierwszy odwiedzający
+    „Rynku" czekał ponad cztery sekundy na przeliczenie.
     """
+    import threading
     import time
 
     now = time.monotonic()
     hit = _cache.get(key)
     if hit and now - hit[0] < ttl:
         return hit[1]
-    value = build()
+    if hit:
+        if key not in _refreshing:
+            _refreshing.add(key)
+            threading.Thread(target=_refresh, args=(key, build), daemon=True).start()
+        return hit[1]
+    value = build(db)
     _cache[key] = (now, value)
     return value
+
+
+def _refresh(key: str, build) -> None:
+    import logging
+    import time
+
+    try:
+        with session_scope() as session:
+            _cache[key] = (time.monotonic(), build(session))
+    except Exception as exc:  # pamięć podręczna nie może wywrócić strony
+        logging.getLogger("metruj.web").warning("Nie przeliczono %s: %s", key, exc)
+    finally:
+        _refreshing.discard(key)
 
 
 def suggest_cities(db: Session, limit: int = 400) -> list[str]:
@@ -316,7 +337,7 @@ def suggest_cities(db: Session, limit: int = 400) -> list[str]:
     świeciło pustką.
     """
 
-    def build() -> list[str]:
+    def build(db: Session) -> list[str]:
         rows = db.execute(
             select(Listing.city, func.count(Listing.id).label("n"))
             .where(Listing.city.is_not(None))
@@ -327,7 +348,7 @@ def suggest_cities(db: Session, limit: int = 400) -> list[str]:
         found = [row[0] for row in rows if row[0]]
         return found or town_names()[:limit]
 
-    return cached(f"cities:{limit}", build)
+    return cached(f"cities:{limit}", build, db)
 
 
 #: Filtry schowane w rozwijanej sekcji. Sekcja otwiera się, gdy użytkownik
@@ -372,6 +393,17 @@ DB = Annotated[Session, Depends(get_db)]
 @app.on_event("startup")
 def _startup() -> None:
     init_db()
+
+    # Rozgrzanie pamięci podręcznej w tle: pierwszy odwiedzający po
+    # restarcie nie czeka na przeliczenie statystyk całej bazy.
+    import threading
+
+    def warm() -> None:
+        with session_scope() as session:
+            cached("stats", dashboard_stats, session)
+            suggest_cities(session)
+
+    threading.Thread(target=warm, daemon=True).start()
 
 
 # --------------------------------------------------------------------------- #
@@ -564,7 +596,7 @@ def view_home(request: Request, db: DB):
 
 @app.get("/rynek", response_class=HTMLResponse)
 def view_dashboard(request: Request, db: DB):
-    stats = cached("stats", lambda: dashboard_stats(db))
+    stats = cached("stats", dashboard_stats, db)
     newest = list(
         db.scalars(
             apply_sort(apply_filters(select(Listing), {"only_original": True}), "najnowsze").limit(6)
@@ -995,7 +1027,7 @@ async def api_parcel(listing_id: int, db: DB) -> dict:
 
 @app.get("/api/stats")
 def api_stats(db: DB) -> dict:
-    return cached("stats", lambda: dashboard_stats(db))
+    return cached("stats", dashboard_stats, db)
 
 
 @app.get("/api/sources")

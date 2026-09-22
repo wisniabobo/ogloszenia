@@ -2,7 +2,7 @@
 #
 # Instalacja bez Dockera — dla serwerów, na których już coś działa.
 #
-#   sudo bash deploy/install.sh bot.wisnia.dev twoj@email.pl
+#   sudo bash deploy/install.sh twoja.domena.pl twoj@email.pl
 #
 # Dlaczego nie Docker: jego demon przepisuje reguły iptables, a na serwerze
 # z kilkunastoma działającymi witrynami to niepotrzebne ryzyko. Tutaj jest
@@ -230,7 +230,7 @@ if command -v nginx >/dev/null 2>&1 && [[ -d /etc/nginx/sites-available ]]; then
 
 	VHOST="/etc/nginx/sites-available/$DOMAIN"
 	[[ -e "$VHOST" ]] && cp -a "$VHOST" "$VHOST.bak.$(date +%s)"
-	sed -e "s/bot\.wisnia\.dev/$DOMAIN/g" -e "s/127\.0\.0\.1:8000/127.0.0.1:$PORT/g" \
+	sed -e "s/twoja\.domena\.pl/$DOMAIN/g" -e "s/127\.0\.0\.1:8000/127.0.0.1:$PORT/g" \
 		"$APP_DIR/deploy/nginx-vhost.conf" > "$VHOST"
 	ln -sf "$VHOST" "/etc/nginx/sites-enabled/$DOMAIN"
 	mkdir -p /var/cache/nginx/metruj
