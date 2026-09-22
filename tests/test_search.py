@@ -29,11 +29,13 @@ def streets(session):
         listing = Listing(**data)
         session.add(listing)
         added.append(listing)
-    session.flush()
+    # Widoki web otwierają własną sesję, więc oferty muszą być zapisane,
+    # a nie tylko wypchnięte do transakcji testu.
+    session.commit()
     yield
     for listing in added:
         session.delete(listing)
-    session.flush()
+    session.commit()
 
 
 def _streets(session, **filters) -> set[str]:
@@ -80,3 +82,35 @@ def test_api_zle_parametry_strony():
     assert client.get("/api/listings?per_page=-1").json()["per_page"] == 1
     assert client.get("/api/geojson?limit=-5").status_code == 422
     assert client.get("/api/ulice?q=ab").status_code == 200
+
+
+def test_scalanie_wariantow_zapisu_ulicy():
+    from metruj.api import _street_label
+
+    assert _street_label("Al. Aleja Jana Pawła II") == "Jana Pawła II"
+    assert _street_label("aleja jana pawła ii") == "Jana Pawła II"
+    assert _street_label("ul. OZIMSKIEJ 3") == "Ozimska"
+    assert _street_label("okolice ul. Emila Zoli") == "Emila Zoli"
+
+
+def test_adres_porzadkuje_zapis_miejscowosci(session, streets):
+    """Jeden wynik = jeden adres: „wroclaw" przekierowuje na „Wrocław"."""
+    from fastapi.testclient import TestClient
+
+    import metruj.api as api
+    from metruj.api import app
+
+    # Podpowiedzi ulic są zapamiętywane na kilka minut — test dokłada świeże
+    # oferty, więc zaczynamy od czystej pamięci podręcznej.
+    api._cache.clear()
+    client = TestClient(app)
+    resp = client.get("/nieruchomosci?city=wroclaw&sort=okazje", follow_redirects=False)
+    assert resp.status_code == 301
+    assert resp.headers["location"] == "/nieruchomosci?city=Wroc%C5%82aw&sort=okazje"
+
+    # Poprawiamy pisownię ulicy, ale nie zamieniamy nazwy na inną ani dłuższą.
+    resp = client.get("/nieruchomosci?city=Wrocław&street=lodzka", follow_redirects=False)
+    assert resp.headers["location"].endswith("street=%C5%81%C3%B3dzka")
+    assert client.get(
+        "/nieruchomosci?city=Wrocław&street=Łódzka", follow_redirects=False
+    ).status_code == 200

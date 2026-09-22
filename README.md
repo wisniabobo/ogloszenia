@@ -57,6 +57,7 @@ samego rodzaju w tej samej miejscowości.
 ## Funkcje
 
 **Wyszukiwanie**
+- **Jeden adres na jeden wynik.** „?city=wroclaw” przekierowuje na „?city=Wrocław”, a „street=lodzka” na „street=Łódzka” — bez zmieniania nazwy na inną czy dłuższą.
 - **Ulica.** Nie trzeba trafiać w zapis z ogłoszenia: „ul. Browarna 12”, „browarna” i „Browarna” dają to samo, kolejność słów nie ma znaczenia („Miłosza Czesława” znajduje „Czesława Miłosza”), a odmiana jest rozumiana („Ozimska” znajduje też „Ozimskiej”). Pole podpowiada ulice, przy których naprawdę są oferty, z ich liczbą.
 - **Polskie znaki bez znaczenia.** „wroclaw”, „wrocław” i „Wrocław” to jedno miasto. Wcześniej wpisanie nazwy małymi literami albo bez ogonków dawało zero wyników.
 
@@ -210,7 +211,7 @@ Python 3.10+, FastAPI, SQLAlchemy 2, SQLite (WAL), httpx, selectolax, Leaflet.
 ## Testy
 
 ```bash
-make dev && make test               # 195 testów
+make dev && make test               # 197 testów
 .venv/bin/python scripts/audit.py   # każdy widok, filtr i sortowanie na żywej bazie
 ```
 

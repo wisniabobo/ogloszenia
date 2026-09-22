@@ -182,6 +182,17 @@ _STREET_PREFIX = re.compile(
 )
 
 
+def strip_street_prefix(value: str) -> str:
+    """Zdejmuje typ ulicy, także podwojony („Al. Aleja Jana Pawła II")."""
+    text = value.strip()
+    for _ in range(3):
+        shorter = _STREET_PREFIX.sub("", text)
+        if shorter == text:
+            break
+        text = shorter
+    return text
+
+
 def street_terms(value: str | None) -> list[str]:
     """Słowa nazwy ulicy do dopasowania, bez typu ulicy i numeru domu.
 
@@ -192,7 +203,7 @@ def street_terms(value: str | None) -> list[str]:
 
     if not value:
         return []
-    text = _STREET_PREFIX.sub("", value.strip())
+    text = strip_street_prefix(value)
     text = split_house_number(text)[0] or text
     return [_stem(_fold_text(word)) for word in re.split(r"[\s,.]+", text) if word][:6]
 

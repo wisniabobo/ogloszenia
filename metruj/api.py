@@ -714,8 +714,65 @@ def view_dashboard(request: Request, db: DB):
     )
 
 
+#: Parametry miejsca, które mają jeden poprawny zapis — z rejestru TERYT.
+PLACE_PARAMS = ("city", "county", "voivodeship")
+
+
+def canonical_place_redirect(request: Request, db: Session) -> RedirectResponse | None:
+    """„?city=wroclaw" → „?city=Wrocław", jednym przekierowaniem 301.
+
+    Ten sam wynik pod kilkoma adresami to dla wyszukiwarki kilka konkurujących
+    stron, a dla człowieka tytuł „Mieszkania — wroclaw". Wyszukiwanie nadal
+    przyjmuje dowolny zapis; adres po nim się porządkuje.
+    """
+    from .geo import lookup
+
+    params = list(request.query_params.multi_items())
+    changed = False
+    fixed: list[tuple[str, str]] = []
+    for key, value in params:
+        new_value = value
+        if key in PLACE_PARAMS and value.strip():
+            if hits := lookup(value):
+                new_value = hits[0].name
+        elif key == "street" and value.strip():
+            # „milosza" zamieniamy na nazwę, która naprawdę stoi w ofertach
+            # („Czesława Miłosza") — razem z ogonkami i imieniem patrona.
+            city = request.query_params.get("city")
+            new_value = _street_label(value) or value
+            # Poprawiamy wyłącznie pisownię tych samych słów: „milosza" →
+            # „Miłosza". Nazwy nie zamieniamy na inną („Miłosza" →
+            # „Miłoszycka") ani na dłuższą („Jana" → „Jana Pawła II") — to
+            # byłoby zawężenie wyszukiwania za plecami szukającego.
+            wanted = street_terms(value)
+            for match in suggest_streets(db, city, value, 10):
+                if street_terms(match["name"]) == wanted:
+                    new_value = match["name"]
+                    break
+                # Jedno słowo bez ogonków („milosza") dopisujemy z ogonkami
+                # („Miłosza") — słowo z ofert, a nie cała ich nazwa ulicy.
+                if len(wanted) == 1:
+                    same = [
+                        word for word in match["name"].split()
+                        if street_terms(word) == wanted
+                    ]
+                    if same:
+                        new_value = street_display(same[0])
+                        break
+        if new_value != value:
+            changed = True
+        fixed.append((key, new_value))
+    if not changed:
+        return None
+    return RedirectResponse(
+        f"{request.url.path}?{urlencode(fixed)}", status_code=301
+    )
+
+
 @app.get("/nieruchomosci", response_class=HTMLResponse)
 def view_listings(request: Request, db: DB, seo: dict[str, Any] | None = None):
+    if (redirect := canonical_place_redirect(request, db)) is not None:
+        return redirect
     filters = _filters_from_query(request)
     _default_to_sale(request, filters)
     listings, total = search_listings(db, filters)
@@ -747,6 +804,8 @@ def view_deals(request: Request, db: DB):
     województwa zostawiamy zwykłej liście: mieszkanie we wsi zestawione
     z medianą województwa zawsze wygląda na okazję i nigdy nią nie jest.
     """
+    if (redirect := canonical_place_redirect(request, db)) is not None:
+        return redirect
     filters = _filters_from_query(request)
     _default_to_sale(request, filters)
     if filters.deal_max is None:
@@ -794,6 +853,8 @@ def view_deals(request: Request, db: DB):
 
 @app.get("/licytacje", response_class=HTMLResponse)
 def view_auctions(request: Request, db: DB):
+    if (redirect := canonical_place_redirect(request, db)) is not None:
+        return redirect
     filters = _filters_from_query(request)
     filters.kind = filters.kind or OfferKind.LICYTACJA.value
     filters.sort = request.query_params.get("sort") or "termin_licytacji"
@@ -813,6 +874,8 @@ def view_auctions(request: Request, db: DB):
 
 @app.get("/przetargi", response_class=HTMLResponse)
 def view_tenders(request: Request, db: DB):
+    if (redirect := canonical_place_redirect(request, db)) is not None:
+        return redirect
     filters = _filters_from_query(request)
     filters.kind = filters.kind or OfferKind.PRZETARG.value
     listings, total = search_listings(db, filters)
@@ -856,6 +919,8 @@ def view_listing(listing_id: int, request: Request, db: DB):
 
 @app.get("/mapa", response_class=HTMLResponse)
 def view_map(request: Request, db: DB):
+    if (redirect := canonical_place_redirect(request, db)) is not None:
+        return redirect
     filters = _filters_from_query(request)
     _default_to_sale(request, filters)
     return templates.TemplateResponse(
@@ -1132,7 +1197,7 @@ def listings_seo(
     headline = heading or " ".join(x for x in (what, deal) if x)
     if where:
         headline = f"{headline} — {where}"
-    title = f"{headline} | Metruj" if len(headline) < 55 else f"{headline[:57]}… | Metruj"
+    title = f"{headline} | Metruj" if len(headline) <= 60 else f"{headline[:60]}… | Metruj"
     counted = f"{total:,}".replace(",", " ")
     description = (
         f"{counted} "
@@ -1618,7 +1683,29 @@ def api_streets(
 #: „okolice ul. Emila Zoli", „w pobliżu ulicy…" — to nie część nazwy.
 _NEAR = re.compile(r"^\s*(?:w\s+)?(?:okolic[aey]?|pobliżu|rejon(?:ie)?)\s+", re.I)
 #: „Ozimskiej", „Kolejowej" → „Ozimska", „Kolejowa" (tylko ostatnie słowo).
-_LOCATIVE = re.compile(r"(?:(sk|ck|dzk)iej|(ow|n)ej)$")
+_LOCATIVE = re.compile(r"(?:(sk|ck|dzk)iej|(ow|n)ej)$", re.I)
+
+
+def street_display(name: str) -> str:
+    """Nazwa ulicy w zapisie do pokazania: „jana pawła ii" → „Jana Pawła II".
+
+    Do bazy trafiają nazwy tak, jak je napisał autor ogłoszenia — od „ALEJA"
+    po „jana pawła ii". W podpowiedziach i tytułach ma być jeden zapis.
+    """
+    words = []
+    for word in name.split():
+        if word.lower() in ("ii", "iii", "iv", "vi", "vii"):
+            words.append(word.upper())
+        elif word.lower() in ("i", "de", "von", "na", "pod", "im"):
+            words.append(word.lower())
+        elif word.isupper() and len(word) > 3:
+            words.append(word.capitalize())
+        elif word[:1].isalpha():
+            words.append(word[0].upper() + word[1:])
+        else:
+            words.append(word)
+    out = " ".join(words)
+    return out[0].upper() + out[1:] if out else out
 
 
 def _street_label(raw: str | None) -> str | None:
@@ -1628,14 +1715,15 @@ def _street_label(raw: str | None) -> str | None:
     „okolice ul. Ozimskiej 3" albo „Ozimska, Śródmieście" — dla człowieka
     szukającego to jedno i to samo.
     """
-    from .geo.streets import normalize_street, split_house_number
+    from .geo.streets import split_house_number
+    from .query import strip_street_prefix
 
-    name = normalize_street(_NEAR.sub("", (raw or "").split(",")[0]))
+    name = strip_street_prefix(_NEAR.sub("", (raw or "").split(",")[0]).strip())
     name = split_house_number(name)[0] if name else None
     if not name or len(name) < 3 or (name[0].isdigit() and " " not in name):
         return None
-    name = _LOCATIVE.sub(lambda m: (m.group(1) or m.group(2)) + "a", name)
-    return name[0].upper() + name[1:]
+    name = street_display(name)
+    return _LOCATIVE.sub(lambda m: (m.group(1) or m.group(2)) + "a", name)
 
 
 def suggest_streets(db: Session, city: str | None, q: str | None, limit: int = 30) -> list[dict]:
@@ -1653,13 +1741,18 @@ def suggest_streets(db: Session, city: str | None, q: str | None, limit: int = 3
         )
         if city:
             stmt = stmt.where(place_clause(Listing.city, city))
-        totals: dict[str, int] = {}
+        # Warianty zapisu tej samej ulicy („Al. Jana Pawła II", „aleja jana
+        # pawła ii") sumujemy w jedną pozycję — dla szukającego to jedna ulica.
+        totals: dict[str, tuple[str, int]] = {}
         for raw, n in db.execute(stmt):
             name = _street_label(raw)
-            if name:
-                totals[name] = totals.get(name, 0) + n
+            if not name:
+                continue
+            key = deaccent(name).lower()
+            label, count = totals.get(key, (name, 0))
+            totals[key] = (label, count + n)
         return sorted(
-            ((name, deaccent(name).lower(), n) for name, n in totals.items()),
+            ((label, key, count) for key, (label, count) in totals.items()),
             key=lambda row: (-row[2], row[0]),
         )
 
