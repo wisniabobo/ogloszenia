@@ -62,6 +62,17 @@ class Settings(BaseSettings):
     smtp_to: str | None = None
 
     # --- web ---
+    #: Hasło do zapisu: bez niego schowek i alerty są tylko do czytania
+    #: z internetu (z sieci lokalnej działają bez hasła, żeby nie utrudniać
+    #: pracy na własnym komputerze). Strona jest publiczna, więc bez tego
+    #: każdy mógł skasować cudze poszukiwania albo założyć własne — a alerty
+    #: z nich i tak lecą na jeden, Twój kanał Telegrama.
+    admin_token: str = ""
+    #: Ile razy na godzinę jeden adres IP może odsłonić numer telefonu.
+    #: Numery są w ogłoszeniach publiczne, ale cała ich baza już nie.
+    phone_reveal_limit: int = 60
+    #: Adres publiczny — do linków kanonicznych, sitemapy i danych OpenGraph.
+    site_url: str = "https://bot.wisnia.dev"
     web_host: str = "127.0.0.1"
     web_port: int = 8000
 

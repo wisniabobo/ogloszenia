@@ -9,7 +9,6 @@ bez powtórek, z ceną porównaną do mediany okolicy.
 
 **▶ Wypróbuj: [bot.wisnia.dev](https://bot.wisnia.dev)**
 
-[![testy](https://github.com/wisniabobo/ogloszenia/actions/workflows/ci.yml/badge.svg)](https://github.com/wisniabobo/ogloszenia/actions/workflows/ci.yml)
 ![python](https://img.shields.io/badge/python-3.10%2B-3776ab)
 ![licencja](https://img.shields.io/badge/licencja-MIT-green)
 ![zasięg](https://img.shields.io/badge/zasi%C4%99g-16%20wojew%C3%B3dztw-15654a)
@@ -56,6 +55,10 @@ samego rodzaju w tej samej miejscowości.
 ---
 
 ## Funkcje
+
+**Wyszukiwanie**
+- **Ulica.** Nie trzeba trafiać w zapis z ogłoszenia: „ul. Browarna 12”, „browarna” i „Browarna” dają to samo, kolejność słów nie ma znaczenia („Miłosza Czesława” znajduje „Czesława Miłosza”), a odmiana jest rozumiana („Ozimska” znajduje też „Ozimskiej”). Pole podpowiada ulice, przy których naprawdę są oferty, z ich liczbą.
+- **Polskie znaki bez znaczenia.** „wroclaw”, „wrocław” i „Wrocław” to jedno miasto. Wcześniej wpisanie nazwy małymi literami albo bez ogonków dawało zero wyników.
 
 **Na liście ofert**
 - **Jedna nieruchomość = jeden wpis.** Powtórki z innych portali są sklejone, z licznikiem i porównaniem cen między serwisami.
@@ -120,6 +123,28 @@ portale · licytacje · BIP  ──►  normalizacja  ──►  lokalizacja  �
 
 ---
 
+## Widoczność w wyszukiwarkach
+
+Serwis żyje z tego, że ktoś go znajdzie, więc SEO nie jest doklejone na końcu:
+
+- **Tytuł i nagłówek z filtrów**: „Mieszkania na sprzedaż — ul. Ozimska, Opole”, a nie „Oferty nieruchomości” na każdej z tysiąca stron.
+- **Adres kanoniczny** obcinający to, co nie zmienia treści (sortowanie, `utm_*`, widełki), żeby ta sama lista nie konkurowała sama ze sobą.
+- **`noindex` dla kombinacji filtrów**, które są tylko wariantem tej samej listy — indeksowane zostają strony miejscowości, powiatu, województwa, ulicy i rodzaju nieruchomości.
+- **Dane strukturalne** (`RealEstateListing` + `BreadcrumbList`) na stronie oferty: cena, metraż, liczba pokoi, adres i współrzędne trafiają do wyniku wyszukiwania.
+- **`robots.txt` i sitemapa** dzielona na części: sekcje serwisu, miejscowości, powiaty i ulice z co najmniej trzema ofertami, osobno same oferty po 20 tys. adresów.
+- **OpenGraph i Twitter Card**, żeby wklejony link pokazywał tytuł, opis i zdjęcie oferty.
+- **Linki do miast w stopce** — z formularza filtrów robot nie ma jak wejść na stronę miejscowości.
+
+---
+
+## Bezpieczeństwo
+
+- **Zapis należy do właściciela instancji.** Schowek i alerty wymagają hasła `OGL_ADMIN_TOKEN` (formularz: `/wejscie`, dla skryptów nagłówek `X-Admin-Token`). Bez ustawionego hasła instancja widoczna z internetu jest tylko do czytania, a na własnym komputerze wszystko działa bez konfiguracji. Wcześniej każdy mógł skasować cudze alerty albo założyć własne — a powiadomienia z nich i tak leciały na jeden kanał Telegrama.
+- **Numery telefonów**: maskowane na liście, pełny numer po kliknięciu, z limitem odsłon na adres IP (`OGL_PHONE_REVEAL_LIMIT`, domyślnie 60/h) i dodatkowym limitem w nginx/Caddy.
+- **Parametry API są ograniczone z obu stron** — żadne `per_page=-1` nie zwróci całej bazy jednym zapytaniem.
+
+---
+
 ## API
 
 ```http
@@ -131,6 +156,7 @@ GET /api/listings/{id}/dzialka      # działka ewidencyjna (GUGiK)
 GET /api/listings/{id}/okolica      # szkoły, sklepy, przystanki (OpenStreetMap)
 GET /api/geojson?kind=licytacja     # punkty na mapę
 GET /api/market-report?city=Kraków&days=90
+GET /api/ulice?city=Opole&q=ozim   # podpowiedzi ulic z liczbą ofert
 GET /api/stats · /api/sources · /api/agencies
 ```
 
@@ -184,7 +210,7 @@ Python 3.10+, FastAPI, SQLAlchemy 2, SQLite (WAL), httpx, selectolax, Leaflet.
 ## Testy
 
 ```bash
-make dev && make test               # 170 testów
+make dev && make test               # 195 testów
 .venv/bin/python scripts/audit.py   # każdy widok, filtr i sortowanie na żywej bazie
 ```
 
@@ -194,7 +220,10 @@ Testy obejmują:
 - rozpoznawanie lokalizacji na przypadkach z produkcji;
 - sklejanie powtórek, podobne oferty;
 - scrapery na zamrożonych odpowiedziach;
-- parser robots.txt.
+- parser robots.txt;
+- wyszukiwanie po ulicy i miejscowości (ogonki, przedrostki, odmiana);
+- SEO: tytuły, adresy kanoniczne, `noindex`, sitemapa, dane strukturalne;
+- zabezpieczenie zapisu i limit odsłon numerów.
 
 `audit.py` sprawdza, czy sortowanie naprawdę sortuje, a filtr naprawdę zawęża.
 

@@ -3,8 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Metruj — wszystkie ogłoszenia nieruchomości z Polski{% endblock %}</title>
-<meta name="description" content="{% block description %}Oferty nieruchomości, licytacje komornicze i przetargi z całej Polski. Cena porównana z medianą okolicy.{% endblock %}">
+<title>{% if seo and seo.title %}{{ seo.title }}{% else %}{% block title %}Metruj — wszystkie ogłoszenia nieruchomości z Polski{% endblock %}{% endif %}</title>
+<meta name="description" content="{% if seo and seo.description %}{{ seo.description }}{% else %}{% block description %}Oferty nieruchomości, licytacje komornicze i przetargi z całej Polski. Cena porównana z medianą okolicy.{% endblock %}{% endif %}">
+<meta name="robots" content="{% if seo and seo.robots %}{{ seo.robots }}{% else %}{% block robots %}index, follow{% endblock %}{% endif %}">
+{% if seo and seo.canonical %}<link rel="canonical" href="{{ seo.canonical }}">{% endif %}
+{% if seo and seo.prev %}<link rel="prev" href="{{ seo.prev }}">{% endif %}
+{% if seo and seo.next %}<link rel="next" href="{{ seo.next }}">{% endif %}
+
+{# OpenGraph i Twitter: bez tego link wklejony na Facebooka czy do komunikatora
+   pokazywał sam adres, bez tytułu i opisu oferty. #}
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Metruj">
+<meta property="og:locale" content="pl_PL">
+<meta property="og:title" content="{{ seo.title if seo and seo.title else self.title() }}">
+<meta property="og:description" content="{{ seo.description if seo and seo.description else self.description() }}">
+{% if seo and seo.canonical %}<meta property="og:url" content="{{ seo.canonical }}">{% endif %}
+{% if seo and seo.image %}<meta property="og:image" content="{{ seo.image }}">
+<meta name="twitter:card" content="summary_large_image">
+{% else %}<meta name="twitter:card" content="summary">{% endif %}
 <meta name="theme-color" content="#15654a">
 <link rel="stylesheet" href="{{ asset('app.css') }}">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2315654a'/><path d='M8 23V9h3.2l4.8 8 4.8-8H24v14h-3v-8.6l-4 6.6h-1.6l-4-6.6V23z' fill='white'/></svg>">
@@ -51,6 +67,12 @@
 </main>
 
 <footer class="footer">
+  <div class="footer__inner footer__inner--places">
+    <nav class="footer__places" aria-label="Oferty w największych miastach">
+      <strong>Mieszkania i domy w miastach:</strong>
+      {% for place in popular_places() %}<a href="/nieruchomosci?city={{ place | urlencode }}">{{ place }}</a>{% endfor %}
+    </nav>
+  </div>
   <div class="footer__inner">
     <div>
       <strong>Metruj</strong> · ogłoszenia nieruchomości z całej Polski
@@ -63,6 +85,7 @@
   </div>
 </footer>
 
+{% if seo and seo.jsonld %}<script type="application/ld+json">{{ seo.jsonld | safe }}</script>{% endif %}
 <script src="{{ asset('app.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>

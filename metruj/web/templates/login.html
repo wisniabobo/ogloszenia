@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Zapis — Metruj{% endblock %}
+{% block robots %}noindex, nofollow{% endblock %}
+{% block heading %}Hasło zapisu{% endblock %}
+{% block subhead %}
+<p class="muted">Schowek i alerty należą do właściciela tej instancji. Czytanie ofert
+  jest dla wszystkich, zapis wymaga hasła z <code>OGL_ADMIN_TOKEN</code>.</p>
+{% endblock %}
+{% block content %}
+{% if error %}<div class="note">{{ error }}</div>{% endif %}
+<form class="card" method="post" action="/wejscie" style="max-width:420px;display:grid;gap:12px;padding:18px">
+  <label for="token">Hasło zapisu</label>
+  <input id="token" name="token" type="password" autocomplete="current-password" required>
+  <button class="btn" type="submit">Wejdź</button>
+</form>
+{% endblock %}

@@ -750,3 +750,12 @@ h1, h2, h3, h4 { margin: 0; line-height: 1.25; font-weight: 650; letter-spacing:
   .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
   .facts dd { font-size: 15px; }
 }
+
+/* Stopka: linki do miast — dla ludzi skrót, dla wyszukiwarki droga do stron
+   miejscowości, do których z formularza nie prowadzi żaden zwykły odnośnik. */
+.footer__inner--places { display: block; padding-bottom: 0; }
+.footer__places { font-size: 13.5px; color: var(--ink-soft); line-height: 2; }
+.footer__places strong { margin-right: 6px; }
+.footer__places a { color: var(--ink-soft); text-decoration: none; margin-right: 12px;
+                    border-bottom: 1px solid transparent; }
+.footer__places a:hover { color: var(--brand); border-bottom-color: currentColor; }

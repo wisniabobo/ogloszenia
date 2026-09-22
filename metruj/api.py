@@ -7,15 +7,18 @@ w przeglądarce i wynik `/api/listings` zawsze się zgadzają.
 from __future__ import annotations
 
 import math
+import re
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any
-from urllib.parse import parse_qsl, urlencode
+from urllib.parse import parse_qsl, quote_plus, urlencode
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import Response as FastResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
@@ -32,6 +35,7 @@ from .models import (
     DuplicateLink,
     Favorite,
     Listing,
+    ListingStatus,
     MarketStat,
     OfferKind,
     SavedSearch,
@@ -49,8 +53,10 @@ from .query import (
     dashboard_stats,
     map_points,
     phone_lookup,
+    place_clause,
     search_listings,
     similar_listings,
+    street_terms,
 )
 from .settings import get_settings
 from .utils.text import to_polish_time
@@ -237,6 +243,17 @@ def hidden_fields(query_string: str, *skip: str) -> Markup:
     return Markup("".join(out))
 
 
+def popular_places(limit: int = 16) -> list[str]:
+    """Miasta z największą liczbą ofert — do linków w stopce.
+
+    Linki w stopce są dla robota jedyną drogą do stron miast: same filtry
+    w formularzu wysyłają POST-a, którego wyszukiwarka nie kliknie.
+    """
+    with session_scope() as session:
+        return suggest_cities(session)[:limit]
+
+
+templates.env.globals["popular_places"] = popular_places
 templates.env.globals["active_filters"] = active_filters
 templates.env.globals["hidden_fields"] = hidden_fields
 
@@ -390,8 +407,75 @@ def get_db() -> Session:
 DB = Annotated[Session, Depends(get_db)]
 
 
-@app.on_event("startup")
-def _startup() -> None:
+# --------------------------------------------------------------------------- #
+# Zapis: schowek i alerty
+# --------------------------------------------------------------------------- #
+#: Nazwa ciasteczka z hasłem zapisu — ustawiane przez formularz na /wejscie.
+ADMIN_COOKIE = "metruj_token"
+
+#: Adresy uznawane za „swoje", gdy hasło zapisu nie jest ustawione: localhost
+#: i sieci prywatne. Uruchomienie na własnym komputerze ma działać od razu,
+#: bez konfiguracji — publiczna instancja bez hasła jest tylko do czytania.
+def _is_local(request: Request) -> bool:
+    import ipaddress
+
+    host = request.client.host if request.client else ""
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_private
+
+
+def require_writer(request: Request) -> None:
+    """Wpuszcza do zapisu właściciela instancji, a nie każdego przechodnia."""
+    import secrets
+
+    token = get_settings().admin_token
+    if not token:
+        if _is_local(request):
+            return
+        raise HTTPException(
+            403,
+            "Zapis jest wyłączony: ta instancja nie ma ustawionego "
+            "OGL_ADMIN_TOKEN (schowek i alerty działają tylko lokalnie).",
+        )
+    given = request.headers.get("X-Admin-Token") or request.cookies.get(ADMIN_COOKIE) or ""
+    if not secrets.compare_digest(given, token):
+        raise HTTPException(401, "Potrzebne hasło zapisu — zaloguj się na /wejscie")
+
+
+Writer = Annotated[None, Depends(require_writer)]
+
+#: Prosty licznik odsłon numerów: {adres IP: [znaczniki czasu]}. Trzymany
+#: w pamięci procesu — przy jednym procesie web to wystarcza, a nie wymaga
+#: Redisa. Limit chroni bazę numerów przed pobraniem oferta po ofercie.
+_reveals: dict[str, list[float]] = {}
+
+
+def rate_limit_phone(request: Request) -> None:
+    import time
+
+    limit = get_settings().phone_reveal_limit
+    if limit <= 0:
+        return
+    host = request.client.host if request.client else "?"
+    now = time.monotonic()
+    recent = [t for t in _reveals.get(host, []) if now - t < 3600]
+    if len(recent) >= limit:
+        raise HTTPException(429, "Za dużo zapytań o numery — spróbuj za godzinę")
+    recent.append(now)
+    _reveals[host] = recent
+    if len(_reveals) > 10000:  # nie rośnie bez końca
+        for key in [k for k, v in _reveals.items() if not v or now - v[-1] > 3600]:
+            _reveals.pop(key, None)
+
+
+PhoneLimit = Annotated[None, Depends(rate_limit_phone)]
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
     init_db()
 
     # Rozgrzanie pamięci podręcznej w tle: pierwszy odwiedzający po
@@ -404,6 +488,10 @@ def _startup() -> None:
             suggest_cities(session)
 
     threading.Thread(target=warm, daemon=True).start()
+    yield
+
+
+app.router.lifespan_context = lifespan
 
 
 # --------------------------------------------------------------------------- #
@@ -485,8 +573,10 @@ def _filters_from_query(request: Request) -> Filters:
         days_on_market_max=num("days_on_market_max", int),
         q=params.get("q") or None,
         sort=params.get("sort") or "najnowsze",
-        page=int(params.get("page") or 1),
-        per_page=min(int(params.get("per_page") or 25), 100),
+        # `per_page=-1` dawało w SQLite `LIMIT -1`, czyli całą bazę naraz,
+        # a `page=abc` kończyło się błędem 500.
+        page=max(num("page", int) or 1, 1),
+        per_page=min(max(num("per_page", int) or 25, 1), 100),
     )
 
 
@@ -591,7 +681,16 @@ def view_home(request: Request, db: DB):
     przejść na drugą stronę, żeby wybrać województwo czy metraż. Zestawienia
     rynkowe są na /rynek.
     """
-    return view_listings(request, db)
+    # Strona główna to ta sama lista, ale jej tytuł ma mówić, czym jest serwis.
+    return view_listings(request, db, seo={
+        "title": "Metruj — ogłoszenia nieruchomości, licytacje i przetargi z całej Polski",
+        "description": (
+            "Oferty z portali, licytacje komornicze i skarbowe oraz przetargi gmin "
+            "w jednym miejscu. Bez powtórek, z ceną za m² porównaną z medianą okolicy."
+        ),
+        "canonical": site_url("/"),
+        "robots": "index, follow",
+    })
 
 
 @app.get("/rynek", response_class=HTMLResponse)
@@ -605,15 +704,25 @@ def view_dashboard(request: Request, db: DB):
     return templates.TemplateResponse(
         request,
         "dashboard.html",
-        {"stats": stats, "newest": newest, "active": "rynek"},
+        {"stats": stats, "newest": newest, "active": "rynek",
+         **static_seo(
+             request,
+             "Rynek nieruchomości w Polsce — mediany cen i liczba ofert | Metruj",
+             "Mediany cen za m², liczba nowych ofert i obniżek, miasta z największą "
+             "liczbą ogłoszeń. Liczone z ofert zebranych z kilkudziesięciu źródeł.",
+         )},
     )
 
 
 @app.get("/nieruchomosci", response_class=HTMLResponse)
-def view_listings(request: Request, db: DB):
+def view_listings(request: Request, db: DB, seo: dict[str, Any] | None = None):
     filters = _filters_from_query(request)
     _default_to_sale(request, filters)
     listings, total = search_listings(db, filters)
+    pages = max(1, math.ceil(total / filters.per_page))
+    context = listings_seo(request, filters, total, pages=pages)
+    if seo:
+        context["seo"] = seo
     return templates.TemplateResponse(
         request,
         "listings.html",
@@ -621,8 +730,9 @@ def view_listings(request: Request, db: DB):
             "listings": listings,
             "total": total,
             "filters": filters,
-            "pages": max(1, math.ceil(total / filters.per_page)),
+            "pages": pages,
             "active": "nieruchomosci",
+            **context,
             **filter_context(db, request),
         },
     )
@@ -671,6 +781,10 @@ def view_deals(request: Request, db: DB):
             "scopes": scopes,
             "computed_at": computed_at,
             "active": "okazje",
+            **listings_seo(
+                request, filters, total, heading="Okazje",
+                pages=max(1, math.ceil(total / filters.per_page)),
+            ),
             "reset_url": "/okazje",
             "form_action": "/okazje",
             **filter_context(db, request),
@@ -689,6 +803,10 @@ def view_auctions(request: Request, db: DB):
         "auctions.html",
         {"listings": listings, "total": total, "filters": filters,
          "pages": max(1, math.ceil(total / filters.per_page)), "active": "licytacje",
+         **listings_seo(
+             request, filters, total, heading="Licytacje komornicze i skarbowe",
+             pages=max(1, math.ceil(total / filters.per_page)),
+         ),
          "query_string": str(request.query_params)},
     )
 
@@ -703,6 +821,10 @@ def view_tenders(request: Request, db: DB):
         "auctions.html",
         {"listings": listings, "total": total, "filters": filters,
          "pages": max(1, math.ceil(total / filters.per_page)), "active": "przetargi",
+         **listings_seo(
+             request, filters, total, heading="Przetargi i wykazy nieruchomości",
+             pages=max(1, math.ceil(total / filters.per_page)),
+         ),
          "query_string": str(request.query_params)},
     )
 
@@ -727,7 +849,8 @@ def view_listing(listing_id: int, request: Request, db: DB):
         "listing.html",
         {"listing": listing, "copies": copies, "original": original, "agency": agency,
          "similar": similar, "similar_url": "/nieruchomosci?" + urlencode(similar.more_query),
-         "market": market_levels(db, listing), "active": "nieruchomosci"},
+         "market": market_levels(db, listing), "active": "nieruchomosci",
+         **listing_seo(request, listing)},
     )
 
 
@@ -738,7 +861,17 @@ def view_map(request: Request, db: DB):
     return templates.TemplateResponse(
         request,
         "map.html",
-        {"filters": filters, "active": "mapa", **filter_context(db, request)},
+        {
+            "filters": filters, "active": "mapa",
+            "seo": {
+                "title": "Mapa ofert nieruchomości w Polsce | Metruj",
+                "description": "Wszystkie zebrane oferty na mapie — pinezki w kolorze "
+                               "ceny za m², te same filtry co na liście.",
+                "canonical": site_url("/mapa"),
+                "robots": "index, follow",
+            },
+            **filter_context(db, request),
+        },
     )
 
 
@@ -805,6 +938,13 @@ def view_agencies(request: Request, db: DB):
             "pages": max(1, math.ceil(total / per_page)),
             "query_string": str(request.query_params),
             "active": "biura",
+            **static_seo(
+                request,
+                "Biura nieruchomości i deweloperzy w Polsce — lista z telefonami | Metruj",
+                "Rejestr pośredników i deweloperów: miasto, telefon i liczba ofert. "
+                "Sprawdź, czy oferta prywatna nie jest kolejnym ogłoszeniem biura.",
+                robots="index, follow" if not request.query_params else "noindex, follow",
+            ),
         },
     )
 
@@ -822,7 +962,13 @@ def view_sources(request: Request, db: DB):
     return templates.TemplateResponse(
         request,
         "sources.html",
-        {"sources": sources, "runs": runs, "recent": recent, "active": "zrodla"},
+        {"sources": sources, "runs": runs, "recent": recent, "active": "zrodla",
+         **static_seo(
+             request,
+             "Skąd pochodzą dane — źródła ogłoszeń | Metruj",
+             "Portale, licytacje komornicze i skarbowe, BIP gmin i instytucje "
+             "publiczne: pełna lista źródeł wraz ze stanem ostatniego pobrania.",
+         )},
     )
 
 
@@ -830,7 +976,11 @@ def view_sources(request: Request, db: DB):
 def view_searches(request: Request, db: DB):
     searches = list(db.scalars(select(SavedSearch).order_by(desc(SavedSearch.created_at))))
     return templates.TemplateResponse(
-        request, "searches.html", {"searches": searches, "active": "poszukiwania"}
+        request, "searches.html",
+        {"searches": searches, "active": "poszukiwania",
+         **static_seo(request, "Alerty o nowych ofertach | Metruj",
+                      "Zapisane poszukiwania i powiadomienia o nowych ofertach.",
+                      robots="noindex, nofollow")}
     )
 
 
@@ -841,13 +991,433 @@ def view_favorites(request: Request, db: DB):
         .order_by(desc(Favorite.created_at))
     ).all()
     return templates.TemplateResponse(
-        request, "favorites.html", {"rows": rows, "active": "schowek"}
+        request, "favorites.html",
+        {"rows": rows, "active": "schowek",
+         **static_seo(request, "Schowek | Metruj", "Zapisane oferty.",
+                      robots="noindex, nofollow")}
     )
 
 
 # --------------------------------------------------------------------------- #
 # REST API
 # --------------------------------------------------------------------------- #
+@app.get("/wejscie", response_class=HTMLResponse)
+def view_login(request: Request):
+    """Formularz hasła zapisu — jedna instancja, jeden właściciel."""
+    return templates.TemplateResponse(
+        request, "login.html",
+        {"active": "",
+         **static_seo(request, "Hasło zapisu | Metruj", "Panel właściciela instancji.",
+                      robots="noindex, nofollow")},
+    )
+
+
+@app.post("/wejscie", response_class=HTMLResponse)
+async def do_login(request: Request):
+    import secrets
+
+    # Formularz czytamy sami z ciała zapytania: `request.form()` wymaga
+    # biblioteki python-multipart, a jedno pole nie jest tego warte.
+    body = (await request.body()).decode("utf-8", "replace")
+    token = get_settings().admin_token
+    given = dict(parse_qsl(body)).get("token", "")
+    if not token:
+        return templates.TemplateResponse(
+            request, "login.html",
+            {"active": "", "error": "Ta instancja nie ma ustawionego OGL_ADMIN_TOKEN."},
+            status_code=503,
+        )
+    if not secrets.compare_digest(given, token):
+        return templates.TemplateResponse(
+            request, "login.html", {"active": "", "error": "Błędne hasło."},
+            status_code=401,
+        )
+    response = RedirectResponse("/poszukiwania", status_code=303)
+    response.set_cookie(
+        ADMIN_COOKIE, token, max_age=60 * 60 * 24 * 90, httponly=True,
+        samesite="lax", secure=request.url.scheme == "https",
+    )
+    return response
+
+
+@app.post("/wyjscie")
+def do_logout() -> RedirectResponse:
+    response = RedirectResponse("/", status_code=303)
+    response.delete_cookie(ADMIN_COOKIE)
+    return response
+
+
+# --------------------------------------------------------------------------- #
+# SEO: tytuły, opisy, linki kanoniczne, dane strukturalne
+# --------------------------------------------------------------------------- #
+#: Parametry, które tworzą stronę wartą zaindeksowania („mieszkania na sprzedaż
+#: we Wrocławiu"). Wszystko poza nimi — sortowania, widełki cen, kombinacje
+#: dziesięciu filtrów — to ta sama treść w tysiącu wariantów; dla wyszukiwarki
+#: jest to duplikat, który rozmywa stronę, więc dostaje `noindex`.
+INDEXABLE_PARAMS = {"city", "county", "voivodeship", "street", "property_type", "transaction", "page"}
+
+TYPE_PLURAL = {
+    "mieszkanie": "Mieszkania", "dom": "Domy", "dzialka": "Działki",
+    "lokal": "Lokale użytkowe", "biuro": "Biura", "hala": "Hale i magazyny",
+    "garaz": "Garaże", "gospodarstwo": "Gospodarstwa", "kamienica": "Kamienice",
+    "pokoj": "Pokoje", "inne": "Nieruchomości",
+}
+TYPE_SINGULAR = {
+    "mieszkanie": "Mieszkanie", "dom": "Dom", "dzialka": "Działka",
+    "lokal": "Lokal użytkowy", "biuro": "Biuro", "hala": "Hala",
+    "garaz": "Garaż", "gospodarstwo": "Gospodarstwo", "kamienica": "Kamienica",
+    "pokoj": "Pokój", "inne": "Nieruchomość",
+}
+TRANSACTION_PHRASE = {
+    "sprzedaz": "na sprzedaż", "wynajem": "do wynajęcia",
+    "dzierzawa": "w dzierżawę", "zamiana": "na zamianę",
+}
+
+
+def site_url(path: str = "/") -> str:
+    return get_settings().site_url.rstrip("/") + path
+
+
+def canonical_for(request: Request, keep: set[str] | None = None) -> str:
+    """Adres kanoniczny: ścieżka i tylko te parametry, które zmieniają treść.
+
+    Bez tego każdy link z `?sort=`, `?per_page=` czy śmieciem z kampanii
+    („utm_source") był dla wyszukiwarki osobną stroną z tą samą listą ofert.
+    """
+    keep = keep if keep is not None else INDEXABLE_PARAMS
+    pairs = [
+        (key, value)
+        for key, value in sorted(request.query_params.multi_items())
+        if key in keep and value and not (key == "page" and value == "1")
+    ]
+    query = urlencode(pairs)
+    return site_url(request.url.path) + (f"?{query}" if query else "")
+
+
+def _page_url(request: Request, page: int) -> str | None:
+    if page < 1:
+        return None
+    params = [
+        (key, value)
+        for key, value in sorted(request.query_params.multi_items())
+        if key in INDEXABLE_PARAMS and key != "page" and value
+    ]
+    if page > 1:
+        params.append(("page", str(page)))
+    query = urlencode(params)
+    return site_url(request.url.path) + (f"?{query}" if query else "")
+
+
+def listings_seo(
+    request: Request, filters: Filters, total: int, *, heading: str | None = None,
+    pages: int = 1,
+) -> dict[str, Any]:
+    """Tytuł, opis i nagłówek listy ułożone z tego, czego ktoś naprawdę szuka."""
+    kind = (filters.property_type or "").strip()
+    what = TYPE_PLURAL.get(kind, "Nieruchomości")
+    deal = TRANSACTION_PHRASE.get(filters.transaction or "", "")
+    where_bits = []
+    if filters.street:
+        where_bits.append(f"ul. {filters.street.strip()}")
+    if filters.city and filters.city.strip() != (filters.street or "").strip():
+        where_bits.append(filters.city.strip())
+    elif filters.county:
+        where_bits.append(f"powiat {filters.county.strip()}")
+    elif filters.voivodeship:
+        where_bits.append(f"woj. {filters.voivodeship.strip()}")
+    where = ", ".join(where_bits)
+
+    # Przy własnym nagłówku („Okazje", „Licytacje") nie doklejamy „na sprzedaż" —
+    # „Okazje na sprzedaż" to nie po polsku.
+    headline = heading or " ".join(x for x in (what, deal) if x)
+    if where:
+        headline = f"{headline} — {where}"
+    title = f"{headline} | Metruj" if len(headline) < 55 else f"{headline[:57]}… | Metruj"
+    counted = f"{total:,}".replace(",", " ")
+    description = (
+        f"{counted} "
+        + ("ogłoszeń" if total != 1 else "ogłoszenie")
+        + f" — {headline.lower()}. Powtórki z różnych portali sklejone w jeden wpis, "
+        "cena za m² porównana z medianą okolicy, historia obniżek i kontakt."
+    )
+
+    extra = {
+        key for key, value in request.query_params.multi_items()
+        if value and key not in INDEXABLE_PARAMS
+    }
+    indexable = not extra and total > 0 and filters.page <= 20
+    page = max(filters.page, 1)
+    return {
+        "seo": {
+            "title": title,
+            "description": description[:300],
+            "robots": "index, follow" if indexable else "noindex, follow",
+            "canonical": canonical_for(request),
+            "prev": _page_url(request, page - 1) if page > 1 else None,
+            "next": _page_url(request, page + 1) if page < pages else None,
+        },
+        "seo_headline": headline,
+    }
+
+
+def listing_seo(request: Request, listing: Listing, market: Any = None) -> dict[str, Any]:
+    """Dane strukturalne oferty — po nich wyniki Google pokazują cenę i metraż."""
+    import json
+
+    what = TYPE_SINGULAR.get(
+        listing.property_type.value if listing.property_type else "", "Nieruchomość"
+    )
+    deal = TRANSACTION_PHRASE.get(
+        listing.transaction.value if listing.transaction else "", ""
+    )
+    # Ulica bywa zapisana tą samą nazwą co miasto („Nysa, Nysa") — raz wystarczy.
+    where_parts = [x for x in (listing.street, listing.city) if x]
+    if len(where_parts) == 2 and _street_label(where_parts[0]) == where_parts[1]:
+        where_parts = where_parts[1:]
+    where = ", ".join(where_parts)
+    bits = [x for x in (
+        f"{listing.area:g} m²" if listing.area else "",
+        f"{listing.rooms} pok." if listing.rooms else "",
+        f"{listing.price:,.0f} zł".replace(",", " ") if listing.price else "",
+    ) if x]
+    title = " ".join(x for x in (what, deal) if x)
+    if where:
+        title += f", {where}"
+    if bits:
+        title += " — " + " · ".join(bits)
+
+    description = (listing.description or listing.title or "").strip().replace("\n", " ")
+    description = re.sub(r"\s+", " ", description)[:280]
+
+    data: dict[str, Any] = {
+        "@context": "https://schema.org",
+        "@type": "RealEstateListing",
+        "name": listing.title[:150],
+        "url": site_url(f"/oferta/{listing.id}"),
+        "datePosted": listing.listed_at.isoformat() if listing.listed_at else None,
+        "description": description or None,
+    }
+    address = {
+        "@type": "PostalAddress",
+        "addressCountry": "PL",
+        "addressLocality": listing.city,
+        "addressRegion": listing.voivodeship,
+        "streetAddress": listing.street,
+    }
+    data["address"] = {k: v for k, v in address.items() if v}
+    if listing.lat is not None and listing.lon is not None:
+        data["geo"] = {"@type": "GeoCoordinates", "latitude": listing.lat, "longitude": listing.lon}
+    if listing.price:
+        data["offers"] = {
+            "@type": "Offer",
+            "price": round(listing.price, 2),
+            "priceCurrency": "PLN",
+            "availability": "https://schema.org/InStock"
+            if listing.status == ListingStatus.AKTYWNA
+            else "https://schema.org/SoldOut",
+        }
+    if listing.area or listing.rooms:
+        accommodation: dict[str, Any] = {"@type": "Accommodation"}
+        if listing.area:
+            accommodation["floorSize"] = {
+                "@type": "QuantitativeValue", "value": listing.area, "unitCode": "MTK",
+            }
+        if listing.rooms:
+            accommodation["numberOfRoomsTotal"] = listing.rooms
+        data["about"] = accommodation
+    if listing.images:
+        data["image"] = listing.images[:5]
+
+    crumbs = [("Oferty", "/nieruchomosci")]
+    if listing.voivodeship:
+        crumbs.append((listing.voivodeship,
+                       f"/nieruchomosci?voivodeship={quote_plus(listing.voivodeship)}"))
+    if listing.city:
+        crumbs.append((listing.city, f"/nieruchomosci?city={quote_plus(listing.city)}"))
+    crumbs.append((title[:80], f"/oferta/{listing.id}"))
+    breadcrumbs = {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {"@type": "ListItem", "position": i + 1, "name": name, "item": site_url(path)}
+            for i, (name, path) in enumerate(crumbs)
+        ],
+    }
+
+    return {
+        "seo": {
+            "title": f"{title[:90]} | Metruj",
+            "description": description or f"{title}. Oferta w serwisie Metruj.",
+            "canonical": site_url(f"/oferta/{listing.id}"),
+            "robots": "index, follow" if listing.status == ListingStatus.AKTYWNA
+            else "noindex, follow",
+            "image": listing.images[0] if listing.images else None,
+            "jsonld": json.dumps(
+                [{k: v for k, v in data.items() if v is not None}, breadcrumbs],
+                ensure_ascii=False,
+            ),
+        }
+    }
+
+
+def static_seo(
+    request: Request, title: str, description: str, *, robots: str = "index, follow"
+) -> dict[str, Any]:
+    """SEO strony, której treść nie zależy od filtrów."""
+    return {"seo": {
+        "title": title, "description": description, "robots": robots,
+        "canonical": site_url(request.url.path),
+    }}
+
+
+@app.get("/robots.txt", response_class=PlainTextResponse, include_in_schema=False)
+def robots_txt() -> str:
+    """Co wolno robotom. Adresy zapisu i zapytania API nie mają czego szukać."""
+    return "\n".join([
+        "User-agent: *",
+        "Allow: /",
+        "Disallow: /api/",
+        "Disallow: /schowek",
+        "Disallow: /poszukiwania",
+        "Disallow: /wejscie",
+        "Crawl-delay: 2",
+        "",
+        f"Sitemap: {site_url('/sitemap.xml')}",
+        "",
+    ])
+
+
+#: Ile adresów w jednym pliku sitemapy. Limit protokołu to 50 000.
+SITEMAP_CHUNK = 20000
+
+
+def _xml(entries: list[tuple[str, str | None, str]]) -> FastResponse:
+    from xml.sax.saxutils import escape as xml_escape
+
+    rows = []
+    for loc, lastmod, freq in entries:
+        row = [f"<loc>{xml_escape(loc)}</loc>"]
+        if lastmod:
+            row.append(f"<lastmod>{lastmod}</lastmod>")
+        row.append(f"<changefreq>{freq}</changefreq>")
+        rows.append("<url>" + "".join(row) + "</url>")
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        + "".join(rows)
+        + "</urlset>"
+    )
+    return FastResponse(body, media_type="application/xml",
+                        headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap_index(db: DB) -> FastResponse:
+    """Spis sitemap — osobno strony przeglądania, osobno same oferty."""
+    from xml.sax.saxutils import escape as xml_escape
+
+    count = cached("sitemap:count", lambda db: int(db.scalar(
+        select(func.count(Listing.id)).where(
+            Listing.is_original.is_(True), Listing.status == ListingStatus.AKTYWNA
+        )
+    ) or 0), db, ttl=3600)
+    parts = [site_url("/sitemap-strony.xml")]
+    for index in range(math.ceil(max(count, 1) / SITEMAP_CHUNK)):
+        parts.append(site_url(f"/sitemap-oferty-{index + 1}.xml"))
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+        + "".join(f"<sitemap><loc>{xml_escape(url)}</loc></sitemap>" for url in parts)
+        + "</sitemapindex>"
+    )
+    return FastResponse(body, media_type="application/xml",
+                        headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/sitemap-strony.xml", include_in_schema=False)
+def sitemap_pages(db: DB) -> FastResponse:
+    """Strony przeglądania: sekcje serwisu, miasta, powiaty i ulice z ofertami."""
+
+    def build(db: Session) -> list[tuple[str, str | None, str]]:
+        entries: list[tuple[str, str | None, str]] = [
+            (site_url("/"), None, "hourly"),
+            (site_url("/nieruchomosci"), None, "hourly"),
+            (site_url("/okazje"), None, "hourly"),
+            (site_url("/mapa"), None, "daily"),
+            (site_url("/licytacje"), None, "daily"),
+            (site_url("/przetargi"), None, "daily"),
+            (site_url("/biura"), None, "weekly"),
+            (site_url("/rynek"), None, "daily"),
+            (site_url("/zrodla"), None, "weekly"),
+        ]
+        active = (Listing.is_original.is_(True), Listing.status == ListingStatus.AKTYWNA)
+        cities = db.execute(
+            select(Listing.city, func.count(Listing.id).label("n"))
+            .where(Listing.city.is_not(None), *active)
+            .group_by(Listing.city).having(func.count(Listing.id) >= 3)
+            .order_by(desc("n")).limit(3000)
+        ).all()
+        for city, _ in cities:
+            base = f"/nieruchomosci?city={quote_plus(city)}"
+            entries.append((site_url(base), None, "daily"))
+            for ptype in ("mieszkanie", "dom", "dzialka"):
+                entries.append((site_url(f"{base}&property_type={ptype}"), None, "daily"))
+        counties = db.execute(
+            select(Listing.county, func.count(Listing.id).label("n"))
+            .where(Listing.county.is_not(None), *active)
+            .group_by(Listing.county).having(func.count(Listing.id) >= 3)
+            .order_by(desc("n")).limit(400)
+        ).all()
+        for county, _ in counties:
+            entries.append((site_url(f"/nieruchomosci?county={quote_plus(county)}"), None, "daily"))
+        # Ulice tylko tam, gdzie jest co pokazać — strona z jedną ofertą nie ma
+        # po co stać w sitemapie. Wszystkie miasta liczymy jednym zapytaniem:
+        # osobne pytanie o każde z nich to kilkaset przejść po całej tabeli.
+        big_cities = {city for city, _ in cities[:300]}
+        streets: dict[tuple[str, str], int] = {}
+        rows = db.execute(
+            select(Listing.city, Listing.street, func.count(Listing.id))
+            .where(Listing.city.in_(big_cities), Listing.street.is_not(None), *active)
+            .group_by(Listing.city, Listing.street)
+        ).all()
+        for city, street, n in rows:
+            name = _street_label(street)
+            if name:
+                streets[(city, name)] = streets.get((city, name), 0) + n
+        for (city, street), n in streets.items():
+            if n < 3:
+                continue
+            entries.append((
+                site_url(
+                    f"/nieruchomosci?city={quote_plus(city)}&street={quote_plus(street)}"
+                ), None, "weekly",
+            ))
+        return entries
+
+    return _xml(cached("sitemap:pages", build, db, ttl=3600))
+
+
+@app.get("/sitemap-oferty-{part}.xml", include_in_schema=False)
+def sitemap_listings(part: int, db: DB) -> FastResponse:
+    """Adresy samych ofert, porcjami po 20 tysięcy."""
+    if part < 1:
+        raise HTTPException(404, "Nie ma takiej części sitemapy")
+    rows = db.execute(
+        select(Listing.id, Listing.last_seen_at)
+        .where(Listing.is_original.is_(True), Listing.status == ListingStatus.AKTYWNA)
+        .order_by(Listing.id)
+        .offset((part - 1) * SITEMAP_CHUNK)
+        .limit(SITEMAP_CHUNK)
+    ).all()
+    if not rows:
+        raise HTTPException(404, "Nie ma takiej części sitemapy")
+    return _xml([
+        (site_url(f"/oferta/{listing_id}"),
+         updated.date().isoformat() if updated else None, "weekly")
+        for listing_id, updated in rows
+    ])
+
+
 @app.get("/api/health")
 def api_health(db: DB) -> dict:
     return {
@@ -911,7 +1481,7 @@ def api_listing(listing_id: int, db: DB) -> dict:
 
 
 @app.get("/api/listings/{listing_id}/kontakt")
-def api_listing_contacts(listing_id: int, db: DB) -> dict:
+def api_listing_contacts(listing_id: int, db: DB, _: PhoneLimit) -> dict:
     """Numery kontaktowe oferty wraz z pochodzeniem (ogłoszenie / centrala biura)."""
     listing = db.get(Listing, listing_id)
     if not listing:
@@ -923,7 +1493,7 @@ def api_listing_contacts(listing_id: int, db: DB) -> dict:
 
 
 @app.get("/api/listings/{listing_id}/phone")
-def api_listing_phone(listing_id: int, db: DB) -> dict:
+def api_listing_phone(listing_id: int, db: DB, _: PhoneLimit) -> dict:
     """Ujawnienie pełnego numeru — świadoma, pojedyncza akcja użytkownika.
 
     Na liście numery są maskowane (`537 *** ***`). Pełny numer wymaga wejścia
@@ -943,7 +1513,7 @@ def api_listing_phone(listing_id: int, db: DB) -> dict:
 
 
 @app.get("/api/phone-lookup")
-def api_phone_lookup(db: DB, number: str = Query(min_length=4)) -> dict:
+def api_phone_lookup(db: DB, _: PhoneLimit, number: str = Query(min_length=4)) -> dict:
     listings = phone_lookup(db, number)
     return {
         "count": len(listings),
@@ -957,7 +1527,9 @@ def api_phone_lookup(db: DB, number: str = Query(min_length=4)) -> dict:
 
 
 @app.get("/api/geojson")
-def api_geojson(request: Request, db: DB, limit: int = 5000) -> JSONResponse:
+def api_geojson(
+    request: Request, db: DB, limit: int = Query(5000, ge=1, le=20000)
+) -> JSONResponse:
     """Punkty na mapę w formacie GeoJSON.
 
     Zwraca tylko to, czego mapa naprawdę potrzebuje (bez opisów i zdjęć), więc
@@ -965,7 +1537,7 @@ def api_geojson(request: Request, db: DB, limit: int = 5000) -> JSONResponse:
     do cache'owania na minutę — przesuwanie mapy nie odpytuje bazy od nowa.
     """
     filters = _filters_from_query(request)
-    filters.per_page = min(limit, 20000)
+    filters.per_page = limit
     features = map_points(db, filters)
     payload = {
         "type": "FeatureCollection",
@@ -976,7 +1548,9 @@ def api_geojson(request: Request, db: DB, limit: int = 5000) -> JSONResponse:
 
 
 @app.get("/api/listings/{listing_id}/okolica")
-async def api_surroundings(listing_id: int, db: DB, radius: int = 1000) -> dict:
+async def api_surroundings(
+    listing_id: int, db: DB, radius: int = Query(1000, ge=100, le=3000)
+) -> dict:
     """Co jest w okolicy oferty — z OpenStreetMap, liczone na żądanie."""
     from .pipeline.geocode import enrich_surroundings
 
@@ -1025,6 +1599,77 @@ async def api_parcel(listing_id: int, db: DB) -> dict:
     }
 
 
+@app.get("/api/ulice")
+def api_streets(
+    db: DB,
+    city: str | None = None,
+    q: str | None = None,
+    limit: int = Query(30, ge=1, le=100),
+) -> dict:
+    """Podpowiedzi ulic — te, przy których faktycznie są oferty.
+
+    W bazie ulica bywa zapisana z numerem, przedrostkiem albo dzielnicą po
+    przecinku („Czesława Miłosza, Kleczków"); podpowiadamy samą nazwę,
+    zsumowaną po wszystkich wariantach zapisu.
+    """
+    return {"city": city, "items": suggest_streets(db, city, q, limit)}
+
+
+#: „okolice ul. Emila Zoli", „w pobliżu ulicy…" — to nie część nazwy.
+_NEAR = re.compile(r"^\s*(?:w\s+)?(?:okolic[aey]?|pobliżu|rejon(?:ie)?)\s+", re.I)
+#: „Ozimskiej", „Kolejowej" → „Ozimska", „Kolejowa" (tylko ostatnie słowo).
+_LOCATIVE = re.compile(r"(?:(sk|ck|dzk)iej|(ow|n)ej)$")
+
+
+def _street_label(raw: str | None) -> str | None:
+    """Nazwa ulicy do pokazania: bez przedrostka, numeru i dopisków.
+
+    W bazie ta sama ulica bywa zapisana jako „Ozimska", „ul. Ozimskiej",
+    „okolice ul. Ozimskiej 3" albo „Ozimska, Śródmieście" — dla człowieka
+    szukającego to jedno i to samo.
+    """
+    from .geo.streets import normalize_street, split_house_number
+
+    name = normalize_street(_NEAR.sub("", (raw or "").split(",")[0]))
+    name = split_house_number(name)[0] if name else None
+    if not name or len(name) < 3 or (name[0].isdigit() and " " not in name):
+        return None
+    name = _LOCATIVE.sub(lambda m: (m.group(1) or m.group(2)) + "a", name)
+    return name[0].upper() + name[1:]
+
+
+def suggest_streets(db: Session, city: str | None, q: str | None, limit: int = 30) -> list[dict]:
+    from .utils.text import deaccent
+
+    def build(db: Session) -> list[tuple[str, str, int]]:
+        stmt = (
+            select(Listing.street, func.count(Listing.id))
+            .where(
+                Listing.street.is_not(None),
+                Listing.is_original.is_(True),
+                Listing.status == ListingStatus.AKTYWNA,
+            )
+            .group_by(Listing.street)
+        )
+        if city:
+            stmt = stmt.where(place_clause(Listing.city, city))
+        totals: dict[str, int] = {}
+        for raw, n in db.execute(stmt):
+            name = _street_label(raw)
+            if name:
+                totals[name] = totals.get(name, 0) + n
+        return sorted(
+            ((name, deaccent(name).lower(), n) for name, n in totals.items()),
+            key=lambda row: (-row[2], row[0]),
+        )
+
+    rows = cached(f"streets:{(city or '').strip().lower()}", build, db)
+    if q:
+        wanted = [deaccent(t).lower() for t in street_terms(q)]
+        rows = [row for row in rows if all(t in row[1] for t in wanted)]
+    return [{"name": name, "count": n} for name, _, n in rows[:limit]]
+
+
 @app.get("/api/stats")
 def api_stats(db: DB) -> dict:
     return cached("stats", dashboard_stats, db)
@@ -1070,7 +1715,9 @@ def api_agencies(db: DB, min_offers: int = 0, q: str | None = None) -> dict:
 
 
 @app.post("/api/favorites/{listing_id}")
-def api_add_favorite(listing_id: int, db: DB, folder: str = "domyslny") -> JSONResponse:
+def api_add_favorite(
+    listing_id: int, db: DB, _: Writer, folder: str = "domyslny"
+) -> JSONResponse:
     if not db.get(Listing, listing_id):
         raise HTTPException(404, "Nie ma takiej oferty")
     exists = db.scalar(
@@ -1083,7 +1730,9 @@ def api_add_favorite(listing_id: int, db: DB, folder: str = "domyslny") -> JSONR
 
 
 @app.delete("/api/favorites/{listing_id}")
-def api_remove_favorite(listing_id: int, db: DB, folder: str = "domyslny") -> JSONResponse:
+def api_remove_favorite(
+    listing_id: int, db: DB, _: Writer, folder: str = "domyslny"
+) -> JSONResponse:
     favorite = db.scalar(
         select(Favorite).where(Favorite.listing_id == listing_id, Favorite.folder == folder)
     )
@@ -1094,7 +1743,7 @@ def api_remove_favorite(listing_id: int, db: DB, folder: str = "domyslny") -> JS
 
 
 @app.post("/api/searches")
-def api_create_search(payload: dict, db: DB) -> dict:
+def api_create_search(payload: dict, db: DB, _: Writer) -> dict:
     name = (payload.get("name") or "").strip()
     if not name:
         raise HTTPException(400, "Poszukiwanie musi mieć nazwę")
@@ -1110,7 +1759,7 @@ def api_create_search(payload: dict, db: DB) -> dict:
 
 
 @app.delete("/api/searches/{search_id}")
-def api_delete_search(search_id: int, db: DB) -> dict:
+def api_delete_search(search_id: int, db: DB, _: Writer) -> dict:
     search = db.get(SavedSearch, search_id)
     if search:
         db.delete(search)
@@ -1119,7 +1768,7 @@ def api_delete_search(search_id: int, db: DB) -> dict:
 
 
 @app.get("/api/runs")
-def api_runs(db: DB, limit: int = 50) -> dict:
+def api_runs(db: DB, limit: int = Query(50, ge=1, le=500)) -> dict:
     runs = list(db.scalars(select(ScanRun).order_by(desc(ScanRun.started_at)).limit(limit)))
     return {
         "items": [
@@ -1136,15 +1785,25 @@ def api_runs(db: DB, limit: int = 50) -> dict:
 
 
 @app.get("/api/market-report")
-def api_market_report(db: DB, city: str | None = None, days: int = 90) -> dict:
+def api_market_report(
+    db: DB, city: str | None = None, days: int = Query(90, ge=1, le=365)
+) -> dict:
     """Prosty raport rynkowy: mediana ceny za m², rotacja ofert, udział biur."""
     since = utcnow() - timedelta(days=days)
-    stmt = select(Listing).where(Listing.is_original.is_(True), Listing.listed_at >= since)
+    # Same potrzebne kolumny, nie całe obiekty ofert: raport dla dużego miasta
+    # wciągał wcześniej do pamięci kilkadziesiąt tysięcy ogłoszeń z opisami
+    # i surowym JSON-em ze źródła.
+    stmt = select(
+        Listing.price_per_m2, Listing.removed_at, Listing.listed_at, Listing.seller_type
+    ).where(Listing.is_original.is_(True), Listing.listed_at >= since)
     if city:
-        stmt = stmt.where(Listing.city.ilike(f"%{city}%"))
-    rows = list(db.scalars(stmt))
-    prices = sorted(x.price_per_m2 for x in rows if x.price_per_m2)
-    sold = [x for x in rows if x.removed_at]
+        stmt = stmt.where(place_clause(Listing.city, city))
+    rows = db.execute(stmt).all()
+    prices = sorted(row.price_per_m2 for row in rows if row.price_per_m2)
+    sold = [row for row in rows if row.removed_at and row.listed_at]
+    days_on_market = [
+        (row.removed_at - row.listed_at).days for row in sold
+    ]
     return {
         "city": city,
         "days": days,
@@ -1152,11 +1811,13 @@ def api_market_report(db: DB, city: str | None = None, days: int = 90) -> dict:
         "median_price_m2": prices[len(prices) // 2] if prices else None,
         "min_price_m2": prices[0] if prices else None,
         "max_price_m2": prices[-1] if prices else None,
-        "avg_days_on_market": round(sum(x.days_on_market for x in sold) / len(sold), 1)
-        if sold else None,
+        "avg_days_on_market": round(sum(days_on_market) / len(days_on_market), 1)
+        if days_on_market else None,
         "removed": len(sold),
         "agency_share": round(
-            100 * sum(1 for x in rows if x.seller_type.value in ("posrednik", "deweloper"))
-            / max(len(rows), 1), 1
+            100 * sum(
+                1 for row in rows
+                if row.seller_type and row.seller_type.value in ("posrednik", "deweloper")
+            ) / max(len(rows), 1), 1
         ),
     }

@@ -8,6 +8,7 @@ powiadomieniem.
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
@@ -128,14 +129,90 @@ def _enum(value: str | None, enum_cls):
         return None
 
 
-def _place_clause(column, value: str):
-    """Dokładne dopasowanie dla nazw z rejestru, przedrostkowe dla reszty."""
+def place_clause(column, value: str):
+    """Dokładne dopasowanie dla nazw z rejestru, przedrostkowe dla reszty.
+
+    Rejestr szuka bez ogonków i wielkości liter, więc „wroclaw" go znajduje —
+    ale w bazie stoi „Wrocław". Porównujemy więc z nazwą z rejestru, a nie
+    z tym, co ktoś wpisał; inaczej trafienie w rejestrze dawało zero ofert.
+    """
     from .geo import lookup
 
     name = value.strip()
-    if lookup(name):
-        return column == name
-    return column.ilike(f"{name}%")
+    if hits := lookup(name):
+        names = sorted({unit.name for unit in hits})
+        return column == names[0] if len(names) == 1 else column.in_(names)
+    return _fold_like(column, f"{_escape_like(_fold_text(name))}%")
+
+
+def _escape_like(text: str) -> str:
+    """`%` i `_` wpisane przez użytkownika to zwykłe znaki, nie wzorzec."""
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _fold_text(text: str) -> str:
+    from .utils.text import deaccent
+
+    return deaccent(text).lower().strip()
+
+
+def _is_sqlite() -> bool:
+    from .settings import get_settings
+
+    return get_settings().database_url.startswith("sqlite")
+
+
+def _fold_like(column, pattern: str):
+    """LIKE bez względu na wielkość liter i polskie znaki.
+
+    Na SQLite przez funkcję `pl_fold` rejestrowaną przy połączeniu; na innych
+    bazach zostaje `ILIKE`, które wielkość liter obsługuje samo.
+    """
+    if _is_sqlite():
+        return func.pl_fold(column).like(pattern, escape="\\")
+    return column.ilike(pattern, escape="\\")
+
+
+#: Typ ulicy, którego ludzie używają zamiennie albo wcale: „ul. Browarna",
+#: „Browarna", „al. Pokoju", „aleja Pokoju".
+_STREET_PREFIX = re.compile(
+    r"^\s*(?:ul(?:ica|icy)?|al(?:eja|eje|ei)?|os(?:iedle|iedlu)?|pl(?:ac)?|"
+    r"skwer|rondo|bulwar|droga)\b\.?\s*",
+    re.I,
+)
+
+
+def street_terms(value: str | None) -> list[str]:
+    """Słowa nazwy ulicy do dopasowania, bez typu ulicy i numeru domu.
+
+    Każde słowo musi wystąpić, w dowolnej kolejności — „Pawła II" znajduje
+    „Jana Pawła II", a „Miłosza Czesława" to samo co „Czesława Miłosza".
+    """
+    from .geo.streets import split_house_number
+
+    if not value:
+        return []
+    text = _STREET_PREFIX.sub("", value.strip())
+    text = split_house_number(text)[0] or text
+    return [_stem(_fold_text(word)) for word in re.split(r"[\s,.]+", text) if word][:6]
+
+
+#: Ogłoszenia piszą „przy ulicy Ozimskiej", a szukający „Ozimska". Ucinamy
+#: końcówkę przymiotnika, żeby jedno trafiało w drugie.
+_ADJ_ENDING = re.compile(r"(?<=[a-z]{4})(?:iej|ej|a)$")
+
+
+def _stem(term: str) -> str:
+    return _ADJ_ENDING.sub("", term)
+
+
+def _street_clause(value: str):
+    terms = street_terms(value)
+    if not terms:
+        return None
+    return and_(
+        *(_fold_like(Listing.street, f"%{_escape_like(term)}%") for term in terms)
+    )
 
 
 def apply_filters(stmt: Select, filters: dict[str, Any] | Filters) -> Select:
@@ -161,15 +238,17 @@ def apply_filters(stmt: Select, filters: dict[str, Any] | Filters) -> Select:
     # tabeli: przy 59 tysiącach ofert strona wyników wstawała 2,7 sekundy,
     # a docelowo ofert ma być kilkaset tysięcy.
     if f.city:
-        clauses.append(_place_clause(Listing.city, f.city))
+        clauses.append(place_clause(Listing.city, f.city))
     if f.district:
-        clauses.append(Listing.district.ilike(f"{f.district}%"))
+        clauses.append(
+            _fold_like(Listing.district, f"{_escape_like(_fold_text(f.district))}%")
+        )
     if f.county:
-        clauses.append(_place_clause(Listing.county, f.county))
+        clauses.append(place_clause(Listing.county, f.county))
     if f.voivodeship:
         clauses.append(Listing.voivodeship == f.voivodeship)
-    if f.street:
-        clauses.append(Listing.street.ilike(f"%{f.street}%"))
+    if f.street and (street := _street_clause(f.street)) is not None:
+        clauses.append(street)
     if f.source:
         clauses.append(Listing.source_key.in_(f.source))
     if f.agency_id:
@@ -242,16 +321,15 @@ def apply_filters(stmt: Select, filters: dict[str, Any] | Filters) -> Select:
         clauses.append(Listing.deal_level.in_(f.deal_level))
 
     if f.q:
-        pattern = f"%{f.q}%"
+        pattern = f"%{_escape_like(_fold_text(f.q))}%"
         clauses.append(
-            or_(
-                Listing.title.ilike(pattern),
-                Listing.description.ilike(pattern),
-                Listing.street.ilike(pattern),
-                Listing.case_number.ilike(pattern),
-                Listing.authority.ilike(pattern),
-                Listing.seller_name.ilike(pattern),
-            )
+            or_(*(
+                _fold_like(column, pattern)
+                for column in (
+                    Listing.title, Listing.description, Listing.street,
+                    Listing.case_number, Listing.authority, Listing.seller_name,
+                )
+            ))
         )
 
     return stmt.where(*clauses) if clauses else stmt

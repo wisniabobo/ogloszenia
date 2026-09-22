@@ -28,6 +28,19 @@ def _configure_sqlite(dbapi_conn, _record) -> None:
     # przepadła z „database is locked".
     cur.execute("PRAGMA busy_timeout=120000")
     cur.close()
+    # Wbudowane `lower()` i `LIKE` w SQLite znają tylko ASCII: „łódzka" nie
+    # trafiało w „Łódzka", a „wroclaw" w „Wrocław". `pl_fold` sprowadza tekst
+    # do małych liter bez ogonków — po obu stronach porównania.
+    dbapi_conn.create_function("pl_fold", 1, pl_fold, deterministic=True)
+
+
+def pl_fold(value):
+    """Tekst do porównań: małe litery, bez polskich znaków."""
+    if value is None:
+        return None
+    from .utils.text import deaccent
+
+    return deaccent(str(value)).lower()
 
 
 def get_engine() -> Engine:

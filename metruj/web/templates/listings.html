@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import offer_card, pager, result_bar %}
 {% block title %}Ogłoszenia nieruchomości z całej Polski — Metruj{% endblock %}
-{% block heading %}Oferty nieruchomości{% endblock %}
+{% block heading %}{{ seo_headline if filters.city or filters.street or filters.county or filters.voivodeship or filters.property_type else "Oferty nieruchomości" }}{% endblock %}
 {% block actions %}
   <a class="btn btn--quiet btn--sm" href="/mapa?{{ query_string }}">Zobacz na mapie</a>
   <button class="btn btn--sm" onclick="saveSearch()">Powiadom o nowych</button>

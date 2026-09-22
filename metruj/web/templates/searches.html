@@ -24,7 +24,7 @@
     <td class="nowrap muted">{{ (search.last_fired_at|pl).strftime('%d.%m, %H:%M') if search.last_fired_at else '—' }}</td>
     <td style="text-align:right">
       <button class="btn btn--quiet btn--sm"
-        onclick="fetch('/api/searches/{{ search.id }}',{method:'DELETE'}).then(()=>location.reload())">Usuń</button>
+        onclick="deleteSearch({{ search.id }})">Usuń</button>
     </td>
   </tr>
   {% else %}

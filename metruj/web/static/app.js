@@ -33,10 +33,26 @@ async function revealContact(button, listingId) {
   }
 }
 
+/* Zapis (schowek, alerty) należy do właściciela instancji. Publiczna kopia bez
+   hasła jest tylko do czytania — wtedy kierujemy na formularz hasła zamiast
+   udawać, że klik się udał. */
+function handleWriteError(resp) {
+  if (resp.status === 401 || resp.status === 403) {
+    if (confirm("Zapis wymaga hasła właściciela tej instancji. Przejść do logowania?")) {
+      window.location.href = "/wejscie";
+    }
+    return true;
+  }
+  return false;
+}
+
 async function toggleFavorite(button, listingId) {
   const on = button.dataset.on === "1";
   const resp = await fetch(`/api/favorites/${listingId}`, { method: on ? "DELETE" : "POST" });
-  if (!resp.ok) return;
+  if (!resp.ok) {
+    handleWriteError(resp);
+    return;
+  }
   button.dataset.on = on ? "0" : "1";
   button.textContent = on ? "☆ Zapisz" : "★ Zapisane";
   button.classList.toggle("btn--ghost", !on);
@@ -55,6 +71,7 @@ async function saveSearch() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, query, channels: ["telegram"], only_original: true }),
   });
+  if (!resp.ok && handleWriteError(resp)) return;
   alert(resp.ok
     ? "Zapisane. Nowe pasujące oferty przyjdą powiadomieniem."
     : "Nie udało się zapisać poszukiwania.");
@@ -115,4 +132,47 @@ function toggleFilters(button) {
   const form = document.getElementById("filters-form");
   const open = form.classList.toggle("is-open");
   button.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+/* Pole „Ulica" podpowiada ulice, przy których są oferty — w wybranej
+   miejscowości, jeśli jest wpisana. Pobieramy po chwili bezczynności. */
+document.addEventListener("DOMContentLoaded", () => {
+  const input = document.querySelector("input[data-streets]");
+  const list = document.getElementById("streets");
+  if (!input || !list) return;
+  const city = input.form?.querySelector("[name=city]");
+  let timer = null;
+  let last = "";
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(async () => {
+      const q = input.value.trim();
+      const key = `${city?.value || ""}|${q}`;
+      if (q.length < 2 || key === last) return;
+      last = key;
+      const params = new URLSearchParams({ q, limit: "20" });
+      if (city?.value) params.set("city", city.value);
+      try {
+        const res = await fetch(`/api/ulice?${params}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        list.replaceChildren(...data.items.map((item) => {
+          const option = document.createElement("option");
+          option.value = item.name;
+          option.label = `${item.count} ofert`;
+          return option;
+        }));
+      } catch (_) { /* brak podpowiedzi nie blokuje wyszukiwania */ }
+    }, 250);
+  });
+});
+
+/* Usunięcie alertu — z obsługą braku hasła zapisu. */
+async function deleteSearch(searchId) {
+  const resp = await fetch(`/api/searches/${searchId}`, { method: "DELETE" });
+  if (!resp.ok) {
+    if (!handleWriteError(resp)) alert("Nie udało się usunąć poszukiwania.");
+    return;
+  }
+  location.reload();
 }

@@ -26,7 +26,13 @@ log = logging.getLogger("metruj.alerts")
 
 
 def format_listing(listing: Listing, *, reveal_phone: bool = False) -> str:
-    """Zwięzły opis oferty do powiadomienia (Markdown)."""
+    """Zwięzły opis oferty do powiadomienia (zwykły tekst).
+
+    Wcześniej był to Markdown Telegrama — ale tytuł z „_" albo „*" (a takich
+    jest pełno: „M-3_balkon", „*OKAZJA*") kończył się odmową „can't parse
+    entities". Nieudany alert trafia do `alert_log` i nie jest ponawiany,
+    więc taka oferta przepadała bez śladu.
+    """
     bits: list[str] = []
     if listing.price:
         bits.append(f"{listing.price:,.0f} zł".replace(",", " "))
@@ -49,7 +55,7 @@ def format_listing(listing: Listing, *, reveal_phone: bool = False) -> str:
         )
 
     lines = [
-        f"*{listing.title[:140]}*",
+        listing.title[:140],
         " · ".join(bits) if bits else "",
         f"{where}" if where else "",
         f"{listing.source_key} · {seller}{phones}",
@@ -82,7 +88,6 @@ async def send_telegram(text: str) -> None:
             json={
                 "chat_id": s.telegram_chat_id,
                 "text": text,
-                "parse_mode": "Markdown",
                 "disable_web_page_preview": False,
             },
         )
@@ -143,7 +148,7 @@ async def dispatch_alerts(new_listing_ids: list[int]) -> int:
                 )
                 if already:
                     continue
-                text = f"🔔 *{search.name}*\n\n{format_listing(listing)}"
+                text = f"🔔 {search.name}\n\n{format_listing(listing)}"
                 for channel in search.channels or ["telegram"]:
                     ok, error = True, None
                     try:

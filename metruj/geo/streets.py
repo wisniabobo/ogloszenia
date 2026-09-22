@@ -13,12 +13,30 @@ STREET_RE = re.compile(
     re.UNICODE,
 )
 
-#: słowa, po których nazwa ulicy na pewno się skończyła
+#: Słowa, po których nazwa ulicy na pewno się skończyła. Bez nich do bazy
+#: wchodziły nazwy w rodzaju „Ozimska Opole Sprzedam", „Ozimskiej i" czy
+#: „Krakowska Bezpośrednio" — a taka „ulica" nie łączy się z niczym: ani
+#: z geokoderem, ani z inną ofertą przy tej samej ulicy.
 _STOP = re.compile(
-    r"\s+(?:w|we|k/|koło|obok|tel|telefon|kontakt|cena|pow|powierzchnia|nr|numer|"
-    r"oferta|mieszkanie|dom|lokal|dzia[łl]ka|gara[żz]|sprzeda[żz]|wynaj\w*)\b",
+    r"\s+(?:w|we|i|oraz|k/|koło|obok|blisko|przy|tel|telefon|kontakt|cena|pow|"
+    r"powierzchnia|metra[żz]|nr|numer|oferta|oferuje\w*|polecam\w*|sprzedam\w*|"
+    r"sprzeda[żz]\w*|kupi\w*|wynajm\w*|wynaj\w*|do\s+wynaj\w*|bezpo[śs]rednio|"
+    r"bez\s+po[śs]rednik\w*|mieszkanie|mieszkania|kawalerka|apartament\w*|dom|domy|"
+    r"lokal|dzia[łl]k\w*|gara[żz]\w*|piętro|pi[ęe]tro|pok[oó]j|pokoje|"
+    r"nowe|nowa|now\w*\s+inwestycj\w*|inwestycj\w*|stan|rynek\s+\w+)\b",
     re.I,
 )
+
+#: Miasta i województwa doklejone do nazwy ulicy („Ozimska Opole") — nazwa
+#: ulicy kończy się przed nazwą miejscowości z rejestru.
+def _cut_place(street: str) -> str:
+    from .gazetteer import lookup
+
+    words = street.split()
+    for index in range(1, len(words)):
+        if lookup(words[index]) and len(words[index]) > 3:
+            return " ".join(words[:index])
+    return street
 
 #: Przedrostek typu ulicy w bazie psuje geokodowanie (GUGiK na „ul. Telesfora"
 #: zwraca zero wyników), a w interfejsie dokłada go szablon.
@@ -42,6 +60,7 @@ def extract_street(text: str | None) -> str | None:
     street = clean(match.group(1))
     street = re.split(r"\.\s+|\s+[–—]\s+|\s+-\s+|[,;)]", street)[0]
     street = _STOP.split(street)[0].strip(" .,-–—")
+    street = _cut_place(street).strip(" .,-–—")
     if len(street) < 3 or street.isdigit():
         return None
     return street[:120]

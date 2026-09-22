@@ -19,6 +19,10 @@
 	@api path /api/*
 	header @api Access-Control-Allow-Origin "*"
 
+	# Sitemapa i robots.txt zmieniają się rzadko — godzina cache wystarczy.
+	@seo path /robots.txt /sitemap*.xml
+	header @seo Cache-Control "public, max-age=3600"
+
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
