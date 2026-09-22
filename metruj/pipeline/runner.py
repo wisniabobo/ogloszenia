@@ -10,7 +10,7 @@ from datetime import timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from ..db import session_scope
+from ..db import refresh_statistics, session_scope
 from ..models import (
     Listing,
     ListingStatus,
@@ -561,5 +561,6 @@ async def run_scan(
     # okazji ma się otwierać natychmiast.
     with session_scope() as session:
         recompute_market(session)
+    refresh_statistics()
 
     return result

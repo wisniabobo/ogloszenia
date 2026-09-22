@@ -95,10 +95,25 @@ def _median(values: list[float]) -> float:
     return (values[middle - 1] + values[middle]) / 2
 
 
+def scope_value(level: str, city: str | None, county: str | None,
+                voivodeship: str | None) -> str | None:
+    """Klucz zakresu mediany.
+
+    Miejscowość i powiat zawsze razem z województwem: „Nowa Wieś" jest
+    w każdym z nich, a powiat „brzeski", „opolski" czy „średzki" — w dwóch.
+    Sama nazwa mieszała w jednej medianie ceny z drugiego końca Polski.
+    """
+    if level == "wojewodztwo":
+        return voivodeship or None
+    value = city if level == "miasto" else county
+    if not value or not voivodeship:
+        return None
+    return f"{value}|{voivodeship}"
+
+
 def _key(level: str, listing_scope: tuple[str | None, str | None, str | None],
          ptype: str, transaction: str) -> tuple[str, str, str, str] | None:
-    city, county, voivodeship = listing_scope
-    value = {"miasto": city, "powiat": county, "wojewodztwo": voivodeship}[level]
+    value = scope_value(level, *listing_scope)
     return (level, value, ptype, transaction) if value else None
 
 
@@ -186,12 +201,20 @@ def recompute(session: Session) -> MarketStats:
 
     # oferty, które wypadły z zakresu (np. straciły cenę), nie mogą zostać
     # z nieaktualną oceną sprzed tygodnia
+    # Różnicę liczymy w Pythonie i czyścimy paczkami: „NOT IN (…)" z kilkudziesięcioma
+    # tysiącami identyfikatorów przekraczało limit parametrów SQLite.
     scored_ids = {u["id"] for u in updates}
-    session.execute(
-        update(Listing)
-        .where(Listing.deal_ratio.is_not(None), Listing.id.notin_(scored_ids))
-        .values(deal_ratio=None, deal_level=None)
-    )
+    stale = [
+        listing_id for listing_id in session.scalars(
+            select(Listing.id).where(Listing.deal_ratio.is_not(None))
+        )
+        if listing_id not in scored_ids
+    ]
+    for start in range(0, len(stale), 500):
+        session.execute(
+            update(Listing).where(Listing.id.in_(stale[start:start + 500]))
+            .values(deal_ratio=None, deal_level=None)
+        )
 
     log.info("Odniesienie rynkowe: %s", stats)
     return stats
@@ -203,7 +226,8 @@ def market_reference(
     transaction: str = TransactionType.SPRZEDAZ.value,
 ) -> MarketStat | None:
     """Najdokładniejsze dostępne odniesienie dla podanego zakresu."""
-    for level, value in (("miasto", city), ("powiat", county), ("wojewodztwo", voivodeship)):
+    for level in LEVELS:
+        value = scope_value(level, city, county, voivodeship)
         if not value:
             continue
         hit = session.scalar(
@@ -224,3 +248,40 @@ def recompute_sync() -> MarketStats:
 
     with session_scope() as session:
         return recompute(session)
+
+
+def market_levels(session: Session, listing: Listing) -> list[dict]:
+    """Mediany ceny za metr dla oferty: w miejscowości, powiecie i województwie.
+
+    Na stronie oferty to odpowiedź na pytanie „drogo czy tanio?" — z liczbą
+    ofert, z których mediana wyszła, i z różnicą względem tej oferty.
+    """
+    if not listing.price_per_m2 or listing.property_type not in COMPARABLE:
+        return []
+    names = {"miasto": listing.city, "powiat": f"pow. {listing.county}" if listing.county else None,
+             "wojewodztwo": f"woj. {listing.voivodeship}" if listing.voivodeship else None}
+    out = []
+    for level in LEVELS:
+        if level == "powiat" and listing.county == listing.city:
+            continue  # miasto na prawach powiatu — ta sama liczba dwa razy
+        value = scope_value(level, listing.city, listing.county, listing.voivodeship)
+        if not value:
+            continue
+        stat = session.scalar(
+            select(MarketStat).where(
+                MarketStat.level == level,
+                MarketStat.scope == value,
+                MarketStat.property_type == listing.property_type.value,
+                MarketStat.transaction == listing.transaction.value,
+            )
+        )
+        if stat is None or not stat.median_price_m2:
+            continue
+        out.append({
+            "level": level,
+            "place": names[level],
+            "median": stat.median_price_m2,
+            "sample": stat.sample,
+            "diff_pct": round(100 * (listing.price_per_m2 - stat.median_price_m2) / stat.median_price_m2),
+        })
+    return out

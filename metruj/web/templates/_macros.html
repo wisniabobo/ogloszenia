@@ -183,7 +183,7 @@
       <div class="contact">
         <button class="contact__number" type="button"
                 onclick="revealContact(this, {{ listing.id }})">{{ first.masked }}</button>
-        <span class="contact__origin">{{ first.label }}</span>
+        <span class="contact__origin" title="{{ first.label }}">{{ first.label }}</span>
       </div>
     {% else %}
       <div class="contact--none">w ogłoszeniu nie ma numeru</div>
@@ -243,4 +243,38 @@
   {% if filters.page < pages %}<a href="?{{ qs }}&page={{ filters.page + 1 }}">następna ›</a>{% endif %}
 </nav>
 {% endif %}
+{% endmacro %}
+
+{# ------------------------------------------------ karta podobnej oferty #}
+{% macro similar_card(other, base) %}
+{% set is_land = other.property_type.value in ('dzialka', 'gospodarstwo') %}
+<a class="simcard" href="/oferta/{{ other.id }}">
+  {% if other.images %}
+    <img class="simcard__photo" src="{{ other.images[0] }}" alt="" loading="lazy"
+         onerror="this.outerHTML='<div class=&quot;simcard__photo simcard__photo--empty&quot;>bez zdjęcia</div>'">
+  {% else %}
+    <div class="simcard__photo simcard__photo--empty">bez zdjęcia</div>
+  {% endif %}
+  <div class="simcard__body">
+    <div class="simcard__price">{{ money(other.price) }}</div>
+    {% if other.price_per_m2 %}
+      <div class="simcard__perm2">{{ money(other.price_per_m2, 'zł/m²') }}
+        {%- if base.price_per_m2 %}
+          {% set diff = (100 * (other.price_per_m2 - base.price_per_m2) / base.price_per_m2) | round(0) | int %}
+          {% if diff != 0 %}<span class="{{ 'up' if diff > 0 else 'down' }}">{{ '%+d'|format(diff) }}%</span>
+          {% else %}<span class="muted">tyle samo</span>{% endif %}
+        {%- endif %}
+      </div>
+    {% endif %}
+    <div class="simcard__specs">
+      {% if other.area %}<span>{{ land(other.area) if is_land else area(other.area) }}</span>{% endif %}
+      {% if other.rooms %}<span>{{ other.rooms }} {{ plural(other.rooms, 'pokój', 'pokoje', 'pokoi') }}</span>{% endif %}
+      {% if other.floor is not none and not is_land %}<span>{{ 'parter' if other.floor == 0 else other.floor ~ '. p.' }}</span>{% endif %}
+    </div>
+    <div class="simcard__where">
+      {%- if other.district and other.district != other.city %}{{ other.district }}, {% endif %}{{ other.city or other.county or '' }}
+    </div>
+    <div class="simcard__title">{{ other.title }}</div>
+  </div>
+</a>
 {% endmacro %}

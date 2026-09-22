@@ -592,3 +592,146 @@ h1, h2, h3, h4 { margin: 0; line-height: 1.25; font-weight: 650; letter-spacing:
   .filters > .filters__grid { grid-template-columns: 1fr; }
 }
 .field__pair input { min-width: 0; }
+
+/* Etykieta pod numerem: najwyżej dwa wiersze, pełna nazwa w dymku. */
+.contact__origin {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+.small { font-size: 13px; }
+.up   { color: var(--alert); font-weight: 600; }
+.down { color: var(--ok); font-weight: 600; }
+.btn--block { display: flex; width: 100%; justify-content: center; }
+
+/* ==========================================================================
+   Strona oferty
+   --------------------------------------------------------------------------
+   Po lewej to, co się czyta (zdjęcia, parametry, opis), po prawej to, po co
+   się przyszło: cena, telefon i przejście do ogłoszenia. Panel z prawej
+   jedzie razem z przewijaniem, więc telefon jest pod ręką także przy opisie.
+   ========================================================================== */
+.detail__where { margin: 5px 0 0; color: var(--ink-soft); font-size: 15px; }
+.detail__where strong { color: var(--ink); font-weight: 600; }
+
+.detail { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; align-items: start; }
+.detail__main { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.detail__main > .card + .card { margin-top: 0; }
+.detail__aside { position: sticky; top: 76px; }
+.detail__h { font-size: 17px; margin: 24px 0 10px; }
+.detail__text { white-space: pre-wrap; font-size: 15px; color: var(--ink-soft); max-width: 78ch; }
+.detail__meta { margin-top: 24px; }
+.detail__meta > summary { cursor: pointer; color: var(--ink-faint); font-size: 14px; margin-bottom: 8px; }
+
+.gallery {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 10px; box-shadow: var(--shadow);
+}
+.gallery__main {
+  width: 100%; aspect-ratio: 16 / 10; object-fit: cover; display: block;
+  border-radius: var(--radius-sm); background: var(--surface-alt);
+}
+.gallery--broken .gallery__main { display: none; }
+.gallery__thumbs { display: flex; gap: 8px; overflow-x: auto; margin-top: 8px; scrollbar-width: thin; }
+.gallery__thumb {
+  flex: 0 0 92px; height: 68px; padding: 0; background: none; cursor: pointer;
+  border: 2px solid transparent; border-radius: 7px; overflow: hidden; opacity: .75;
+}
+.gallery__thumb:hover { opacity: 1; }
+.gallery__thumb.is-on { border-color: var(--brand); opacity: 1; }
+.gallery__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.tag--type { background: var(--surface-alt); color: var(--ink); border: 1px solid var(--line-strong); font-weight: 600; }
+
+.facts {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px 18px; margin: 10px 0 0;
+}
+.facts > div { border-top: 1px solid var(--line); padding-top: 8px; }
+.facts dt {
+  font-size: 11.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--ink-faint);
+}
+.facts dd { margin: 2px 0 0; font-size: 16px; font-weight: 600; }
+
+.buybox { display: flex; flex-direction: column; gap: 10px; }
+.buybox__price { font-size: 30px; font-weight: 720; letter-spacing: -.03em; line-height: 1.1; }
+.buybox__sub { display: flex; gap: 10px; flex-wrap: wrap; color: var(--ink-soft); font-size: 14.5px; }
+.buybox__contacts { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.buybox__seller {
+  display: flex; flex-direction: column; gap: 2px; font-size: 14px;
+  border-top: 1px solid var(--line); padding-top: 10px;
+}
+.buybox__date { font-size: 12.5px; text-align: center; }
+
+/* ------------------------------------------------------ podobne oferty --- */
+.similar { margin-top: 30px; }
+.similar__head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.similar__head h2 { font-size: 20px; }
+.similar__more { margin-left: auto; font-weight: 600; }
+.similar__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 14px; }
+
+.simcard {
+  display: flex; flex-direction: column; overflow: hidden; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); transition: box-shadow .14s ease, transform .14s ease;
+}
+.simcard:hover { text-decoration: none; box-shadow: var(--shadow-lift); transform: translateY(-1px); }
+.simcard__photo { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: var(--surface-alt); }
+.simcard__photo--empty { display: flex; align-items: center; justify-content: center; color: var(--ink-faint); font-size: 12.5px; }
+.simcard__body { padding: 11px 13px 13px; display: flex; flex-direction: column; gap: 4px; }
+.simcard__price { font-size: 19px; font-weight: 700; letter-spacing: -.02em; }
+.simcard__perm2 { font-size: 13.5px; color: var(--ink-soft); display: flex; gap: 8px; align-items: baseline; }
+.simcard__specs { display: flex; gap: 10px; flex-wrap: wrap; font-size: 13.5px; }
+.simcard__where { font-size: 13.5px; color: var(--ink-soft); }
+.simcard__title {
+  font-size: 13px; color: var(--ink-faint);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+@media (max-width: 960px) {
+  .detail { grid-template-columns: 1fr; }
+  .detail__aside { position: static; order: -1; }
+  .similar__more { margin-left: 0; }
+}
+
+/* Na telefonie i tablecie szerokie tabele (biura, alerty, źródła) przewijają
+   się w poziomie we własnej ramce — nie rozpychają całej strony. */
+.cols-2 > *, .cols-3 > * { min-width: 0; }
+@media (max-width: 900px) {
+  .table { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table th, .table td { white-space: nowrap; }
+}
+@media (max-width: 760px) {
+  .page { padding: 16px 14px 56px; }
+  .page__head h1 { font-size: 21px; }
+  .buybox__price { font-size: 26px; }
+}
+
+.filters-open { display: none; }
+.filters-open__count {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px;
+  padding: 0 6px; border-radius: 999px; background: var(--brand); color: #fff; font-size: 12px;
+}
+@media (max-width: 760px) {
+  .filters-open { display: flex; width: 100%; justify-content: center; margin-bottom: 10px; }
+  .filters:not(.is-open) { display: none; }
+  .filters > .filters__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .offer__photo { aspect-ratio: 16 / 9; }
+}
+
+@media (max-width: 400px) {
+  .filters > .filters__grid { grid-template-columns: 1fr; }
+}
+
+/* Na tle rynku — mediana ceny za metr w miejscowości, powiecie, województwie. */
+.detail__aside { display: flex; flex-direction: column; gap: 14px; }
+.detail__aside > .card + .card { margin-top: 0; }
+.marketbox__h { font-size: 16px; margin-bottom: 2px; }
+.marketbox .muted.small { margin: 0 0 8px; }
+.marketbox__row {
+  display: flex; justify-content: space-between; gap: 10px;
+  padding: 9px 0; border-top: 1px solid var(--line);
+}
+.marketbox__place { font-weight: 600; font-size: 14.5px; }
+.marketbox__val { text-align: right; font-size: 14.5px; font-weight: 600; white-space: nowrap; }
+.marketbox > a { display: inline-block; margin-top: 8px; }

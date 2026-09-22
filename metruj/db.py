@@ -317,3 +317,22 @@ def init_db() -> None:
     repaired = _repair_dangling_references(engine, models.Base.metadata)
     if repaired:
         log.info("Odtworzono tabele z uszkodzonymi kluczami obcymi: %s", ", ".join(repaired))
+    refresh_statistics()
+
+
+def refresh_statistics() -> None:
+    """Statystyki dla planera zapytań SQLite (`ANALYZE`).
+
+    Bez nich planer zgadywał i przy większości wyszukiwań wybierał indeks
+    (status, is_original), który pasuje do prawie całej tabeli: lista „od
+    najnowszych" liczyła się 430 ms, podobne oferty — ponad sekundę. Ze
+    statystykami te same zapytania idą po indeksie miejscowości albo daty
+    i trwają kilka milisekund. Przy 180 tys. ofert `ANALYZE` zajmuje pół
+    sekundy, a rozkład danych zmienia się z każdym skanem, więc odświeżamy
+    je przy inicjalizacji bazy, po skanie i po naprawie danych.
+    """
+    engine = get_engine()
+    if engine.dialect.name != "sqlite":
+        return
+    with engine.begin() as conn:
+        conn.exec_driver_sql("ANALYZE")

@@ -99,3 +99,20 @@ document.addEventListener("click", (event) => {
     nav.classList.remove("is-open");
   }
 });
+
+/* Galeria na stronie oferty: miniatura podmienia duże zdjęcie. */
+function showPhoto(thumb) {
+  const main = document.getElementById("gallery-main");
+  if (!main) return;
+  main.src = thumb.dataset.src;
+  main.closest(".gallery").classList.remove("gallery--broken");
+  document.querySelectorAll(".gallery__thumb.is-on").forEach((t) => t.classList.remove("is-on"));
+  thumb.classList.add("is-on");
+}
+
+/* Na telefonie panel filtrów jest zwinięty pod przyciskiem „Filtry". */
+function toggleFilters(button) {
+  const form = document.getElementById("filters-form");
+  const open = form.classList.toggle("is-open");
+  button.setAttribute("aria-expanded", open ? "true" : "false");
+}

@@ -16,7 +16,7 @@ from rich.table import Table
 from sqlalchemy import desc, func, select
 
 from . import __version__
-from .db import init_db, session_scope
+from .db import init_db, refresh_statistics, session_scope
 from .models import Agency, Listing, ListingStatus, SavedSearch, Source
 from .query import Filters, dashboard_stats, phone_lookup, search_listings
 from .settings import get_settings, sources_config
@@ -250,6 +250,7 @@ def cmd_repair(
         stats = repair(session, regeocode_all=regeocode_all)
     with session_scope() as session:
         market = recompute_market(session)
+    refresh_statistics()
     console.print(
         f"[green]Naprawa:[/] ceny {stats.prices}, cena za m² {stats.price_per_m2}, "
         f"powierzchnia gruntu {stats.land_area}, regiony {stats.regions}, "

@@ -474,6 +474,57 @@ def _archive_old_notices(session: Session) -> int:
     return len(archived)
 
 
+def _fix_default_region(session: Session) -> int:
+    """Oferty, którym województwo wpisała wartość domyślna „opolskie".
+
+    Kolumna województwa miała kiedyś domyślne „opolskie", więc każda oferta
+    bez ustalonego regionu trafiała do Opolskiego. Rozpoznajemy je po tym,
+    że nic w nich na Opolskie nie wskazuje:
+
+    - kod TERYT z rejestru należy do innego województwa — wtedy bierzemy
+      województwo z kodu;
+    - punkt od portalu leży poza Opolskiem — województwo z punktu, a gdy
+      punkt jest przy granicy kilku ramek, zostawiamy puste dla geokodera,
+      który zapyta rejestr adresowy o ten punkt;
+    - bez kodu, bez punktu i z miejscowością, której nie ma w Opolskiem —
+      województwo z rejestru, jeśli miejscowość jest tam jednoznaczna,
+      a inaczej puste: lepiej „nie wiadomo" niż fałszywie „opolskie".
+    """
+    from ..geo import in_voivodeship, voivodeship_of, voivodeships_at
+
+    rows = session.execute(
+        select(Listing.id, Listing.city, Listing.teryt, Listing.lat, Listing.lon)
+        .where(Listing.voivodeship == "opolskie")
+    ).all()
+    changed = 0
+    for row in rows:
+        if row.teryt and row.teryt.startswith("16"):
+            continue
+        target = "opolskie"
+        if row.teryt:
+            target = voivodeship_of(row.teryt) or "opolskie"
+        elif row.lat is not None and row.lon is not None:
+            if in_voivodeship(row.lat, row.lon, "opolskie"):
+                continue  # punkt w Opolskiem — potwierdzi go geokoder
+            near = voivodeships_at(row.lat, row.lon)
+            target = near[0] if len(near) == 1 else None
+        else:
+            found = resolve_place(row.city or "", voivodeship_hint="opolskie") if row.city else {}
+            if found and found.get("voivodeship") == "opolskie":
+                continue
+            regions = {unit.voivodeship for unit in lookup(row.city)} if row.city else set()
+            target = regions.pop() if len(regions) == 1 else None
+        if target == "opolskie":
+            continue
+        session.execute(
+            update(Listing).where(Listing.id == row.id).values(
+                voivodeship=target, county=None, commune=None,
+            )
+        )
+        changed += 1
+    return changed
+
+
 def _recheck_duplicates(session: Session) -> int:
     """Rozpina połączenia, które nie przechodzą już dzisiejszych reguł.
 
@@ -745,7 +796,7 @@ def repair(session: Session, *, regeocode_all: bool = False) -> RepairStats:
     stats.descriptions = _drop_script_descriptions(session)
     stats.concluded = _close_concluded(session)
     stats.old_notices = _archive_old_notices(session)
-    stats.regions = _fix_regions(session)
+    stats.regions = _fix_regions(session) + _fix_default_region(session)
     stats.stale_points = _recheck_coordinates(session)
     stats.unlinked = _recheck_duplicates(session)
     stats.regeocode = _mark_for_regeocode(session, suspicious_only=not regeocode_all)

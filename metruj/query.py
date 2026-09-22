@@ -13,6 +13,7 @@ from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import Select, and_, desc, func, or_, select
+from sqlalchemy.orm import defer
 
 from .models import (
     Agency,
@@ -289,7 +290,9 @@ def search_listings(session, filters: Filters) -> tuple[list[Listing], int]:
     """
     from sqlalchemy.orm import selectinload
 
-    base = select(Listing).options(selectinload(Listing.phones))
+    base = select(Listing).options(
+        selectinload(Listing.phones), selectinload(Listing.agency), defer(Listing.raw)
+    )
     base = apply_filters(base, filters)
 
     total = session.scalar(
@@ -470,3 +473,178 @@ def map_points(session, filters: Filters) -> list[dict]:
             }
         )
     return features
+
+
+# --------------------------------------------------------------------------- #
+# Podobne oferty
+# --------------------------------------------------------------------------- #
+#: Ile ofert pokazujemy pod ogłoszeniem.
+SIMILAR_LIMIT = 8
+#: Pasmo ceny i metrażu wokół oglądanej oferty.
+SIMILAR_PRICE = (0.75, 1.3)
+SIMILAR_AREA = (0.75, 1.3)
+#: Ilu kandydatów z jednego poziomu (miejscowość, powiat, województwo)
+#: bierzemy do porównania, zanim ułożymy ich według podobieństwa.
+SIMILAR_POOL = 300
+
+
+@dataclass
+class SimilarOffers:
+    listings: list[Listing]
+    #: nazwa miejsca, od którego zaczęliśmy („Wrocław")
+    place: str | None
+    #: dokąd trzeba było rozszerzyć poszukiwania („pow. żniński"), jeśli w samej
+    #: miejscowości było za mało ofert
+    widened_to: str | None
+    #: lista ofert z tymi samymi warunkami — do „zobacz więcej"
+    more_query: dict[str, Any]
+
+
+def _km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Odległość po kuli ziemskiej w kilometrach."""
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 6371 * 2 * math.asin(math.sqrt(a))
+
+
+def similar_listings(session, listing: Listing, limit: int = SIMILAR_LIMIT) -> SimilarOffers:
+    """Oferty podobne do oglądanej — tak, jak szuka ich kupujący.
+
+    Ten sam rodzaj nieruchomości i ta sama transakcja, cena i metraż w paśmie
+    wokół tej oferty, przy mieszkaniach i domach liczba pokoi ±1. Szukamy
+    najpierw w tej samej miejscowości, a gdy tam jest za mało — w powiecie
+    i w województwie. Pomijamy samą ofertę, jej powtórki z innych portali
+    i oferty nieaktualne.
+
+    Kandydatów układamy według podobieństwa: różnica ceny i metrażu (w skali
+    logarytmicznej — 10% różnicy waży tyle samo przy kawalerce i przy
+    domu), pokoi i odległości na mapie. Oferty ze zdjęciem idą przed
+    ofertami bez zdjęcia, bo z samej ceny trudno ocenić podobieństwo.
+    """
+    conditions = [
+        Listing.id != listing.id,
+        Listing.status == ListingStatus.AKTYWNA,
+        Listing.is_original.is_(True),
+        Listing.kind == listing.kind,
+        Listing.property_type == listing.property_type,
+        Listing.transaction == listing.transaction,
+    ]
+    if listing.duplicate_of_id:
+        conditions.append(Listing.id != listing.duplicate_of_id)
+    more: dict[str, Any] = {
+        "property_type": listing.property_type.value,
+        "transaction": listing.transaction.value,
+    }
+    if listing.kind != OfferKind.NIERUCHOMOSC:
+        more["kind"] = listing.kind.value
+    if listing.price:
+        low, high = SIMILAR_PRICE
+        conditions.append(Listing.price.between(listing.price * low, listing.price * high))
+        more["price_min"] = int(round(listing.price * low, -3))
+        more["price_max"] = int(round(listing.price * high, -3))
+    if listing.area:
+        low, high = SIMILAR_AREA
+        conditions.append(Listing.area.between(listing.area * low, listing.area * high))
+        more["area_min"] = int(listing.area * low)
+        more["area_max"] = int(math.ceil(listing.area * high))
+    rooms_matter = listing.property_type in (PropertyType.MIESZKANIE, PropertyType.DOM)
+    if listing.rooms and rooms_matter:
+        conditions.append(or_(
+            Listing.rooms.is_(None),
+            Listing.rooms.between(listing.rooms - 1, listing.rooms + 1),
+        ))
+        more["rooms_min"] = max(1, listing.rooms - 1)
+        more["rooms_max"] = listing.rooms + 1
+
+    # Od najbliższej okolicy do coraz szerszej. Miejscowość zawsze razem
+    # z województwem — „Nowa Wieś" jest w każdym z nich.
+    levels: list[tuple[str, str, list, dict[str, Any]]] = []
+    if listing.city:
+        where = [Listing.city == listing.city]
+        if listing.voivodeship:
+            where.append(Listing.voivodeship == listing.voivodeship)
+        levels.append(("miejscowość", listing.city, where, {"city": listing.city}))
+    if listing.county:
+        levels.append(("powiat", f"pow. {listing.county}", [Listing.county == listing.county],
+                       {"county": listing.county}))
+    if listing.voivodeship:
+        levels.append(("województwo", f"woj. {listing.voivodeship}",
+                       [Listing.voivodeship == listing.voivodeship],
+                       {"voivodeship": listing.voivodeship}))
+
+    def closeness(other: Listing) -> float:
+        score = 0.0
+        if listing.price and other.price:
+            score += abs(math.log(other.price / listing.price))
+        if listing.area:
+            score += abs(math.log(other.area / listing.area)) if other.area else 0.5
+        if listing.rooms and rooms_matter:
+            score += 0.15 * abs((other.rooms or listing.rooms) - listing.rooms)
+            score += 0.1 if other.rooms is None else 0.0
+        if listing.lat and listing.lon and other.lat and other.lon:
+            score += min(_km(listing.lat, listing.lon, other.lat, other.lon), 40) / 40
+        if listing.district and other.district == listing.district:
+            score -= 0.1
+        if not other.images:
+            score += 0.25
+        return score
+
+    # Wstępna kolejność w bazie: względna różnica ceny i metrażu. Wyrażenie
+    # zamiast sortowania po dacie — przy „ORDER BY listed_at" SQLite szedł
+    # po indeksie dat przez całą tabelę zamiast po indeksie miejscowości
+    # i jedno otwarcie oferty trwało ponad sekundę.
+    nearness = []
+    if listing.price:
+        nearness.append(func.abs(func.coalesce(Listing.price, 0) - listing.price) / listing.price)
+    if listing.area:
+        nearness.append(func.abs(func.coalesce(Listing.area, 0) - listing.area) / listing.area)
+    order = sum(nearness[1:], nearness[0]) if nearness else func.abs(Listing.id - listing.id)
+
+    chosen: list[Listing] = []
+    place = widened_to = None
+    for _label, name, where, query in levels:
+        # Surowa odpowiedź portalu i pełny opis ważą więcej niż cała reszta
+        # wiersza, a do porównania i do karty nie są potrzebne.
+        candidates = session.scalars(
+            select(Listing)
+            .options(defer(Listing.raw), defer(Listing.description), defer(Listing.extra))
+            .where(*conditions, *where).order_by(order).limit(SIMILAR_POOL)
+        ).all()
+        added = 0
+        for other in sorted(candidates, key=closeness):
+            if len(chosen) >= limit:
+                break
+            if _same_property(listing, other) or any(_same_property(c, other) for c in chosen):
+                continue
+            if any(c.id == other.id for c in chosen):
+                continue
+            chosen.append(other)
+            added += 1
+        if place is None:
+            place = name
+            more.update(query)
+        elif added:
+            widened_to = name
+            for key in ("city", "county", "voivodeship"):
+                more.pop(key, None)
+            more.update(query)
+        if len(chosen) >= limit:
+            break
+    return SimilarOffers(listings=chosen, place=place, widened_to=widened_to, more_query=more)
+
+
+def _same_property(listing: Listing, other: Listing) -> bool:
+    """Ta sama nieruchomość, której nie skleiliśmy w jeden wpis.
+
+    Podobna oferta to inna nieruchomość w podobnej cenie — nie to samo
+    ogłoszenie z drugiego portalu („Dom gmina Janowiec Wlkp." za 489 tys.
+    i 99 m² z GetHome i z OLX) ani odświeżone pod nowym numerem.
+    """
+    if not (listing.price and other.price and listing.area and other.area):
+        return False
+    return (
+        abs(other.price - listing.price) <= 0.005 * listing.price
+        and abs(other.area - listing.area) < 1.0
+        and (other.city or "").lower() == (listing.city or "").lower()
+    )

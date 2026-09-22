@@ -6,7 +6,14 @@
    jest tak mało. #}
 {% set more_open = more_open | default(false) %}
 
-<form class="filters" method="get" action="{{ form_action | default('') }}">
+{# Na telefonie panel jest zwinięty pod przyciskiem — sześć pól jedno pod
+   drugim zajmowało cały ekran i pierwsza oferta była dopiero niżej. #}
+{% set active_count = active_filters(filters, query_string) | length %}
+<button type="button" class="btn btn--quiet filters-open" aria-controls="filters-form"
+        aria-expanded="false" onclick="toggleFilters(this)">
+  Filtry{% if active_count %} <span class="filters-open__count">{{ active_count }}</span>{% endif %}
+</button>
+<form class="filters" id="filters-form" method="get" action="{{ form_action | default('') }}">
   {% if filters.sort and filters.sort != 'najnowsze' %}
     <input type="hidden" name="sort" value="{{ filters.sort }}">
   {% endif %}

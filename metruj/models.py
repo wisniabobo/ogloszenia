@@ -217,7 +217,12 @@ class Listing(Base):
     market: Mapped[str | None] = mapped_column(String(16))  # pierwotny / wtorny
 
     # --- lokalizacja ---
-    voivodeship: Mapped[str | None] = mapped_column(String(64), default="opolskie")
+    # Bez wartości domyślnej. Kiedyś stało tu „opolskie" (z czasów, gdy
+    # serwis obejmował jedno województwo) i każda oferta, której regionu nie
+    # dało się ustalić — wieś spoza rejestru gmin, licytacja z nietypowym
+    # adresem — lądowała po cichu w Opolskiem: ok. 4 200 ofert z Kaszub,
+    # Małopolski czy Mazowsza w filtrze „opolskie".
+    voivodeship: Mapped[str | None] = mapped_column(String(64))
     county: Mapped[str | None] = mapped_column(String(120))
     commune: Mapped[str | None] = mapped_column(String(120))
     city: Mapped[str | None] = mapped_column(String(160), index=True)
@@ -258,8 +263,10 @@ class Listing(Base):
     phone_fingerprint: Mapped[str | None] = mapped_column(String(64), index=True)
     text_shingle: Mapped[str | None] = mapped_column(String(64))
     is_original: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    # Indeks: kontakt z bliźniaczego ogłoszenia i lista powtórek szukają po
+    # tej kolumnie; bez indeksu każda karta bez telefonu przeglądała całą tabelę.
     duplicate_of_id: Mapped[int | None] = mapped_column(
-        ForeignKey("listings.id", ondelete="SET NULL")
+        ForeignKey("listings.id", ondelete="SET NULL"), index=True
     )
     copies_count: Mapped[int] = mapped_column(Integer, default=0)
 

@@ -325,6 +325,8 @@ async def name_places_from_points(*, limit: int = DEFAULT_BATCH, concurrency: in
         if row.city is None
         or not row.voivodeship
         or not in_voivodeship(row.lat, row.lon, row.voivodeship)
+        # punkt od portalu, a powiatu nie znamy — wieś spoza rejestru gmin
+        or (row.geo_precision == "portal" and not row.county)
     ][:limit]
     if not rows:
         return 0

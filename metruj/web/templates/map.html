@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Mapa ofert nieruchomości w Polsce — Metruj{% endblock %}
 {% block heading %}Mapa{% endblock %}
-{% block subhead %}<p class="lede">Wszystkie zebrane oferty z Polski na jednej mapie. Kolor pinezki pokazuje cenę za metr.</p>{% endblock %}
+
 {% block actions %}<a class="btn btn--quiet btn--sm" href="/nieruchomosci?{{ query_string }}">Pokaż listą</a>{% endblock %}
 {% block content %}
 
@@ -23,8 +23,7 @@
   <strong style="font-size:13.5px">Kolor pinezki = cena za m²</strong>
   <div id="legend"></div>
   <p class="muted" style="font-size:12.5px;margin:8px 0 0">
-    Oferty bez podanej ulicy są rozsunięte wokół środka miejscowości — dokładny
-    adres znajdziesz w ogłoszeniu. Licytacje i przetargi mają własny kolor.
+    Oferty bez ulicy stoją wokół środka miejscowości. Licytacje i przetargi mają własny kolor.
   </p>
 </div>
 

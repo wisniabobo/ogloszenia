@@ -2,25 +2,13 @@
 {% from "_macros.html" import plural %}
 {% block title %}Biura nieruchomości w Polsce — pełna lista | Metruj{% endblock %}
 {% block heading %}Biura nieruchomości{% endblock %}
-{% block subhead %}
-<p class="lede">Pośrednicy i deweloperzy z całego kraju — z telefonem, miastem
-  i liczbą ofert, którą biuro samo deklaruje w katalogu.</p>
-{% endblock %}
+{% block subhead %}<span class="page__count">pośrednicy i deweloperzy z całej Polski</span>{% endblock %}
 {% block content %}
 
 <div class="note">
-  W rejestrze jest <strong>{{ '{:,}'.format(registry_total).replace(',', ' ') }}</strong>
-  firm. Nazwy, adresy i telefony pochodzą z katalogu, w którym pośrednicy
-  <strong>sami się rejestrują</strong>, uzupełnionego o biura rozpoznane
-  w treści ogłoszeń.
-  Przy <strong>{{ '{:,}'.format(with_offers).replace(',', ' ') }}</strong> z nich mamy
-  już konkretne oferty; kolumna <strong>pokrycie</strong> mówi, jaką część ofert
-  deklarowanych przez biuro faktycznie u nas znajdziesz — po niej widać, czy
-  zbieranie jest kompletne.
-  <br>
-  Telefon do biura przydaje się także wtedy, gdy jego ofert jeszcze nie mamy:
-  gdy portal chowa kontakt przy ogłoszeniu, podstawiamy centralę firmy,
-  która je wystawiła.
+  <strong>{{ '{:,}'.format(registry_total).replace(',', ' ') }}</strong> firm w rejestrze,
+  w tym <strong>{{ '{:,}'.format(with_offers).replace(',', ' ') }}</strong> z ofertami u nas.
+  „Pokrycie" to część ofert deklarowanych przez biuro, którą mamy w bazie.
 </div>
 
 <form class="filters" method="get">
@@ -86,7 +74,9 @@
         <span class="tag {{ 'tag--original' if ratio >= 80 else ('tag--drop' if ratio < 40 else 'tag--age') }}">{{ ratio }}%</span>
       {% else %}<span class="muted">—</span>{% endif %}
     </td>
-    <td class="muted nowrap">{{ (agency.phones or [])|join(', ') or '—' }}</td>
+    {% set phones = agency.phones or [] %}
+    <td class="muted phones">{% for number in phones[:2] %}<span class="nowrap">{{ number }}</span>{{ ', ' if not loop.last }}{% endfor %}
+      {%- if phones|length > 2 %} <span class="small">+{{ phones|length - 2 }}</span>{% endif %}{{ '—' if not phones }}</td>
   </tr>
   {% else %}
   <tr><td colspan="6" class="empty"><strong>Nic nie pasuje do tych filtrów.</strong>

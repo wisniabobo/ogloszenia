@@ -775,3 +775,88 @@ def test_punkt_od_portalu_wskazuje_wojewodztwo():
     assert florynka.voivodeship == "małopolskie"
     # bez punktu nic się nie zmienia
     assert resolve(make_raw(title="Mieszkanie", city="Opole")).voivodeship == "opolskie"
+
+
+def test_podobne_oferty(session):
+    """Podobne = ten sam rodzaj i transakcja, cena i metraż w paśmie, najpierw
+    ta sama miejscowość; bez samej oferty, jej powtórek i ofert nieaktualnych."""
+    from metruj.models import ListingStatus, Source
+    from metruj.pipeline.runner import upsert_listing
+    from metruj.query import similar_listings
+
+    source = Source(key="test-podobne", name="Test")
+    session.add(source)
+    session.flush()
+
+    def oferta(ext, *, city="Podobnowo", price=500_000, area=50.0, rooms=2, title=None, **kw):
+        raw = make_raw(external_id=ext, url=f"https://x.pl/{ext}", source_key="test-podobne",
+                       title=title or f"Mieszkanie {area} m2 {ext}", description=f"Opis {ext}",
+                       city=city, voivodeship="opolskie", price=price, area=area, rooms=rooms,
+                       images=[f"https://x.pl/{ext}.jpg"], **kw)
+        normalized = normalize(raw)
+        listing, _, _ = upsert_listing(session, normalized.data, normalized.phones, source)
+        return listing
+
+    base = oferta("baza")
+    blisko = oferta("blisko", price=520_000, area=52.0)
+    dalej = oferta("dalej", price=600_000, area=60.0, rooms=3)
+    za_drogie = oferta("za-drogie", price=900_000)
+    za_duze = oferta("za-duze", area=90.0)
+    wynajem = oferta("wynajem", price=2_500, transaction=TransactionType.WYNAJEM)
+    dom = oferta("dom", property_type=PropertyType.DOM, title="Dom 50 m2")
+    zdjeta = oferta("zdjeta", price=505_000)
+    zdjeta.status = ListingStatus.NIEAKTYWNA
+    blizniak = oferta("blizniak", price=500_000, area=50.2, title="To samo z innego portalu")
+    session.flush()
+
+    # w samej miejscowości są dokładnie dwie pasujące — bez poszerzania
+    wynik = similar_listings(session, base, limit=2)
+    assert [x.id for x in wynik.listings] == [blisko.id, dalej.id], \
+        "najbliższa cena i metraż powinny być pierwsze"
+    assert wynik.place == "Podobnowo" and wynik.widened_to is None
+    assert wynik.more_query["city"] == "Podobnowo"
+    assert wynik.more_query["price_min"] <= 400_000 and wynik.more_query["price_max"] >= 600_000
+
+    # przy większym limicie szuka dalej, ale nigdy nie bierze ofert spoza warunków
+    ids = [x.id for x in similar_listings(session, base).listings]
+    for obca in (base, za_drogie, za_duze, wynajem, dom, zdjeta, blizniak):
+        assert obca.id not in ids
+
+
+def test_nieznana_wies_nie_trafia_do_opolskiego(session):
+    """Kolumna województwa miała domyślne „opolskie" — wieś spoza rejestru gmin
+    (Liniewskie Góry, Kaszuby) lądowała w filtrze „opolskie"."""
+    from metruj.models import Source
+    from metruj.pipeline.repair import _fix_default_region
+    from metruj.pipeline.runner import upsert_listing
+
+    source = Source(key="test-domyslne-woj", name="Test")
+    session.add(source)
+    session.flush()
+
+    def zapisz(ext, **kw):
+        raw = make_raw(external_id=ext, url=f"https://x.pl/{ext}", source_key="test-domyslne-woj",
+                       title="Działka budowlana", description="Działka 1200 m2", **kw)
+        normalized = normalize(raw)
+        listing, _, _ = upsert_listing(session, normalized.data, normalized.phones, source)
+        return listing
+
+    bez_punktu = zapisz("wies", city="Liniewskie Góry")
+    session.flush()
+    assert bez_punktu.voivodeship != "opolskie"
+
+    # dane sprzed poprawki: domyślne „opolskie" przy punkcie z Kaszub i przy
+    # mieście, które rejestr zna tylko w Małopolsce
+    z_punktem = zapisz("kaszuby", city="Liniewskie Góry", lat=54.08, lon=18.22)
+    z_miastem = zapisz("alwernia", city="Alwernia")
+    prawdziwe = zapisz("opole", city="Opole")
+    for listing in (z_punktem, z_miastem):
+        listing.voivodeship, listing.teryt, listing.county = "opolskie", None, None
+    session.flush()
+
+    assert _fix_default_region(session) >= 2
+    for listing in (z_punktem, z_miastem, prawdziwe):
+        session.refresh(listing)
+    assert z_punktem.voivodeship == "pomorskie"
+    assert z_miastem.voivodeship == "małopolskie"
+    assert prawdziwe.voivodeship == "opolskie"

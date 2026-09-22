@@ -132,8 +132,9 @@ def contacts_for(listing: Listing) -> list[Contact]:
 
 
 #: Etykieta pochodzenia stoi w wąskiej kolumnie pod numerem — pełne nazwy biur
-#: („AFKPOL Biuro Obrotu Nieruchomościami i Wycen") łamałyby ją na cztery wiersze.
-LABEL_MAX = 26
+#: („AFKPOL Biuro Obrotu Nieruchomościami i Wycen") łamałyby ją na cztery wiersze;
+#: 40 znaków mieści się w dwóch, a pełna nazwa jest w dymku.
+LABEL_MAX = 40
 
 
 def _short(name: str) -> str:
@@ -155,6 +156,10 @@ def _twins(listing: Listing) -> list[Listing]:
     Deduplikacja wskazuje jedno ogłoszenie jako pierwotne, a resztę wiąże
     z nim przez `duplicate_of_id`. Szukamy więc i w górę, i w bok.
     """
+    # Oferta bez powtórek nie ma bliźniaków — a to zdecydowana większość.
+    # Bez tego sprawdzenia każda karta bez telefonu robiła osobne zapytanie.
+    if not listing.duplicate_of_id and not listing.copies_count:
+        return []
     session = object_session(listing)
     if session is None:
         return []

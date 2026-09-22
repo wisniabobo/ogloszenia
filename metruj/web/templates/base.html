@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Metruj — wszystkie ogłoszenia nieruchomości z Polski{% endblock %}</title>
-<meta name="description" content="{% block description %}Oferty nieruchomości, licytacje komornicze i przetargi z całej Polski w jednym miejscu. Cena porównana z medianą okolicy. Bez konta, bez limitów.{% endblock %}">
+<meta name="description" content="{% block description %}Oferty nieruchomości, licytacje komornicze i przetargi z całej Polski. Cena porównana z medianą okolicy.{% endblock %}">
 <meta name="theme-color" content="#15654a">
 <link rel="stylesheet" href="{{ asset('app.css') }}">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%2315654a'/><path d='M8 23V9h3.2l4.8 8 4.8-8H24v14h-3v-8.6l-4 6.6h-1.6l-4-6.6V23z' fill='white'/></svg>">
@@ -36,7 +36,6 @@
       <a href="/zrodla"        class="{{ 'is-active' if active == 'zrodla' }}">Źródła</a>
     </nav>
 
-    <span class="topbar__meta">bez konta · bez limitów</span>
   </div>
 </header>
 
@@ -54,8 +53,7 @@
 <footer class="footer">
   <div class="footer__inner">
     <div>
-      <strong>Metruj</strong> — otwarty monitor rynku nieruchomości.
-      Dane pochodzą z publicznie dostępnych ogłoszeń i rejestrów państwowych.
+      <strong>Metruj</strong> · ogłoszenia nieruchomości z całej Polski
     </div>
     <nav class="footer__links" aria-label="Stopka">
       <a href="/docs">API</a>

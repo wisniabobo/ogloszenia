@@ -40,6 +40,7 @@ from .models import (
     TransactionType,
     utcnow,
 )
+from .pipeline.market import market_levels
 from .query import (
     SORT_LABELS,
     Filters,
@@ -49,6 +50,7 @@ from .query import (
     map_points,
     phone_lookup,
     search_listings,
+    similar_listings,
 )
 from .settings import get_settings
 from .utils.text import to_polish_time
@@ -239,11 +241,11 @@ templates.env.globals["active_filters"] = active_filters
 templates.env.globals["hidden_fields"] = hidden_fields
 
 app = FastAPI(
-    title="ogloszenia — otwarty monitor rynku nieruchomości",
+    title="Metruj — API ofert nieruchomości",
     version=__version__,
     description=(
-        "Publiczne, darmowe API z ofertami nieruchomości, licytacjami "
-        "komorniczymi i skarbowymi oraz przetargami. Bez kluczy i bez limitów."
+        "Oferty nieruchomości, licytacje komornicze i skarbowe oraz przetargi "
+        "z całej Polski."
     ),
 )
 
@@ -550,23 +552,14 @@ def listing_to_dict(listing: Listing, *, reveal_phone: bool = False) -> dict[str
 # --------------------------------------------------------------------------- #
 @app.get("/", response_class=HTMLResponse)
 def view_home(request: Request, db: DB):
-    """Strona główna: wyszukiwarka i najnowsze oferty.
+    """Strona główna to wyszukiwarka — ta sama co „Oferty".
 
-    Dziennik pracy scrapera trafia na /zrodla, a zestawienia rynkowe na /rynek —
-    kto wchodzi tu po mieszkanie, ma zacząć od szukania, a nie od tabeli
-    przebiegów zbierania.
+    Wcześniej była tu uproszczona wyszukiwarka z czterema polami, blok
+    tekstu i kafelki ze statystykami: kto przyszedł po mieszkanie, musiał
+    przejść na drugą stronę, żeby wybrać województwo czy metraż. Zestawienia
+    rynkowe są na /rynek.
     """
-    stats = cached("stats", lambda: dashboard_stats(db))
-    newest = list(
-        db.scalars(
-            apply_sort(apply_filters(select(Listing), {"only_original": True}), "najnowsze").limit(9)
-        )
-    )
-    return templates.TemplateResponse(
-        request,
-        "home.html",
-        {"stats": stats, "newest": newest, "cities": suggest_cities(db), "active": "start"},
-    )
+    return view_listings(request, db)
 
 
 @app.get("/rynek", response_class=HTMLResponse)
@@ -696,11 +689,13 @@ def view_listing(listing_id: int, request: Request, db: DB):
     )
     original = db.get(Listing, listing.duplicate_of_id) if listing.duplicate_of_id else None
     agency = db.get(Agency, listing.agency_id) if listing.agency_id else None
+    similar = similar_listings(db, listing)
     return templates.TemplateResponse(
         request,
         "listing.html",
         {"listing": listing, "copies": copies, "original": original, "agency": agency,
-         "active": "nieruchomosci"},
+         "similar": similar, "similar_url": "/nieruchomosci?" + urlencode(similar.more_query),
+         "market": market_levels(db, listing), "active": "nieruchomosci"},
     )
 
 
@@ -842,6 +837,22 @@ def api_listings(request: Request, db: DB) -> dict:
         "page": filters.page,
         "per_page": filters.per_page,
         "items": [listing_to_dict(x) for x in listings],
+    }
+
+
+@app.get("/api/listings/{listing_id}/podobne")
+def api_similar(listing_id: int, db: DB, limit: int = Query(8, ge=1, le=24)) -> dict:
+    """Oferty podobne do wskazanej: ten sam rodzaj i transakcja, cena i metraż
+    w paśmie wokół niej, najpierw w tej samej miejscowości."""
+    listing = db.get(Listing, listing_id)
+    if not listing:
+        raise HTTPException(404, "Nie ma takiej oferty")
+    similar = similar_listings(db, listing, limit=limit)
+    return {
+        "place": similar.place,
+        "widened_to": similar.widened_to,
+        "more": "/nieruchomosci?" + urlencode(similar.more_query),
+        "items": [listing_to_dict(item) for item in similar.listings],
     }
 
 

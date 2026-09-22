@@ -2,12 +2,7 @@
 {% from "_macros.html" import offer_card, pager, result_bar, money %}
 {% block title %}Okazje — oferty tańsze niż mediana okolicy | Metruj{% endblock %}
 {% block heading %}Okazje{% endblock %}
-{% block subhead %}
-<p class="lede">
-  Oferty, których cena za metr jest wyraźnie niższa niż mediana podobnych
-  nieruchomości w tej samej okolicy.
-</p>
-{% endblock %}
+{% block subhead %}<p class="lede">Cena za m² wyraźnie niższa niż mediana w okolicy.</p>{% endblock %}
 {% block actions %}
   <a class="btn btn--quiet btn--sm" href="/mapa?{{ query_string }}">Zobacz na mapie</a>
   <button class="btn btn--sm" onclick="saveSearch()">Powiadom o nowych</button>
@@ -15,16 +10,8 @@
 {% block content %}
 
 <p class="deal-legend">
-  Porównujemy <strong>cenę za metr</strong> tej oferty z <strong>medianą</strong> ofert
-  tego samego rodzaju i tej samej transakcji w tej miejscowości. Gdy ofert
-  w miejscowości jest za mało, żeby mediana coś znaczyła, schodzimy na powiat.
-  Porównania do całego województwa <em>nie</em> pokazujemy na tej liście:
-  mieszkanie we wsi zestawione z medianą województwa zawsze wygląda na okazję
-  życia i nigdy nią nie jest.
-  <br>
-  To cena <strong>ofertowa</strong>, nie transakcyjna — niska cena bywa też
-  skutkiem stanu technicznego, statusu prawnego albo lokalizacji, której
-  mediana nie widzi. Lista wskazuje, czemu warto się przyjrzeć, a nie co kupić.
+  Mediana ofert tego samego rodzaju w tej miejscowości, a gdy jest ich za mało — w powiecie.
+  To ceny ofertowe: niska cena bywa też skutkiem stanu technicznego albo prawnego.
 </p>
 
 <div class="dealgrid">
