@@ -735,3 +735,14 @@ h1, h2, h3, h4 { margin: 0; line-height: 1.25; font-weight: 650; letter-spacing:
 .marketbox__place { font-weight: 600; font-size: 14.5px; }
 .marketbox__val { text-align: right; font-size: 14.5px; font-weight: 600; white-space: nowrap; }
 .marketbox > a { display: inline-block; margin-top: 8px; }
+
+/* Na telefonie podobne oferty to pas przewijany palcem — osiem kart jedna
+   pod drugą zajmowało trzy i pół tysiąca pikseli. */
+@media (max-width: 760px) {
+  .similar__grid {
+    grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: 78%;
+    overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 8px;
+    -webkit-overflow-scrolling: touch; scrollbar-width: thin;
+  }
+  .simcard { scroll-snap-align: start; }
+}
