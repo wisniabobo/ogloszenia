@@ -71,40 +71,30 @@ class RingierScraper(BaseScraper):
     offer_href: re.Pattern[str] = re.compile(r"/oferta/")
 
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
-        sections = self.config.get("sections") or []
-        produced = 0
-        seen: set[str] = set()
-
-        for section in sections:
+        # Sekcja = jeden szablon adresu w jednym województwie. Adres sekcji
+        # zawiera województwo, więc jedna pozycja w konfiguracji obsługuje
+        # wszystkie szesnaście.
+        sections: list[tuple[str, TransactionType]] = []
+        for section in self.config.get("sections") or []:
             raw_path = section["path"] if isinstance(section, dict) else section
             transaction = TransactionType(
                 section.get("transaction", "sprzedaz") if isinstance(section, dict) else "sprzedaz"
             )
-            # Adres sekcji zawiera województwo, więc jedna pozycja w tablicy
-            # obsługuje wszystkie szesnaście — inaczej portal oddawałby wyniki
-            # tylko z tego jednego, które ktoś kiedyś wpisał w kodzie.
-            for path in ctx.expand(raw_path):
-                for page in range(1, ctx.max_pages + 1):
-                    url = urljoin(self.base_url, path)
-                    params = {"page": page} if page > 1 else None
-                    try:
-                        tree = await self.html(url, params=params)
-                    except Exception:
-                        break
+            sections += [(path, transaction) for path in ctx.expand(raw_path)]
 
-                    fresh = 0
-                    for card in tree.css(CARD):
-                        item = self._parse_card(card, transaction)
-                        if item is None or item.external_id in seen:
-                            continue
-                        seen.add(item.external_id)
-                        fresh += 1
-                        yield item
-                        produced += 1
-                        if produced >= ctx.max_items:
-                            return
-                    if fresh == 0:
-                        break  # serwis oddał tę samą stronę albo koniec wyników
+        async def page_items(section: tuple[str, TransactionType], page: int):
+            path, transaction = section
+            tree = await self.html(
+                urljoin(self.base_url, path), params={"page": page} if page > 1 else None
+            )
+            return [self._parse_card(card, transaction) for card in tree.css(CARD)]
+
+        produced = 0
+        async for item in self.crawl_sections(sections, page_items, max_pages=ctx.max_pages):
+            yield item
+            produced += 1
+            if produced >= ctx.max_items:
+                return
 
     # ------------------------------------------------------------------ #
     def _parse_card(self, card: Node, transaction: TransactionType) -> RawListing | None:

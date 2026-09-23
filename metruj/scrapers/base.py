@@ -153,6 +153,52 @@ class BaseScraper:
     #: czy źródło wymaga logowania / ręcznej konfiguracji (nie uruchamiamy automatem)
     requires_credentials: ClassVar[bool] = False
 
+    async def crawl_sections(
+        self,
+        sections: list,
+        page_items,
+        *,
+        max_pages: int,
+        empty_pages_before_stop: int = 1,
+    ) -> AsyncIterator[RawListing]:
+        """Przechodzi sekcje **wszerz**: strona 1 każdej, potem strona 2 każdej.
+
+        Sekcja to zwykle jedno województwo albo jedna kategoria. Przy
+        przechodzeniu sekcja po sekcji (najpierw całe Dolnośląskie do ostatniej
+        strony, potem Kujawsko-Pomorskie…) nocne przejście ucięte limitem czasu
+        zostawiało końcówkę listy bez jednej oferty — a trwa ono kilkanaście
+        godzin i rzadko kiedy zdąży. Wszerz każde województwo ma zebrane
+        pierwsze strony, a brakuje najwyżej najgłębszych.
+
+        `page_items(section, page)` oddaje listę ofert z jednej strony sekcji
+        albo `None`, gdy sekcja się skończyła. Puste strony pod rząd kończą
+        sekcję, a powtórzone oferty (portal oddaje tę samą stronę) nie liczą
+        się jako świeże.
+        """
+        seen: set[str] = set()
+        streak = dict.fromkeys(range(len(sections)), 0)
+        for page in range(1, max_pages + 1):
+            active = [i for i, empty in streak.items() if empty < empty_pages_before_stop]
+            if not active:
+                return
+            for index in active:
+                try:
+                    items = await page_items(sections[index], page)
+                except Exception:  # jedna strona nie może wywrócić przebiegu
+                    streak[index] = empty_pages_before_stop
+                    continue
+                if items is None:
+                    streak[index] = empty_pages_before_stop
+                    continue
+                fresh = 0
+                for item in items:
+                    if item is None or item.external_id in seen:
+                        continue
+                    seen.add(item.external_id)
+                    fresh += 1
+                    yield item
+                streak[index] = 0 if fresh else streak[index] + 1
+
     def __init__(self, client: HttpClient, config: dict | None = None) -> None:
         self.client = client
         self.config = config or {}

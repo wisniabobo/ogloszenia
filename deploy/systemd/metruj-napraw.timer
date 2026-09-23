@@ -1,0 +1,11 @@
+[Unit]
+Description=Metruj — porządki w danych raz na dobę
+
+[Timer]
+# Po nocnym przejściu (03:20 + limit 20 h) i po porannym skanie.
+OnCalendar=*-*-* 04:30:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

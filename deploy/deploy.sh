@@ -49,6 +49,11 @@ ssh -o BatchMode=yes -o PasswordAuthentication=no "$TARGET" bash -euo pipefail <
 		systemctl daemon-reload
 		echo "    jednostki zaktualizowane"
 	fi
+	# Nowy zegar (np. dobowe porządki w danych) sam się nie włączy — bez tego
+	# plik leży na serwerze, a zadanie nigdy nie startuje.
+	for unit in "$REMOTE_DIR"/deploy/systemd/metruj-*.timer; do
+		systemctl enable --now "$(basename "$unit")" >/dev/null 2>&1 || true
+	done
 
 	echo "==> Domykam schemat bazy i wczytuję rejestr źródeł"
 	# init-db dokłada też kolumny, których nie było w poprzedniej wersji —

@@ -358,3 +358,48 @@ async def test_bip_odrzuca_ogloszenia_sprzed_lat():
             source_key="bip_test", name="BIP testowy")
         items = await collect(scraper, ScrapeContext(max_items=10, max_pages=1))
     assert items == []
+
+
+@pytest.mark.asyncio
+async def test_sekcje_przechodzone_wszerz():
+    """Nocne przejście bywa ucinane limitem czasu. Gdy szło sekcja po sekcji,
+    ostatnie województwa nie dostawały ani jednej oferty."""
+    from metruj.scrapers.base import BaseScraper, RawListing
+
+    scraper = BaseScraper(None)
+    sections = ["dolnośląskie", "opolskie", "pomorskie"]
+    kolejnosc: list[tuple[str, int]] = []
+
+    async def page_items(section: str, page: int):
+        kolejnosc.append((section, page))
+        if section == "opolskie" and page > 1:
+            return None                      # to województwo ma tylko jedną stronę
+        return [RawListing(external_id=f"{section}-{page}", url="https://x.pl/1", title="Oferta")]
+
+    zebrane = [item.external_id async for item in
+               scraper.crawl_sections(sections, page_items, max_pages=3)]
+
+    # najpierw strona 1 każdego województwa, dopiero potem druga
+    assert [s for s, p in kolejnosc if p == 1] == sections
+    assert kolejnosc[:3] == [(s, 1) for s in sections]
+    assert "pomorskie-1" in zebrane and "dolnośląskie-3" in zebrane
+    # wyczerpana sekcja nie jest już odpytywana
+    assert ("opolskie", 3) not in kolejnosc
+
+
+@pytest.mark.asyncio
+async def test_powtorzona_strona_konczy_sekcje():
+    """Portal, który na każdej stronie oddaje to samo, nie może kręcić się w kółko."""
+    from metruj.scrapers.base import BaseScraper, RawListing
+
+    scraper = BaseScraper(None)
+    odwiedzone: list[int] = []
+
+    async def page_items(section: str, page: int):
+        odwiedzone.append(page)
+        return [RawListing(external_id="ta-sama", url="https://x.pl/1", title="Oferta")]
+
+    zebrane = [item.external_id async for item in
+               scraper.crawl_sections(["x"], page_items, max_pages=10)]
+    assert zebrane == ["ta-sama"]
+    assert len(odwiedzone) <= 3

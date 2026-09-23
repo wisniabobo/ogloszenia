@@ -87,42 +87,24 @@ class GetHomeScraper(BaseScraper):
     coverage = "krajowy"
 
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
-        sections = self.config.get("sections") or []
-        produced = 0
-        seen: set[str] = set()
-
-        for section in sections:
+        sections: list[str] = []
+        for section in self.config.get("sections") or []:
             raw_path = section["path"] if isinstance(section, dict) else section
-            for path in ctx.expand(raw_path):
-                for page in range(1, ctx.max_pages + 1):
-                    try:
-                        tree = await self.html(
-                            BASE + path, params={"page": page} if page > 1 else None
-                        )
-                    except Exception:
-                        break
-                    rows = (
-                        _state(tree)
-                        .get("offerList", {})
-                        .get("offers", {})
-                        .get("offers")
-                    ) or []
-                    if not rows:
-                        break
+            sections += list(ctx.expand(raw_path))
 
-                    fresh = 0
-                    for row in rows:
-                        item = self._parse(row)
-                        if item is None or item.external_id in seen:
-                            continue
-                        seen.add(item.external_id)
-                        fresh += 1
-                        yield item
-                        produced += 1
-                        if produced >= ctx.max_items:
-                            return
-                    if fresh == 0:
-                        break
+        async def page_items(path: str, page: int):
+            tree = await self.html(BASE + path, params={"page": page} if page > 1 else None)
+            rows = (
+                _state(tree).get("offerList", {}).get("offers", {}).get("offers")
+            ) or []
+            return [self._parse(row) for row in rows] if rows else None
+
+        produced = 0
+        async for item in self.crawl_sections(sections, page_items, max_pages=ctx.max_pages):
+            yield item
+            produced += 1
+            if produced >= ctx.max_items:
+                return
 
     def _parse(self, row: dict) -> RawListing | None:
         slug = clean(row.get("slug"))

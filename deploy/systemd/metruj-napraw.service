@@ -1,0 +1,25 @@
+[Unit]
+Description=Metruj — porządki w danych po nocnym przejściu
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=metruj
+Group=metruj
+WorkingDirectory=/opt/metruj
+EnvironmentFile=/opt/metruj/.env
+# Osobna usługa, a nie krok nocnego przejścia: przejście bywa ucinane limitem
+# czasu (systemd nie uruchamia wtedy `ExecStartPost`) i porządki przepadały
+# razem z nim — a to po nich oferty dostają poprawione regiony, mediany
+# i współrzędne.
+ExecStart=/opt/metruj/.venv/bin/python -m metruj.cli napraw
+ExecStart=/opt/metruj/.venv/bin/python -m metruj.cli geocode --limit 20000
+TimeoutStartSec=14400
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/metruj/data
+
+[Install]
+WantedBy=multi-user.target

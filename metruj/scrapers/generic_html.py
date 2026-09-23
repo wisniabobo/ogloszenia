@@ -200,8 +200,6 @@ class GenericHtmlScraper(BaseScraper):
     EMPTY_PAGES_BEFORE_STOP = 2
 
     async def run(self, ctx: ScrapeContext) -> AsyncIterator[RawListing]:
-        seen: set[str] = set()
-        produced = 0
         # Podklasa może nadpisywać samo `build_urls` — tak robi np. Domiporta,
         # która składa adres z własnych parametrów. Gdyby `run` znał wyłącznie
         # sekcje, taka podklasa nie dostałaby ani jednego adresu i w tabeli
@@ -210,34 +208,31 @@ class GenericHtmlScraper(BaseScraper):
         if not sections:
             urls = self.build_urls(ctx)
             sections = [urls] if urls else []
-        for section in sections:
-            empty_streak = 0
-            for url in section:
-                if produced >= ctx.max_items:
-                    return
-                if empty_streak >= self.EMPTY_PAGES_BEFORE_STOP:
-                    break   # ta sekcja się wyczerpała; następna zaczyna od zera
-                try:
-                    tree = await self.html(url)
-                except Exception:  # pojedyncza strona nie może wywrócić przebiegu
-                    empty_streak += 1
-                    continue
-                fresh_on_page = 0
-                for item in self.parse_list(tree, url):
-                    if item.external_id in seen:
-                        continue
-                    seen.add(item.external_id)
-                    fresh_on_page += 1
-                    if self.config.get("detail") and ctx.fetch_details:
-                        try:
-                            await self.enrich_detail(item)
-                        except Exception:
-                            pass
-                    yield item
-                    produced += 1
-                    if produced >= ctx.max_items:
-                        return
-                empty_streak = 0 if fresh_on_page else empty_streak + 1
+
+        async def page_items(section: list[str], page: int):
+            if page > len(section):
+                return None
+            url = section[page - 1]
+            tree = await self.html(url)
+            items = self.parse_list(tree, url)
+            if self.config.get("detail") and ctx.fetch_details:
+                for item in items:
+                    try:
+                        await self.enrich_detail(item)
+                    except Exception:
+                        pass
+            return items
+
+        produced = 0
+        async for item in self.crawl_sections(
+            sections, page_items,
+            max_pages=max((len(section) for section in sections), default=0),
+            empty_pages_before_stop=self.EMPTY_PAGES_BEFORE_STOP,
+        ):
+            yield item
+            produced += 1
+            if produced >= ctx.max_items:
+                return
 
     # ------------------------------------------------------------------ #
     def parse_list(self, tree: HTMLParser, page_url: str) -> list[RawListing]:
